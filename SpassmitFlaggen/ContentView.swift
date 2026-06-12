@@ -612,6 +612,98 @@ struct TierHistoryEntry: Codable, Identifiable {
     var id: String { "\(date.timeIntervalSince1970)-\(tier.rawValue)" }
 }
 
+struct LeagueMatchResult: Identifiable, Codable {
+    let id: UUID
+    let date: Date
+    let opponentName: String
+    let ownScore: Int
+    let opponentScore: Int
+    let correct: Int
+    let wrong: Int
+    let duration: Int
+    
+    var totalAnswers: Int {
+        correct + wrong
+    }
+    
+    var accuracy: Double {
+        totalAnswers == 0 ? 0 : Double(correct) / Double(totalAnswers)
+    }
+    
+    var didWin: Bool {
+        ownScore > opponentScore
+    }
+    
+    var didDraw: Bool {
+        ownScore == opponentScore
+    }
+}
+
+struct LeagueStats: Codable {
+    var rating: Int = 1000
+    var played: Int = 0
+    var wins: Int = 0
+    var draws: Int = 0
+    var losses: Int = 0
+    var bestScore: Int = 0
+    var totalScore: Int = 0
+    var totalCorrect: Int = 0
+    var totalWrong: Int = 0
+    var currentWinStreak: Int = 0
+    var bestWinStreak: Int = 0
+    var recentMatches: [LeagueMatchResult] = []
+    
+    var averageScore: Double {
+        played == 0 ? 0 : Double(totalScore) / Double(played)
+    }
+    
+    var accuracy: Double {
+        let total = totalCorrect + totalWrong
+        return total == 0 ? 0 : Double(totalCorrect) / Double(total)
+    }
+    
+    mutating func recordMatch(_ result: LeagueMatchResult) {
+        played += 1
+        bestScore = max(bestScore, result.ownScore)
+        totalScore += result.ownScore
+        totalCorrect += result.correct
+        totalWrong += result.wrong
+        
+        if result.didDraw {
+            draws += 1
+            rating += 3
+            currentWinStreak = 0
+        } else if result.didWin {
+            wins += 1
+            rating += 18
+            currentWinStreak += 1
+            bestWinStreak = max(bestWinStreak, currentWinStreak)
+        } else {
+            losses += 1
+            rating = max(100, rating - 12)
+            currentWinStreak = 0
+        }
+        
+        recentMatches.insert(result, at: 0)
+        recentMatches = Array(recentMatches.prefix(12))
+    }
+}
+
+struct LeagueAnswerMatch {
+    let country: Country
+    let matchedName: String
+    let confidence: Double
+    let runnerUpConfidence: Double
+    
+    var isCertain: Bool {
+        confidence >= 0.88 && confidence - runnerUpConfidence >= 0.08
+    }
+    
+    var isAcceptable: Bool {
+        confidence >= 0.76 && confidence - runnerUpConfidence >= 0.04
+    }
+}
+
 struct CountryStats: Codable {
     var attempts: Int = 0
     var correct: Int = 0
@@ -751,6 +843,7 @@ struct UserProfile: Identifiable, Codable {
     var perfectFullPracticeSessionSubjects: [String]?
     var announcedAchievementIDs: [String]?
     var achievedAchievementDates: [String: Date]?
+    var leagueStats: LeagueStats?
     
     var accuracy: Double {
         totalAnswers == 0 ? 0 : Double(correctAnswers) / Double(totalAnswers)
@@ -874,6 +967,12 @@ struct UserProfile: Identifiable, Codable {
         byCountry[key] = countryStats
     }
     
+    mutating func recordLeagueMatch(_ result: LeagueMatchResult) {
+        var stats = leagueStats ?? LeagueStats()
+        stats.recordMatch(result)
+        leagueStats = stats
+    }
+    
     func stats(for country: Country, subject: LearningSubject = .countries) -> CountryStats {
         byCountry[subject.statsKey(for: country)] ?? CountryStats()
     }
@@ -958,6 +1057,12 @@ struct OnlinePlayerStats: Identifiable {
     let tiersByCountryCode: [String: MasteryTier]
     let achievementIDs: Set<String>
     let sTierHistory: [Int]
+    let leagueRating: Int
+    let leaguePlayed: Int
+    let leagueWins: Int
+    let leagueBestScore: Int
+    let leagueAverageScore: Double
+    let leagueAccuracy: Double
     let updatedAt: Date
     
     var accuracy: Double {
@@ -1058,6 +1163,12 @@ enum OnlineStatsService {
         record["learnedThisWeek"] = profile.practiceCardsInLastSevenDays(subject: subject) as CKRecordValue
         record["achievementCount"] = achievementIDs.count as CKRecordValue
         record["achievementIDs"] = achievementIDs.sorted().joined(separator: "|") as CKRecordValue
+        record["leagueRating"] = (profile.leagueStats?.rating ?? 1000) as CKRecordValue
+        record["leaguePlayed"] = (profile.leagueStats?.played ?? 0) as CKRecordValue
+        record["leagueWins"] = (profile.leagueStats?.wins ?? 0) as CKRecordValue
+        record["leagueBestScore"] = (profile.leagueStats?.bestScore ?? 0) as CKRecordValue
+        record["leagueAverageScore"] = (profile.leagueStats?.averageScore ?? 0) as CKRecordValue
+        record["leagueAccuracy"] = (profile.leagueStats?.accuracy ?? 0) as CKRecordValue
         record["tierS"] = (counts[.s] ?? 0) as CKRecordValue
         record["tierA"] = (counts[.a] ?? 0) as CKRecordValue
         record["tierB"] = (counts[.b] ?? 0) as CKRecordValue
@@ -1125,6 +1236,12 @@ enum OnlineStatsService {
             "first-s-tier",
             "showmaster-ten"
         ].joined(separator: "|") as CKRecordValue
+        record["leagueRating"] = 1138 as CKRecordValue
+        record["leaguePlayed"] = 18 as CKRecordValue
+        record["leagueWins"] = 11 as CKRecordValue
+        record["leagueBestScore"] = 1240 as CKRecordValue
+        record["leagueAverageScore"] = 840.0 as CKRecordValue
+        record["leagueAccuracy"] = 0.82 as CKRecordValue
         record["tierS"] = (tierCounts[.s] ?? 0) as CKRecordValue
         record["tierA"] = (tierCounts[.a] ?? 0) as CKRecordValue
         record["tierB"] = (tierCounts[.b] ?? 0) as CKRecordValue
@@ -1402,6 +1519,12 @@ extension OnlinePlayerStats {
         tiersByCountryCode = Self.parseTierSnapshot(record["tierSnapshot"] as? String)
         achievementIDs = Set((record["achievementIDs"] as? String ?? "").split(separator: "|").map(String.init))
         sTierHistory = Self.parseIntSnapshot(record["sTierHistory"] as? String, fallback: tierS)
+        leagueRating = (record["leagueRating"] as? NSNumber)?.intValue ?? 1000
+        leaguePlayed = (record["leaguePlayed"] as? NSNumber)?.intValue ?? 0
+        leagueWins = (record["leagueWins"] as? NSNumber)?.intValue ?? 0
+        leagueBestScore = (record["leagueBestScore"] as? NSNumber)?.intValue ?? 0
+        leagueAverageScore = (record["leagueAverageScore"] as? NSNumber)?.doubleValue ?? 0
+        leagueAccuracy = (record["leagueAccuracy"] as? NSNumber)?.doubleValue ?? 0
         updatedAt = (record["updatedAt"] as? Date) ?? .distantPast
     }
     
@@ -1427,6 +1550,7 @@ enum CountryScope {
 enum AppScreen: String, CaseIterable, Hashable {
     case practice = "practice"
     case showmaster = "showmaster"
+    case league = "league"
     case statistics = "statistics"
     case globe = "globe"
     case achievements = "achievements"
@@ -1437,6 +1561,7 @@ enum AppScreen: String, CaseIterable, Hashable {
         switch self {
         case .practice: return localized("Üben", "Practice", language: language)
         case .showmaster: return "Showmaster"
+        case .league: return localized("Liga", "League", language: language)
         case .statistics: return localized("Statistik", "Statistics", language: language)
         case .globe: return localized("Globus", "Globe", language: language)
         case .achievements: return localized("Achievements", "Achievements", language: language)
@@ -1449,6 +1574,7 @@ enum AppScreen: String, CaseIterable, Hashable {
         switch self {
         case .practice: return "rectangle.stack.fill"
         case .showmaster: return "rectangle.on.rectangle"
+        case .league: return "bolt.trophy.fill"
         case .statistics: return "chart.bar.fill"
         case .globe: return "globe.europe.africa.fill"
         case .achievements: return "trophy.fill"
@@ -1740,6 +1866,19 @@ struct ContentView: View {
     @State private var selectedPracticeCardLimit: Int = 10
     @State private var selectedShowCardLimit: Int = 0
     @State private var showAvoidsRecentRepeats: Bool = true
+    @State private var selectedLeagueOpponentID: String = ""
+    @State private var leagueMatchActive: Bool = false
+    @State private var leagueSecondsRemaining: Int = 60
+    @State private var leagueCurrentCountry: Country = allCountries[0]
+    @State private var leagueAnswerText: String = ""
+    @State private var leagueCorrect: Int = 0
+    @State private var leagueWrong: Int = 0
+    @State private var leagueScore: Int = 0
+    @State private var leagueRecentCountryCodes: [String] = []
+    @State private var leagueLastResult: LeagueMatchResult?
+    @State private var leagueAnswerMatch: LeagueAnswerMatch?
+    @State private var leagueAutoSubmitTask: Task<Void, Never>?
+    @FocusState private var isLeagueAnswerFocused: Bool
     @State private var practiceSessionSeenCountryCodes: Set<String> = []
     @State private var showRecentCountryCodes: [String] = []
     @State private var showDeckCountryCodes: [String] = []
@@ -1791,6 +1930,8 @@ struct ContentView: View {
                             practiceView
                         case .showmaster:
                             showView
+                        case .league:
+                            leagueView
                         case .statistics:
                             statisticsView
                         case .globe:
@@ -1905,6 +2046,15 @@ struct ContentView: View {
         }
         .onChange(of: storeKit.purchasedFullVersion) { _, isUnlocked in
             fullVersionUnlocked = isUnlocked
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            guard leagueMatchActive else { return }
+            if leagueSecondsRemaining > 0 {
+                leagueSecondsRemaining -= 1
+            }
+            if leagueSecondsRemaining == 0 {
+                finishLeagueMatch()
+            }
         }
         .onChange(of: fullVersionUnlocked) { _, isUnlocked in
             if !isUnlocked {
@@ -4573,6 +4723,550 @@ struct ContentView: View {
         change.statsKey.hasPrefix("capital_") ? L("Hauptstadt", "Capital") : L("Flagge", "Flag")
     }
     
+    var leagueView: some View {
+        ZStack {
+            appBackgroundGradient
+                .ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 16) {
+                    modeHeader(title: L("Liga", "League"), subtitle: L("One-on-One auf Zeit", "Timed one-on-one"))
+                    
+                    if leagueMatchActive {
+                        leagueMatchCard
+                    } else {
+                        leagueSetupView
+                    }
+                }
+                .padding()
+                .frame(maxWidth: 620)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .navigationTitle(L("Liga", "League"))
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            guard onlineFeaturesEnabled else { return }
+            if onlineLeaderboard.isEmpty {
+                await loadOnlineStats(forceRefresh: true)
+            }
+        }
+    }
+    
+    var leagueSetupView: some View {
+        VStack(spacing: 14) {
+            leagueStatsCard
+            
+            if let leagueLastResult {
+                leagueResultCard(leagueLastResult)
+            }
+            
+            VStack(alignment: .leading, spacing: 10) {
+                Label(L("Gegner", "Opponent"), systemImage: "person.2.fill")
+                    .font(.headline)
+                
+                if leagueOpponents.isEmpty {
+                    Text(L("Noch keine Online-Gegner geladen. Du kannst trotzdem gegen den Liga-Durchschnitt starten.", "No online opponents loaded yet. You can still start against the league baseline."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    VStack(spacing: 8) {
+                        leagueOpponentButton(id: "", title: L("Liga-Durchschnitt", "League baseline"), subtitle: L("Ziel: 600 Punkte", "Target: 600 points"), score: 600)
+                        ForEach(leagueOpponents.prefix(8)) { opponent in
+                            leagueOpponentButton(
+                                id: opponent.id,
+                                title: opponent.displayName,
+                                subtitle: L("Rating \(opponent.leagueRating) · \(opponent.leaguePlayed) Spiele", "Rating \(opponent.leagueRating) · \(opponent.leaguePlayed) matches"),
+                                score: max(opponent.leagueBestScore, Int(opponent.leagueAverageScore.rounded()))
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+            
+            Button {
+                Haptics.tap()
+                startLeagueMatch()
+            } label: {
+                Label(L("One-on-One starten", "Start one-on-one"), systemImage: "timer")
+                    .font(.title3.weight(.bold))
+                    .frame(maxWidth: .infinity, minHeight: 56)
+            }
+            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+            
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(L("Online-Liga", "Online league"), systemImage: onlineFeaturesEnabled ? "network" : "network.slash")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        Haptics.tap()
+                        Task { await syncOnlineStats() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .frame(width: 34, height: 34)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!onlineFeaturesEnabled || isSyncingOnlineStats)
+                }
+                
+                Text(onlineStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                ForEach(onlineLeagueLeaderboard.prefix(6)) { player in
+                    LeagueLeaderboardRow(player: player, isCurrentPlayer: isCurrentOnlinePlayer(player), language: appLanguage)
+                }
+            }
+            .padding(14)
+            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+        }
+    }
+    
+    var leagueStatsCard: some View {
+        let stats = activeProfile.leagueStats ?? LeagueStats()
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(L("Deine Liga", "Your league"), systemImage: "bolt.trophy.fill")
+                    .font(.headline)
+                Spacer()
+                Text("\(stats.rating)")
+                    .font(.title2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(tealAccentColor)
+            }
+            
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
+                leagueMetricTile(title: L("Spiele", "Matches"), value: "\(stats.played)")
+                leagueMetricTile(title: L("Bilanz", "Record"), value: "\(stats.wins)-\(stats.draws)-\(stats.losses)")
+                leagueMetricTile(title: L("Bestscore", "Best score"), value: "\(stats.bestScore)")
+                leagueMetricTile(title: L("Trefferquote", "Accuracy"), value: percentText(stats.accuracy))
+            }
+        }
+        .padding(14)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    func leagueMetricTile(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.headline.monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(tealAccentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+    
+    func leagueOpponentButton(id: String, title: String, subtitle: String, score: Int) -> some View {
+        let isSelected = selectedLeagueOpponentID == id
+        return Button {
+            Haptics.tap()
+            selectedLeagueOpponentID = id
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(isSelected ? tealAccentColor : .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(score)")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(tealAccentColor)
+            }
+            .padding(10)
+            .background(isSelected ? tealAccentColor.opacity(0.12) : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+    
+    var leagueMatchCard: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Label("\(leagueSecondsRemaining)s", systemImage: "timer")
+                    .font(.title2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(leagueSecondsRemaining <= 10 ? .red : tealAccentColor)
+                Spacer()
+                Text("\(leagueScore)")
+                    .font(.title2.monospacedDigit().weight(.bold))
+            }
+            
+            FlagImage(country: leagueCurrentCountry, width: 280, height: 170)
+                .padding(12)
+                .frame(maxWidth: .infinity)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            
+            TextField(L("Name der Flagge", "Flag name"), text: $leagueAnswerText)
+                .focused($isLeagueAnswerFocused)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
+                .submitLabel(.send)
+                .onSubmit { submitLeagueAnswer() }
+                .font(.title3.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(tealAccentColor.opacity(0.32), lineWidth: 1)
+                )
+                .onChange(of: leagueAnswerText) { _, newValue in
+                    evaluateLeagueAnswer(newValue)
+                }
+            
+            leagueRecognitionView
+            
+            HStack(spacing: 10) {
+                leagueMetricTile(title: L("Richtig", "Correct"), value: "\(leagueCorrect)")
+                leagueMetricTile(title: L("Falsch", "Wrong"), value: "\(leagueWrong)")
+            }
+            
+            Button(role: .destructive) {
+                Haptics.notify(.warning)
+                finishLeagueMatch()
+            } label: {
+                Text(L("Runde beenden", "Finish round"))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(ActionButtonStyle(color: .red, isProminent: false))
+        }
+        .padding(14)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    var leagueRecognitionView: some View {
+        HStack(spacing: 10) {
+            if let match = leagueAnswerMatch {
+                let isCurrentCountry = match.country == leagueCurrentCountry
+                Image(systemName: isCurrentCountry ? (match.isCertain ? "checkmark.circle.fill" : "scope") : "questionmark.circle")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isCurrentCountry ? tealAccentColor : .orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isCurrentCountry ? L("Erkannt: \(localizedCountryName(match.country, language: appLanguage))", "Recognized: \(localizedCountryName(match.country, language: appLanguage))") : L("Meintest du \(localizedCountryName(match.country, language: appLanguage))?", "Did you mean \(localizedCountryName(match.country, language: appLanguage))?"))
+                        .font(.caption.weight(.semibold))
+                    Text(match.isCertain && isCurrentCountry ? L("Wird automatisch gewertet", "Will be submitted automatically") : L("Weiter tippen oder Enter drücken", "Keep typing or press Return"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Image(systemName: "text.magnifyingglass")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(L("Tippe den Ländernamen. Kleine Fehler sind okay.", "Type the country name. Small typos are okay."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+    }
+    
+    func leagueResultCard(_ result: LeagueMatchResult) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(result.didDraw ? L("Unentschieden", "Draw") : (result.didWin ? L("Sieg", "Win") : L("Niederlage", "Loss")), systemImage: result.didWin ? "crown.fill" : "flag.checkered")
+                    .font(.headline)
+                    .foregroundStyle(result.didWin ? .green : (result.didDraw ? .orange : .red))
+                Spacer()
+                Text("\(result.ownScore) : \(result.opponentScore)")
+                    .font(.headline.monospacedDigit())
+            }
+            Text(L("Gegner: \(result.opponentName) · \(result.correct) richtig · \(result.wrong) falsch", "Opponent: \(result.opponentName) · \(result.correct) correct · \(result.wrong) wrong"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    var leagueOpponents: [OnlinePlayerStats] {
+        deduplicatedOnlineLeaderboard
+            .filter { !isCurrentOnlinePlayer($0) }
+            .sorted {
+                if $0.leagueRating == $1.leagueRating {
+                    return $0.leagueBestScore > $1.leagueBestScore
+                }
+                return $0.leagueRating > $1.leagueRating
+            }
+    }
+    
+    var selectedLeagueOpponent: OnlinePlayerStats? {
+        leagueOpponents.first { $0.id == selectedLeagueOpponentID }
+    }
+    
+    var onlineLeagueLeaderboard: [OnlinePlayerStats] {
+        deduplicatedOnlineLeaderboard.sorted {
+            if $0.leagueRating == $1.leagueRating {
+                return $0.leagueBestScore > $1.leagueBestScore
+            }
+            return $0.leagueRating > $1.leagueRating
+        }
+    }
+    
+    func startLeagueMatch() {
+        leagueCorrect = 0
+        leagueWrong = 0
+        leagueScore = 0
+        leagueSecondsRemaining = 60
+        leagueRecentCountryCodes = []
+        leagueAnswerText = ""
+        leagueAnswerMatch = nil
+        leagueAutoSubmitTask?.cancel()
+        leagueAutoSubmitTask = nil
+        leagueCurrentCountry = nextLeagueCountry()
+        leagueMatchActive = true
+        leagueLastResult = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            isLeagueAnswerFocused = true
+        }
+    }
+    
+    func submitLeagueAnswer() {
+        guard leagueMatchActive else { return }
+        let answer = normalizedLeagueAnswer(leagueAnswerText)
+        guard !answer.isEmpty else { return }
+        let match = leagueAnswerMatch ?? bestLeagueAnswerMatch(for: leagueAnswerText)
+        let isCorrect = match?.country == leagueCurrentCountry && (match?.isAcceptable == true || match?.isCertain == true)
+        
+        if isCorrect {
+            leagueCorrect += 1
+            leagueScore += 100 + max(leagueSecondsRemaining / 6, 0)
+            Haptics.notify(.success)
+        } else {
+            leagueWrong += 1
+            leagueScore = max(0, leagueScore - 25)
+            Haptics.notify(.error)
+        }
+        
+        leagueRecentCountryCodes.append(leagueCurrentCountry.code)
+        leagueRecentCountryCodes = Array(leagueRecentCountryCodes.suffix(12))
+        leagueAnswerText = ""
+        leagueAnswerMatch = nil
+        leagueAutoSubmitTask?.cancel()
+        leagueAutoSubmitTask = nil
+        leagueCurrentCountry = nextLeagueCountry()
+    }
+    
+    func finishLeagueMatch() {
+        guard leagueMatchActive else { return }
+        leagueMatchActive = false
+        isLeagueAnswerFocused = false
+        leagueAutoSubmitTask?.cancel()
+        leagueAutoSubmitTask = nil
+        
+        let opponent = selectedLeagueOpponent
+        let opponentScore = opponent.map { max($0.leagueBestScore, Int($0.leagueAverageScore.rounded())) } ?? 600
+        let result = LeagueMatchResult(
+            id: UUID(),
+            date: Date(),
+            opponentName: opponent?.displayName ?? L("Liga-Durchschnitt", "League baseline"),
+            ownScore: leagueScore,
+            opponentScore: opponentScore,
+            correct: leagueCorrect,
+            wrong: leagueWrong,
+            duration: 60
+        )
+        
+        leagueLastResult = result
+        updateActiveProfile { profile in
+            profile.recordLeagueMatch(result)
+        }
+        Haptics.notify(result.didWin ? .success : .warning)
+    }
+    
+    func nextLeagueCountry() -> Country {
+        let candidates = availableCountries.filter { !leagueRecentCountryCodes.contains($0.code) }
+        return (candidates.isEmpty ? availableCountries : candidates).randomElement() ?? allCountries[0]
+    }
+    
+    func evaluateLeagueAnswer(_ value: String) {
+        leagueAutoSubmitTask?.cancel()
+        let match = bestLeagueAnswerMatch(for: value)
+        leagueAnswerMatch = match
+        
+        guard
+            leagueMatchActive,
+            let match,
+            match.country == leagueCurrentCountry,
+            match.isCertain
+        else {
+            return
+        }
+        
+        let submittedText = value
+        leagueAutoSubmitTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard leagueMatchActive, leagueAnswerText == submittedText else { return }
+            submitLeagueAnswer()
+        }
+    }
+    
+    func bestLeagueAnswerMatch(for rawAnswer: String) -> LeagueAnswerMatch? {
+        let answer = normalizedLeagueAnswer(rawAnswer)
+        guard answer.count >= 2 else { return nil }
+        
+        let scoredMatches = availableCountries.compactMap { country -> LeagueAnswerMatch? in
+            let aliases = leagueAnswerAliases(for: country)
+            guard let bestAlias = aliases
+                .map({ alias in (name: alias.displayName, score: leagueSimilarity(answer: answer, candidate: alias.normalizedName)) })
+                .max(by: { $0.score < $1.score })
+            else {
+                return nil
+            }
+            
+            guard bestAlias.score >= 0.45 else { return nil }
+            return LeagueAnswerMatch(country: country, matchedName: bestAlias.name, confidence: bestAlias.score, runnerUpConfidence: 0)
+        }
+        .sorted { first, second in
+            if first.confidence == second.confidence {
+                return localizedCountryName(first.country, language: appLanguage).count < localizedCountryName(second.country, language: appLanguage).count
+            }
+            return first.confidence > second.confidence
+        }
+        
+        guard let best = scoredMatches.first else { return nil }
+        let runnerUp = scoredMatches.dropFirst().first?.confidence ?? 0
+        return LeagueAnswerMatch(country: best.country, matchedName: best.matchedName, confidence: best.confidence, runnerUpConfidence: runnerUp)
+    }
+    
+    func leagueAnswerAliases(for country: Country) -> [(displayName: String, normalizedName: String)] {
+        let rawAliases = [
+            localizedCountryName(country, language: appLanguage),
+            country.name,
+            countryEnglishNameByCode[country.code]
+        ].compactMap { $0 }
+        
+        let aliases = Set(rawAliases.flatMap { name -> [String] in
+            let normalized = normalizedLeagueAnswer(name)
+            var values = [name]
+            if normalized.hasPrefix("vereinigte ") {
+                values.append(normalized.replacingOccurrences(of: "vereinigte ", with: ""))
+            }
+            if normalized.hasPrefix("demokratische republik ") {
+                values.append(normalized.replacingOccurrences(of: "demokratische republik ", with: ""))
+            }
+            if normalized.contains("("), let prefix = normalized.split(separator: "(").first {
+                values.append(String(prefix))
+            }
+            return values
+        })
+        
+        return aliases.map { alias in
+            (displayName: alias, normalizedName: normalizedLeagueAnswer(alias))
+        }
+        .filter { !$0.normalizedName.isEmpty }
+    }
+    
+    func leagueSimilarity(answer: String, candidate: String) -> Double {
+        guard !answer.isEmpty, !candidate.isEmpty else { return 0 }
+        if answer == candidate { return 1 }
+        
+        let shorterCount = min(answer.count, candidate.count)
+        let longerCount = max(answer.count, candidate.count)
+        let prefixLength = commonPrefixLength(answer, candidate)
+        
+        if candidate.hasPrefix(answer), answer.count >= 3 {
+            let completeness = Double(answer.count) / Double(candidate.count)
+            return min(0.94, 0.78 + completeness * 0.16)
+        }
+        
+        if answer.hasPrefix(candidate), candidate.count >= 3 {
+            let extraPenalty = Double(answer.count - candidate.count) / Double(max(answer.count, 1))
+            return max(0.72, 0.92 - extraPenalty * 0.35)
+        }
+        
+        let maxDistance: Int
+        switch longerCount {
+        case 0...4:
+            maxDistance = 1
+        case 5...8:
+            maxDistance = 2
+        default:
+            maxDistance = 3
+        }
+        
+        let distance = levenshteinDistance(answer, candidate, maxDistance: maxDistance + 1)
+        let similarity = 1 - (Double(distance) / Double(longerCount))
+        let prefixBonus = min(Double(prefixLength) / Double(max(shorterCount, 1)), 1) * 0.08
+        return min(similarity + prefixBonus, 0.99)
+    }
+    
+    func commonPrefixLength(_ first: String, _ second: String) -> Int {
+        var count = 0
+        for (left, right) in zip(first, second) {
+            guard left == right else { break }
+            count += 1
+        }
+        return count
+    }
+    
+    func levenshteinDistance(_ first: String, _ second: String, maxDistance: Int) -> Int {
+        let firstCharacters = Array(first)
+        let secondCharacters = Array(second)
+        guard !firstCharacters.isEmpty else { return secondCharacters.count }
+        guard !secondCharacters.isEmpty else { return firstCharacters.count }
+        if abs(firstCharacters.count - secondCharacters.count) > maxDistance {
+            return maxDistance + 1
+        }
+        
+        var previous = Array(0...secondCharacters.count)
+        var current = Array(repeating: 0, count: secondCharacters.count + 1)
+        
+        for firstIndex in 1...firstCharacters.count {
+            current[0] = firstIndex
+            var rowMinimum = current[0]
+            
+            for secondIndex in 1...secondCharacters.count {
+                let cost = firstCharacters[firstIndex - 1] == secondCharacters[secondIndex - 1] ? 0 : 1
+                current[secondIndex] = min(
+                    previous[secondIndex] + 1,
+                    current[secondIndex - 1] + 1,
+                    previous[secondIndex - 1] + cost
+                )
+                rowMinimum = min(rowMinimum, current[secondIndex])
+            }
+            
+            if rowMinimum > maxDistance {
+                return maxDistance + 1
+            }
+            
+            swap(&previous, &current)
+        }
+        
+        return previous[secondCharacters.count]
+    }
+    
+    func normalizedLeagueAnswer(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "ß", with: "ss")
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: ".", with: "")
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: "(", with: " ")
+            .replacingOccurrences(of: ")", with: " ")
+            .split(separator: " ")
+            .joined(separator: " ")
+    }
+    
     var optionsView: some View {
         List {
             Section(L("Vollversion", "Full version")) {
@@ -6845,30 +7539,75 @@ struct MasteryScoreCard: View {
     }
     
     var scoreInfoView: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(localized("Berechnung", "Calculation", language: language))
-                .font(.headline)
-            Text(localized("Jede Karte bekommt nach ihrer Stufe Punkte: F=0, D=20, C=40, B=60, A=80, S=100. Alle Werte werden addiert und durch die Anzahl aller Karten geteilt. Der beste Flaggenboss-Score ist 100.", "Each card gets points from its tier: F=0, D=20, C=40, B=60, A=80, S=100. All values are added and divided by the number of cards. The best Flaggenboss score is 100.", language: language))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 5) {
+        let totalCards = rows.reduce(0) { $0 + $1.count }
+        let weightedPoints = rows.reduce(0.0) { $0 + ($1.value * 100 * Double($1.count)) }
+        
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "function")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(accentColor)
+                    .frame(width: 32, height: 32)
+                    .background(accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(localized("Berechnung", "Calculation", language: language))
+                        .font(.headline)
+                    Text(localized("Stufenpunkte geteilt durch alle Karten", "Tier points divided by all cards", language: language))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text(localized("Formel", "Formula", language: language))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                
+                Text("(S x 100 + A x 80 + B x 60 + C x 40 + D x 20 + F x 0) / \(max(totalCards, 1))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+            
+            VStack(alignment: .leading, spacing: 7) {
                 ForEach(rows) { row in
-                    HStack {
+                    HStack(spacing: 10) {
                         Text(row.tier.rawValue)
                             .font(.caption.weight(.bold))
                             .foregroundStyle(.white)
                             .frame(width: 24, height: 22)
                             .background(row.tier.color, in: RoundedRectangle(cornerRadius: 5))
-                        Text(String(format: "%.0f × %d", row.value * 100, row.count))
+                        
+                        Text(row.tier.description)
+                            .font(.caption)
+                            .foregroundStyle(.primary)
+                        
+                        Spacer(minLength: 8)
+                        
+                        Text(String(format: "%.0f x %d", row.value * 100, row.count))
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                 }
             }
+            
+            Divider()
+            
+            HStack {
+                Text(localized("Ergebnis", "Result", language: language))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text(String(format: "%.0f / %d = %.1f", weightedPoints, max(totalCards, 1), score * 100))
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(accentColor)
+            }
         }
         .padding(16)
-        .frame(width: 320, alignment: .leading)
+        .frame(width: 340, alignment: .leading)
         .presentationCompactAdaptation(.popover)
     }
 }
@@ -7866,6 +8605,41 @@ struct OnlinePlayerStatsRow: View {
     
     func percent(_ value: Double) -> String {
         String(format: "%.1f %%", value * 100)
+    }
+}
+
+struct LeagueLeaderboardRow: View {
+    let player: OnlinePlayerStats
+    let isCurrentPlayer: Bool
+    let language: AppLanguage
+    
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: isCurrentPlayer ? "person.crop.circle.fill.badge.checkmark" : "person.crop.circle")
+                .font(.title3)
+                .foregroundStyle(isCurrentPlayer ? .green : .secondary)
+                .frame(width: 30)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(player.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text(localized("\(player.leaguePlayed) Spiele · \(player.leagueWins) Siege", "\(player.leaguePlayed) matches · \(player.leagueWins) wins", language: language))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(player.leagueRating)")
+                    .font(.subheadline.monospacedDigit().weight(.bold))
+                Text(localized("Best \(player.leagueBestScore)", "Best \(player.leagueBestScore)", language: language))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 
