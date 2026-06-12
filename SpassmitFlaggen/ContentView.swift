@@ -7,6 +7,8 @@ import StoreKit
 import UIKit
 import SceneKit
 import simd
+import UserNotifications
+import AudioToolbox
 
 let customFlagImageURLByCode: [String: URL] = [
     "AB": URL(string: "https://commons.wikimedia.org/wiki/Special:FilePath/Flag_of_the_Republic_of_Abkhazia.svg?width=1280")!,
@@ -612,6 +614,17 @@ struct TierHistoryEntry: Codable, Identifiable {
     var id: String { "\(date.timeIntervalSince1970)-\(tier.rawValue)" }
 }
 
+struct LeagueAnswerRecord: Identifiable, Codable {
+    let id: UUID
+    let countryCode: String
+    let countryName: String
+    let submittedAnswer: String
+    let detectedCountryName: String
+    let wasCorrect: Bool
+    let responseTime: Double
+    let pointsAwarded: Int
+}
+
 struct LeagueMatchResult: Identifiable, Codable {
     let id: UUID
     let date: Date
@@ -621,6 +634,10 @@ struct LeagueMatchResult: Identifiable, Codable {
     let correct: Int
     let wrong: Int
     let duration: Int
+    let answerDetails: [LeagueAnswerRecord]?
+    let ratingBefore: Int?
+    let ratingAfter: Int?
+    let ratingDelta: Int?
     
     var totalAnswers: Int {
         correct + wrong
@@ -631,12 +648,18 @@ struct LeagueMatchResult: Identifiable, Codable {
     }
     
     var didWin: Bool {
-        ownScore > opponentScore
+        ownScore >= opponentScore
     }
-    
-    var didDraw: Bool {
-        ownScore == opponentScore
-    }
+}
+
+struct LeaguePresetOpponent: Identifiable {
+    let id: String
+    let titleDE: String
+    let titleEN: String
+    let subtitleDE: String
+    let subtitleEN: String
+    let score: Int
+    let rating: Int
 }
 
 struct LeagueStats: Codable {
@@ -662,27 +685,60 @@ struct LeagueStats: Codable {
         return total == 0 ? 0 : Double(totalCorrect) / Double(total)
     }
     
-    mutating func recordMatch(_ result: LeagueMatchResult) {
+    var leagueName: String {
+        switch rating {
+        case ..<800: return "Bronze"
+        case 800..<1100: return "Silber"
+        case 1100..<1400: return "Gold"
+        case 1400..<1700: return "Platin"
+        case 1700..<2000: return "Meister"
+        default: return "Legende"
+        }
+    }
+    
+    var division: String {
+        let clampedRating = max(rating, 100)
+        let positionInLeague = clampedRating % 300
+        switch positionInLeague {
+        case 0..<100: return "III"
+        case 100..<200: return "II"
+        default: return "I"
+        }
+    }
+    
+    var leagueTitle: String {
+        "\(leagueName) \(division)"
+    }
+    
+    var nextDivisionRating: Int {
+        let clampedRating = max(rating, 100)
+        return ((clampedRating / 100) + 1) * 100
+    }
+    
+    mutating func recordMatch(_ result: LeagueMatchResult, opponentRating: Int) {
         played += 1
         bestScore = max(bestScore, result.ownScore)
         totalScore += result.ownScore
         totalCorrect += result.correct
         totalWrong += result.wrong
         
-        if result.didDraw {
-            draws += 1
-            rating += 3
-            currentWinStreak = 0
-        } else if result.didWin {
+        let actualScore: Double
+        
+        if result.didWin {
             wins += 1
-            rating += 18
+            actualScore = 1
             currentWinStreak += 1
             bestWinStreak = max(bestWinStreak, currentWinStreak)
         } else {
             losses += 1
-            rating = max(100, rating - 12)
+            actualScore = 0
             currentWinStreak = 0
         }
+        
+        let expectedScore = 1 / (1 + pow(10, Double(opponentRating - rating) / 400))
+        let performanceBonus = min(max(Double(result.ownScore - result.opponentScore) / 1000, -0.08), 0.08)
+        let delta = Int((32 * (actualScore - expectedScore + performanceBonus)).rounded())
+        rating = max(100, rating + delta)
         
         recentMatches.insert(result, at: 0)
         recentMatches = Array(recentMatches.prefix(12))
@@ -692,16 +748,29 @@ struct LeagueStats: Codable {
 struct LeagueAnswerMatch {
     let country: Country
     let matchedName: String
+    let normalizedAnswer: String
+    let normalizedMatchedName: String
     let confidence: Double
     let runnerUpConfidence: Double
     
     var isCertain: Bool {
-        confidence >= 0.88 && confidence - runnerUpConfidence >= 0.08
+        normalizedAnswer.count >= 3
+            && confidence >= 0.84
+            && confidence - runnerUpConfidence >= 0.07
     }
     
     var isAcceptable: Bool {
-        confidence >= 0.76 && confidence - runnerUpConfidence >= 0.04
+        normalizedAnswer.count >= 3
+            && confidence >= 0.72
+            && confidence - runnerUpConfidence >= 0.04
     }
+}
+
+enum LeagueMatchPhase {
+    case loading
+    case countdown
+    case playing
+    case feedback
 }
 
 struct CountryStats: Codable {
@@ -967,9 +1036,9 @@ struct UserProfile: Identifiable, Codable {
         byCountry[key] = countryStats
     }
     
-    mutating func recordLeagueMatch(_ result: LeagueMatchResult) {
+    mutating func recordLeagueMatch(_ result: LeagueMatchResult, opponentRating: Int = 1000) {
         var stats = leagueStats ?? LeagueStats()
-        stats.recordMatch(result)
+        stats.recordMatch(result, opponentRating: opponentRating)
         leagueStats = stats
     }
     
@@ -1078,8 +1147,28 @@ struct OnlinePlayerStats: Identifiable {
     }
 }
 
+struct LeagueLiveMatch {
+    let id: String
+    let playerAID: String
+    let playerBID: String
+    let playerAName: String
+    let playerBName: String
+    let countryCodes: [String]
+    let playerAScore: Int?
+    let playerBScore: Int?
+    
+    func opponentName(for playerID: String) -> String {
+        playerID == playerAID ? playerBName : playerAName
+    }
+    
+    func opponentScore(for playerID: String) -> Int? {
+        playerID == playerAID ? playerBScore : playerAScore
+    }
+}
+
 enum OnlineStatsService {
     static let recordType = "PlayerStats"
+    static let liveMatchRecordType = "LeagueLiveMatch"
     static let nicknameRecordType = "NicknameClaim"
     static let playerIDKey = "onlinePlayerID"
     static let testFriendName = "FlaggenTest"
@@ -1136,6 +1225,7 @@ enum OnlineStatsService {
         name: String,
         gameCenterPlayerID: String?,
         gameCenterAlias: String,
+        appData: AppData,
         profile: UserProfile,
         countries: [Country],
         subject: LearningSubject,
@@ -1179,10 +1269,42 @@ enum OnlineStatsService {
         record["sTierHistory"] = sTierHistorySnapshot(profile: profile, countries: countries, subject: subject) as CKRecordValue
         record["profileSnapshot"] = profileSnapshot
         record["profileSnapshotVersion"] = 1 as CKRecordValue
+        record["appDataSnapshot"] = try appDataSnapshotData(appData)
+        record["appDataSnapshotVersion"] = 1 as CKRecordValue
         record["updatedAt"] = Date() as CKRecordValue
         
         try await save(record: record)
         try? await deleteLegacyAnonymousRecordIfNeeded(currentRecordName: playerRecordName, gameCenterPlayerID: gameCenterPlayerID)
+    }
+    
+    static func fetchAppDataSnapshot(gameCenterPlayerID: String?) async throws -> AppData? {
+        try await ensureAccountAvailable()
+        let playerRecordName = playerID(gameCenterPlayerID: gameCenterPlayerID)
+        guard let record = try await fetchRecord(recordID: CKRecord.ID(recordName: playerRecordName)) else {
+            return nil
+        }
+        
+        if let snapshotData = record["appDataSnapshot"] as? Data,
+           let snapshot = try? JSONDecoder().decode(AppData.self, from: snapshotData) {
+            return snapshot
+        }
+        
+        if let snapshotData = record["appDataSnapshot"] as? NSData,
+           let snapshot = try? JSONDecoder().decode(AppData.self, from: snapshotData as Data) {
+            return snapshot
+        }
+        
+        if let profileData = record["profileSnapshot"] as? Data,
+           let profile = try? JSONDecoder().decode(UserProfile.self, from: profileData) {
+            return AppData(profiles: [profile], activeProfileID: profile.id)
+        }
+        
+        if let profileData = record["profileSnapshot"] as? NSData,
+           let profile = try? JSONDecoder().decode(UserProfile.self, from: profileData as Data) {
+            return AppData(profiles: [profile], activeProfileID: profile.id)
+        }
+        
+        return nil
     }
     
     static func fetchLeaderboard() async throws -> [OnlinePlayerStats] {
@@ -1197,6 +1319,67 @@ enum OnlineStatsService {
                 }
                 return $0.totalPracticed > $1.totalPracticed
             }
+    }
+    
+    static func findOrCreateLiveLeagueMatch(
+        currentPlayerID: String,
+        currentPlayerName: String,
+        opponent: OnlinePlayerStats,
+        countries: [Country]
+    ) async throws -> LeagueLiveMatch {
+        try await ensureAccountAvailable()
+        let ids = [currentPlayerID, opponent.id].sorted()
+        let recordName = "league_live_" + ids.joined(separator: "_").filter { $0.isLetter || $0.isNumber || $0 == "_" }
+        let recordID = CKRecord.ID(recordName: recordName)
+        
+        if let existing = try await fetchRecord(recordID: recordID),
+           let match = LeagueLiveMatch(record: existing),
+           match.countryCodes.count >= 20,
+           existing["createdAt"] as? Date ?? .distantPast > Date().addingTimeInterval(-900),
+           (match.playerAScore == nil || match.playerBScore == nil) {
+            return match
+        }
+        
+        let currentIsA = currentPlayerID == ids[0]
+        let sequence = countries.shuffled().prefix(80).map(\.code).joined(separator: "|")
+        let record = CKRecord(recordType: liveMatchRecordType, recordID: recordID)
+        record["playerAID"] = ids[0] as CKRecordValue
+        record["playerBID"] = ids[1] as CKRecordValue
+        record["playerAName"] = (currentIsA ? currentPlayerName : opponent.displayName) as CKRecordValue
+        record["playerBName"] = (currentIsA ? opponent.displayName : currentPlayerName) as CKRecordValue
+        record["countryCodes"] = sequence as CKRecordValue
+        record["createdAt"] = Date() as CKRecordValue
+        record["updatedAt"] = Date() as CKRecordValue
+        try await save(record: record)
+        return LeagueLiveMatch(record: record) ?? LeagueLiveMatch(
+            id: recordName,
+            playerAID: ids[0],
+            playerBID: ids[1],
+            playerAName: currentIsA ? currentPlayerName : opponent.displayName,
+            playerBName: currentIsA ? opponent.displayName : currentPlayerName,
+            countryCodes: sequence.split(separator: "|").map(String.init),
+            playerAScore: nil,
+            playerBScore: nil
+        )
+    }
+    
+    static func submitLiveLeagueScore(matchID: String, playerID: String, score: Int) async throws {
+        try await ensureAccountAvailable()
+        let recordID = CKRecord.ID(recordName: matchID)
+        guard let record = try await fetchRecord(recordID: recordID) else { return }
+        if (record["playerAID"] as? String) == playerID {
+            record["playerAScore"] = score as CKRecordValue
+        } else if (record["playerBID"] as? String) == playerID {
+            record["playerBScore"] = score as CKRecordValue
+        }
+        record["updatedAt"] = Date() as CKRecordValue
+        try await save(record: record)
+    }
+    
+    static func fetchLiveLeagueMatch(matchID: String) async throws -> LeagueLiveMatch? {
+        try await ensureAccountAvailable()
+        guard let record = try await fetchRecord(recordID: CKRecord.ID(recordName: matchID)) else { return nil }
+        return LeagueLiveMatch(record: record)
     }
     
     static func createTestFriend(countries: [Country]) async throws {
@@ -1460,6 +1643,13 @@ enum OnlineStatsService {
         return data as NSData
     }
     
+    static func appDataSnapshotData(_ appData: AppData) throws -> CKRecordValue {
+        guard let data = try? JSONEncoder().encode(appData) else {
+            throw OnlineStatsError.profileSnapshotEncodingFailed
+        }
+        return data as NSData
+    }
+    
     static func ensureAccountAvailable() async throws {
         let status: CKAccountStatus = try await withTimeout(seconds: 8) {
             try await withCheckedThrowingContinuation { continuation in
@@ -1543,13 +1733,35 @@ extension OnlinePlayerStats {
     }
 }
 
+extension LeagueLiveMatch {
+    init?(record: CKRecord) {
+        guard let playerAID = record["playerAID"] as? String,
+              let playerBID = record["playerBID"] as? String,
+              let playerAName = record["playerAName"] as? String,
+              let playerBName = record["playerBName"] as? String,
+              let countryCodesRaw = record["countryCodes"] as? String else {
+            return nil
+        }
+        
+        id = record.recordID.recordName
+        self.playerAID = playerAID
+        self.playerBID = playerBID
+        self.playerAName = playerAName
+        self.playerBName = playerBName
+        countryCodes = countryCodesRaw.split(separator: "|").map(String.init)
+        playerAScore = (record["playerAScore"] as? NSNumber)?.intValue
+        playerBScore = (record["playerBScore"] as? NSNumber)?.intValue
+    }
+}
+
 enum CountryScope {
     static let worldwide = "Alle Länder"
 }
 
-enum AppScreen: String, CaseIterable, Hashable {
+enum AppScreen: String, CaseIterable, Hashable, Identifiable {
     case practice = "practice"
     case showmaster = "showmaster"
+    case miniWorldCup = "miniWorldCup"
     case league = "league"
     case statistics = "statistics"
     case globe = "globe"
@@ -1561,7 +1773,8 @@ enum AppScreen: String, CaseIterable, Hashable {
         switch self {
         case .practice: return localized("Üben", "Practice", language: language)
         case .showmaster: return "Showmaster"
-        case .league: return localized("Liga", "League", language: language)
+        case .miniWorldCup: return "Mini-WM"
+        case .league: return localized("Liga (WIP)", "League (WIP)", language: language)
         case .statistics: return localized("Statistik", "Statistics", language: language)
         case .globe: return localized("Globus", "Globe", language: language)
         case .achievements: return localized("Achievements", "Achievements", language: language)
@@ -1574,12 +1787,38 @@ enum AppScreen: String, CaseIterable, Hashable {
         switch self {
         case .practice: return "rectangle.stack.fill"
         case .showmaster: return "rectangle.on.rectangle"
-        case .league: return "bolt.trophy.fill"
+        case .miniWorldCup: return "trophy.fill"
+        case .league: return "trophy.circle.fill"
         case .statistics: return "chart.bar.fill"
         case .globe: return "globe.europe.africa.fill"
         case .achievements: return "trophy.fill"
         case .friends: return "person.2.fill"
         case .options: return "gearshape.fill"
+        }
+    }
+    
+    var id: String { rawValue }
+    
+    func infoText(language: AppLanguage) -> String {
+        switch self {
+        case .practice:
+            return localized("Trainiere einzelne Flaggen oder Hauptstädte. Du wischt Karten als gewusst oder nicht gewusst, damit schwierige Karten häufiger kommen.", "Train individual flags or capitals. Swipe cards as known or not known so difficult cards appear more often.", language: language)
+        case .showmaster:
+            return localized("Starte eine kurze Kartenrunde ohne Eingabe. Du entscheidest selbst, ob eine Flagge gewusst wurde.", "Start a short card round without typing. You decide whether a flag was known.", language: language)
+        case .miniWorldCup:
+            return localized("Gib das Handy im Kreis weiter. Jede Person bekommt Flaggen, braucht genug richtige Antworten und scheidet sonst aus.", "Pass the phone around. Each person gets flags, needs enough correct answers, and is eliminated otherwise.", language: language)
+        case .league:
+            return localized("WIP: Liga, ELO und 1-gegen-1-Runden. Dieser Bereich ist noch im Aufbau.", "WIP: league, ELO, and 1v1 rounds. This area is still being built.", language: language)
+        case .statistics:
+            return localized("Sieh deine Lernstände, Trefferquoten, Serien und gespeicherten Ergebnisse.", "View your mastery levels, accuracy, streaks, and saved results.", language: language)
+        case .globe:
+            return localized("Erkunde deine Länder auf dem Globus und öffne einzelne Statistiken direkt über die Karte.", "Explore your countries on the globe and open individual stats directly from the map.", language: language)
+        case .achievements:
+            return localized("Hier siehst du freigeschaltete Erfolge und deinen Fortschritt zu den nächsten Zielen.", "See unlocked achievements and your progress toward the next goals.", language: language)
+        case .friends:
+            return localized("Verbinde Onlinefunktionen, vergleiche Fortschritt und verwalte Freundesdaten.", "Connect online features, compare progress, and manage friend data.", language: language)
+        case .options:
+            return localized("Passe Sprache, Daten, Onlinefunktionen, Debugschalter und App-Einstellungen an.", "Adjust language, data, online features, debug toggles, and app settings.", language: language)
         }
     }
 }
@@ -1683,6 +1922,34 @@ struct ShowHistoryPreview: Identifiable, Equatable {
     static func == (lhs: ShowHistoryPreview, rhs: ShowHistoryPreview) -> Bool {
         lhs.id == rhs.id && lhs.index == rhs.index && lhs.total == rhs.total
     }
+}
+
+struct MiniWorldCupPlayer: Identifiable, Equatable {
+    let id = UUID()
+    var name: String
+}
+
+struct MiniWorldCupElimination: Identifiable, Equatable {
+    let id = UUID()
+    let playerName: String
+    let country: Country
+    let round: Int
+    let correctCount: Int
+    let flagCount: Int
+}
+
+struct MiniWorldCupBracketRow: Identifiable {
+    let place: Int
+    let elimination: MiniWorldCupElimination
+    
+    var id: UUID { elimination.id }
+}
+
+enum MiniWorldCupPhase {
+    case setup
+    case handoff
+    case question
+    case finished
 }
 
 struct PracticeUndoSnapshot {
@@ -1830,6 +2097,7 @@ struct ContentView: View {
     @AppStorage("includePartiallyRecognizedFlags") private var includePartiallyRecognizedFlags: Bool = false
     @AppStorage("onlineFeaturesEnabled") private var onlineFeaturesEnabled: Bool = true
     @AppStorage("didEnableOnlineByDefault") private var didEnableOnlineByDefault: Bool = false
+    @AppStorage("debugToolsEnabled") private var debugToolsEnabled: Bool = false
     @AppStorage("fullVersionUnlocked") private var fullVersionUnlocked: Bool = false
     @StateObject private var storeKit = StoreKitManager()
     @State private var appData: AppData = AppStorageService.load()
@@ -1837,6 +2105,8 @@ struct ContentView: View {
     @State private var onlineLeaderboardRefreshID: Int = 0
     @State private var onlineStatusText: String = "Online-Rangliste noch nicht geladen"
     @State private var isSyncingOnlineStats: Bool = false
+    @State private var isRestoringCloudBackup: Bool = false
+    @State private var cloudBackupRestoreAttemptedPlayerID: String = ""
     @State private var pendingOnlineSyncTask: Task<Void, Never>?
     @State private var isGameCenterAuthenticated: Bool = false
     @State private var gameCenterPlayerID: String = ""
@@ -1866,7 +2136,9 @@ struct ContentView: View {
     @State private var selectedPracticeCardLimit: Int = 10
     @State private var selectedShowCardLimit: Int = 0
     @State private var showAvoidsRecentRepeats: Bool = true
-    @State private var selectedLeagueOpponentID: String = ""
+    @State private var leagueShowsStartMenu: Bool = true
+    @State private var leagueOpponentPickerPulse: Bool = false
+    @State private var selectedLeagueOpponentID: String = "preset_average"
     @State private var leagueMatchActive: Bool = false
     @State private var leagueSecondsRemaining: Int = 60
     @State private var leagueCurrentCountry: Country = allCountries[0]
@@ -1875,9 +2147,36 @@ struct ContentView: View {
     @State private var leagueWrong: Int = 0
     @State private var leagueScore: Int = 0
     @State private var leagueRecentCountryCodes: [String] = []
-    @State private var leagueLastResult: LeagueMatchResult?
+    @State private var leagueAnswerRecords: [LeagueAnswerRecord] = []
+    @State private var leagueSummaryResult: LeagueMatchResult?
     @State private var leagueAnswerMatch: LeagueAnswerMatch?
     @State private var leagueAutoSubmitTask: Task<Void, Never>?
+    @State private var leagueTimerIsRunning: Bool = false
+    @State private var leagueTimerStartTask: Task<Void, Never>?
+    @State private var leagueCountdownTask: Task<Void, Never>?
+    @State private var leagueAdvanceTask: Task<Void, Never>?
+    @State private var leagueFeedbackClearTask: Task<Void, Never>?
+    @State private var leagueInputIsLocked: Bool = false
+    @State private var leagueLockedAnswerText: String = ""
+    @State private var leagueAnswerFeedback: Bool?
+    @State private var leagueRevealedCountryName: String = ""
+    @State private var leagueMatchPhase: LeagueMatchPhase = .loading
+    @State private var leagueStartCountdown: Int = 3
+    @State private var leagueFirstFlagIsReady: Bool = false
+    @State private var leaguePreloadedFlagImage: UIImage?
+    @State private var leagueTypingLockedUntil: Date = .distantPast
+    @State private var leagueCurrentQuestionStartedAt: Date = Date()
+    @State private var leagueIsPreparingLiveMatch: Bool = false
+    @State private var leagueLiveMatchID: String?
+    @State private var leagueLivePlayerID: String = ""
+    @State private var leagueLiveOpponentName: String = ""
+    @State private var leagueLiveOpponentScore: Int?
+    @State private var leagueLiveCountryCodes: [String] = []
+    @State private var leagueLiveCountryIndex: Int = 0
+    @State private var leagueLiveResultText: String = ""
+    @State private var leagueLivePollTask: Task<Void, Never>?
+    @State private var leagueNotificationsAuthorized: Bool = false
+    @State private var leagueTestFriendEnsured: Bool = false
     @FocusState private var isLeagueAnswerFocused: Bool
     @State private var practiceSessionSeenCountryCodes: Set<String> = []
     @State private var showRecentCountryCodes: [String] = []
@@ -1898,6 +2197,20 @@ struct ContentView: View {
     @State private var showSessionEntries: [ShowSessionEntry] = []
     @State private var showHistoryPreview: ShowHistoryPreview?
     @State private var showHistoryBarMinY: CGFloat = 150
+    @State private var miniWorldCupPlayers: [MiniWorldCupPlayer] = []
+    @State private var miniWorldCupNewPlayerName: String = ""
+    @State private var miniWorldCupActivePlayers: [MiniWorldCupPlayer] = []
+    @State private var miniWorldCupEliminations: [MiniWorldCupElimination] = []
+    @State private var miniWorldCupPhase: MiniWorldCupPhase = .setup
+    @State private var miniWorldCupCurrentPlayerIndex: Int = 0
+    @State private var miniWorldCupCurrentCountry: Country = allCountries[0]
+    @State private var miniWorldCupRound: Int = 1
+    @State private var miniWorldCupFlagsPerPlayer: Int = 2
+    @State private var miniWorldCupRequiredCorrect: Int = 1
+    @State private var miniWorldCupCurrentAttempt: Int = 1
+    @State private var miniWorldCupCurrentCorrect: Int = 0
+    @State private var miniWorldCupCardDragOffset: CGSize = .zero
+    @State private var miniWorldCupAnswerFeedback: Bool?
     @State private var currentCountry: Country = allCountries[0]
     @State private var cardIsFlipped: Bool = false
     @State private var cardHintIsVisible: Bool = false
@@ -1917,6 +2230,7 @@ struct ContentView: View {
     @State private var selectedTierDecayChangeID: String?
     @State private var achievementPopupItem: AchievementItem?
     @State private var achievementSortMode: AchievementSortMode = .category
+    @State private var selectedMenuInfoScreen: AppScreen?
     @State private var isShowingResetConfirmation: Bool = false
     @State private var isShowingShowCancelConfirmation: Bool = false
     
@@ -1930,6 +2244,8 @@ struct ContentView: View {
                             practiceView
                         case .showmaster:
                             showView
+                        case .miniWorldCup:
+                            miniWorldCupView
                         case .league:
                             leagueView
                         case .statistics:
@@ -1983,6 +2299,9 @@ struct ContentView: View {
         }
         .sheet(item: $selectedOnlineGlobePlayer) { player in
             onlineGlobeSheet(for: player)
+        }
+        .sheet(item: $selectedMenuInfoScreen) { screen in
+            menuInfoSheet(for: screen)
         }
         .sheet(isPresented: $isShowingFriendList) {
             friendListSheet
@@ -2046,15 +2365,6 @@ struct ContentView: View {
         }
         .onChange(of: storeKit.purchasedFullVersion) { _, isUnlocked in
             fullVersionUnlocked = isUnlocked
-        }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            guard leagueMatchActive else { return }
-            if leagueSecondsRemaining > 0 {
-                leagueSecondsRemaining -= 1
-            }
-            if leagueSecondsRemaining == 0 {
-                finishLeagueMatch()
-            }
         }
         .onChange(of: fullVersionUnlocked) { _, isUnlocked in
             if !isUnlocked {
@@ -2912,33 +3222,50 @@ struct ContentView: View {
                     
                     VStack(spacing: 12) {
                         ForEach(AppScreen.allCases, id: \.self) { screen in
-                            NavigationLink(value: screen) {
-                                HStack(spacing: 14) {
-                                    Image(systemName: screen.iconName)
-                                        .font(.title3)
-                                        .frame(width: 28)
-                                    Text(screen.title(language: appLanguage))
-                                        .font(.title3.weight(.semibold))
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.82)
-                                    Spacer()
-                                    if screen == .globe && !fullVersionUnlocked {
-                                        Image(systemName: "lock.fill")
-                                            .font(.subheadline.weight(.semibold))
+                            HStack(spacing: 10) {
+                                NavigationLink(value: screen) {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: screen.iconName)
+                                            .font(.title3)
+                                            .frame(width: 28)
+                                        Text(screen.title(language: appLanguage))
+                                            .font(.title3.weight(.semibold))
+                                            .lineLimit(1)
+                                            .minimumScaleFactor(0.82)
+                                        Spacer()
+                                        if screen == .globe && !fullVersionUnlocked {
+                                            Image(systemName: "lock.fill")
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Image(systemName: "chevron.right")
+                                            .font(.headline)
                                             .foregroundStyle(.secondary)
                                     }
-                                    Image(systemName: "chevron.right")
-                                        .font(.headline)
-                                        .foregroundStyle(.secondary)
+                                    .padding(.vertical, 14)
+                                    .padding(.leading, 14)
+                                    .contentShape(Rectangle())
                                 }
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(panelBackgroundColor)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                                .contentShape(RoundedRectangle(cornerRadius: 10))
+                                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                                .buttonStyle(.plain)
+                                
+                                Button {
+                                    Haptics.tap()
+                                    selectedMenuInfoScreen = screen
+                                } label: {
+                                    Image(systemName: "info.circle.fill")
+                                        .font(.title3)
+                                        .foregroundStyle(tealAccentColor)
+                                        .frame(width: 44, height: 44)
+                                        .contentShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(L("Info zu \(screen.title(language: appLanguage))", "Info about \(screen.title(language: appLanguage))"))
                             }
-                            .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
-                            .buttonStyle(.plain)
+                            .padding(.trailing, 6)
+                            .frame(maxWidth: .infinity)
+                            .background(panelBackgroundColor)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
                     }
                     
@@ -2963,9 +3290,56 @@ struct ContentView: View {
                 .frame(maxWidth: 520)
                 .frame(maxWidth: .infinity)
             }
+            
+            if let leagueSummaryResult {
+                leagueSummaryOverlay(leagueSummaryResult)
+                    .padding(.horizontal, 18)
+                    .frame(maxWidth: 620)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.black.opacity(0.24).ignoresSafeArea())
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                    .zIndex(3)
+            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+    }
+    
+    func menuInfoSheet(for screen: AppScreen) -> some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: screen.iconName)
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(tealAccentColor)
+                    .frame(width: 72, height: 72)
+                    .background(tealAccentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+                
+                Text(screen.title(language: appLanguage))
+                    .font(.title2.weight(.bold))
+                    .multilineTextAlignment(.center)
+                
+                Text(screen.infoText(language: appLanguage))
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                Spacer(minLength: 0)
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(appBackgroundGradient.ignoresSafeArea())
+            .navigationTitle(L("Info", "Info"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(L("Fertig", "Done")) {
+                        selectedMenuInfoScreen = nil
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
     
     var practiceView: some View {
@@ -2997,7 +3371,12 @@ struct ContentView: View {
                         }
                     )
                     
-                    practiceSwipeCard
+                    VStack(spacing: 8) {
+                        practiceSwipeCard
+                        Text(L("Wischen!", "Swipe!"))
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.secondary)
+                    }
 
                     HStack(spacing: 10) {
                         Button {
@@ -3608,6 +3987,389 @@ struct ContentView: View {
         }
     }
     
+    var miniWorldCupView: some View {
+        ZStack {
+            appBackgroundGradient
+                .ignoresSafeArea()
+            
+            ScrollView {
+                VStack(spacing: 18) {
+                    modeHeader(title: "Mini-WM", subtitle: L("Handy weitergeben, Flagge wischen, bis nur noch eine Person übrig ist.", "Pass the phone, swipe the flag, until one person remains."))
+                    
+                    switch miniWorldCupPhase {
+                    case .setup:
+                        miniWorldCupSetupView
+                    case .handoff:
+                        miniWorldCupHandoffView
+                    case .question:
+                        miniWorldCupQuestionView
+                    case .finished:
+                        miniWorldCupResultView
+                    }
+                }
+                .padding()
+                .frame(maxWidth: 620)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .navigationTitle("Mini-WM")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+    
+    var miniWorldCupSetupView: some View {
+        VStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                Label(L("Spieler im Uhrzeigersinn", "Players clockwise"), systemImage: "arrow.clockwise.circle.fill")
+                    .font(.headline)
+                
+                HStack(spacing: 10) {
+                    TextField(L("Name", "Name"), text: $miniWorldCupNewPlayerName)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 11)
+                        .background(tealAccentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        .onSubmit { addMiniWorldCupPlayer() }
+                    
+                    Button {
+                        Haptics.tap()
+                        addMiniWorldCupPlayer()
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.headline.weight(.bold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(tealAccentColor)
+                }
+                
+                if miniWorldCupPlayers.isEmpty {
+                    Text(L("Füge mindestens zwei Personen in Sitzreihenfolge hinzu.", "Add at least two people in seating order."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(Array(miniWorldCupPlayers.enumerated()), id: \.element.id) { index, player in
+                            HStack(spacing: 10) {
+                                Text("\(index + 1)")
+                                    .font(.caption.monospacedDigit().weight(.bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 28, height: 28)
+                                    .background(tealAccentColor, in: Circle())
+                                Text(player.name)
+                                    .font(.headline)
+                                Spacer()
+                                Button {
+                                    Haptics.tap()
+                                    miniWorldCupPlayers.removeAll { $0.id == player.id }
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(10)
+                            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+            
+            miniWorldCupRulesView
+            
+            Button {
+                Haptics.tap()
+                startMiniWorldCup()
+            } label: {
+                Label(L("Mini-WM starten", "Start mini world cup"), systemImage: "play.fill")
+                    .font(.title3.weight(.bold))
+                    .frame(maxWidth: .infinity, minHeight: 54)
+            }
+            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+            .disabled(miniWorldCupPlayers.count < 2)
+        }
+    }
+    
+    var miniWorldCupRulesView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(L("Rundenregeln", "Round rules"), systemImage: "slider.horizontal.3")
+                .font(.headline)
+            
+            Stepper(value: $miniWorldCupFlagsPerPlayer, in: 1...5) {
+                HStack {
+                    Text(L("Flaggen pro Person", "Flags per person"))
+                    Spacer()
+                    Text("\(miniWorldCupFlagsPerPlayer)")
+                        .font(.headline.monospacedDigit())
+                        .foregroundStyle(tealAccentColor)
+                }
+            }
+            .onChange(of: miniWorldCupFlagsPerPlayer) { _, newValue in
+                miniWorldCupRequiredCorrect = min(miniWorldCupRequiredCorrect, newValue)
+            }
+            
+            Stepper(value: $miniWorldCupRequiredCorrect, in: 1...miniWorldCupFlagsPerPlayer) {
+                HStack {
+                    Text(L("Muss richtig sein", "Needed correct"))
+                    Spacer()
+                    Text("\(miniWorldCupRequiredCorrect)")
+                        .font(.headline.monospacedDigit())
+                        .foregroundStyle(tealAccentColor)
+                }
+            }
+            
+            Text(L("Standard: 2 Flaggen, 1 richtige Antwort. Ab 4 verbleibenden Personen wird automatisch auf 1 Flagge pro Person gewechselt.", "Default: 2 flags, 1 correct answer. At 4 remaining people, the game automatically switches to 1 flag per person."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    var miniWorldCupHandoffView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "hand.raised.fill")
+                .font(.system(size: 54, weight: .bold))
+                .foregroundStyle(tealAccentColor)
+                .padding(.top, 4)
+            
+            Text(L("Handy weitergeben", "Pass the phone"))
+                .font(.title.bold())
+            
+            Text(L("Gib das Handy an", "Give the phone to"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            
+            Text(miniWorldCupCurrentPlayer?.name ?? "-")
+                .font(.largeTitle.weight(.black))
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.7)
+            
+            VStack(spacing: 4) {
+                Text(L("Die Flagge wird erst nach OK angezeigt.", "The flag appears only after OK."))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(miniWorldCupTurnRuleText)
+                    .font(.caption)
+                    .foregroundStyle(tealAccentColor)
+            }
+            
+            Button {
+                Haptics.tap()
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                    miniWorldCupCardDragOffset = .zero
+                    miniWorldCupAnswerFeedback = nil
+                    miniWorldCupPhase = .question
+                }
+            } label: {
+                Label(L("OK, ich habe das Handy", "OK, I have the phone"), systemImage: "checkmark.circle.fill")
+                    .frame(maxWidth: .infinity, minHeight: 54)
+            }
+            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+        }
+        .padding(18)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+    }
+    
+    var miniWorldCupQuestionView: some View {
+        VStack(spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(miniWorldCupCurrentPlayer?.name ?? "-")
+                        .font(.title2.weight(.bold))
+                    Text(L("Wischen!", "Swipe!"))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    Text(miniWorldCupQuestionProgressText)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(tealAccentColor)
+                }
+                Spacer()
+                Text("\(miniWorldCupActivePlayers.count)")
+                    .font(.headline.monospacedDigit().weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(tealAccentColor, in: Circle())
+            }
+            
+            VStack(spacing: 12) {
+                FlagImage(country: miniWorldCupCurrentCountry, width: 260, height: 170)
+                    .padding(.top, 12)
+                Text(L("Wischen!", "Swipe!"))
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 300)
+            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(miniWorldCupSwipeColor.opacity(0.55), lineWidth: abs(miniWorldCupCardDragOffset.width) > 8 ? 3 : 1)
+            )
+            .offset(x: miniWorldCupCardDragOffset.width, y: miniWorldCupCardDragOffset.height * 0.15)
+            .rotationEffect(.degrees(Double(miniWorldCupCardDragOffset.width / 18)))
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        guard miniWorldCupAnswerFeedback == nil else { return }
+                        miniWorldCupCardDragOffset = value.translation
+                    }
+                    .onEnded { value in
+                        guard miniWorldCupAnswerFeedback == nil else { return }
+                        finishMiniWorldCupSwipe(width: value.predictedEndTranslation.width)
+                    }
+            )
+            .animation(.spring(response: 0.28, dampingFraction: 0.78), value: miniWorldCupCardDragOffset)
+            
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+    }
+    
+    var miniWorldCupResultView: some View {
+        VStack(spacing: 14) {
+            VStack(spacing: 8) {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 50, weight: .bold))
+                    .foregroundStyle(.yellow)
+                Text(L("Gewinner", "Winner"))
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                Text(miniWorldCupActivePlayers.first?.name ?? "-")
+                    .font(.largeTitle.weight(.black))
+                    .multilineTextAlignment(.center)
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity)
+            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
+            
+            miniWorldCupBracketView
+            
+            Button {
+                Haptics.tap()
+                resetMiniWorldCupToSetup(keepPlayers: true)
+            } label: {
+                Label(L("Neue Mini-WM", "New mini world cup"), systemImage: "arrow.clockwise")
+                    .frame(maxWidth: .infinity, minHeight: 52)
+            }
+            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+        }
+    }
+    
+    var miniWorldCupBracketView: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(L("Turnierbaum", "Tournament bracket"), systemImage: "trophy.fill")
+                .font(.headline)
+            
+            if let winner = miniWorldCupActivePlayers.first {
+                HStack(spacing: 10) {
+                    Text("1.")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 34, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label(winner.name, systemImage: "crown.fill")
+                            .font(.headline)
+                            .foregroundStyle(.yellow)
+                        Text(L("Champion", "Champion"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            }
+            
+            ForEach(miniWorldCupBracketStageKeys, id: \.self) { stageKey in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(miniWorldCupStageTitle(for: stageKey))
+                            .font(.subheadline.weight(.bold))
+                        Spacer()
+                        Text(miniWorldCupStageRange(for: stageKey))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    
+                    ForEach(miniWorldCupRows(forStage: stageKey)) { row in
+                        miniWorldCupBracketRow(row)
+                    }
+                }
+                .padding(10)
+                .background(tealAccentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        .padding(14)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
+    }
+    
+    func miniWorldCupBracketRow(_ row: MiniWorldCupBracketRow) -> some View {
+        HStack(spacing: 10) {
+            Text("\(row.place).")
+                .font(.caption.monospacedDigit().weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 34, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.elimination.playerName)
+                    .font(.headline)
+                Text(L("Raus bei \(localizedCountryName(row.elimination.country, language: appLanguage))", "Out on \(localizedCountryName(row.elimination.country, language: appLanguage))"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(L("Runde \(row.elimination.round) · \(row.elimination.correctCount)/\(row.elimination.flagCount) richtig", "Round \(row.elimination.round) · \(row.elimination.correctCount)/\(row.elimination.flagCount) correct"))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(tealAccentColor)
+            }
+            Spacer()
+            FlagImage(country: row.elimination.country, width: 42, height: 28)
+        }
+        .padding(10)
+        .background(panelBackgroundColor.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    var miniWorldCupBracketRows: [MiniWorldCupBracketRow] {
+        Array(miniWorldCupEliminations.enumerated()).map { index, elimination in
+            MiniWorldCupBracketRow(place: index + 2, elimination: elimination)
+        }
+    }
+    
+    var miniWorldCupBracketStageKeys: [Int] {
+        Array(Set(miniWorldCupBracketRows.map { miniWorldCupStageKey(for: $0.place) })).sorted()
+    }
+    
+    func miniWorldCupRows(forStage stageKey: Int) -> [MiniWorldCupBracketRow] {
+        miniWorldCupBracketRows.filter { miniWorldCupStageKey(for: $0.place) == stageKey }
+    }
+    
+    func miniWorldCupStageKey(for place: Int) -> Int {
+        switch place {
+        case 2: return 2
+        case 3...4: return 4
+        case 5...8: return 8
+        case 9...16: return 16
+        default: return 32
+        }
+    }
+    
+    func miniWorldCupStageTitle(for stageKey: Int) -> String {
+        switch stageKey {
+        case 2: return L("Finale", "Final")
+        case 4: return L("Halbfinale", "Semifinal")
+        case 8: return L("Viertelfinale", "Quarterfinal")
+        case 16: return L("Achtelfinale", "Round of 16")
+        default: return L("Frühe Runden", "Early rounds")
+        }
+    }
+    
+    func miniWorldCupStageRange(for stageKey: Int) -> String {
+        let places = miniWorldCupRows(forStage: stageKey).map(\.place).sorted()
+        guard let first = places.first, let last = places.last else { return "" }
+        return first == last ? L("Platz \(first)", "Place \(first)") : L("Platz \(first)-\(last)", "Places \(first)-\(last)")
+    }
+    
     var achievementsView: some View {
         List {
             Section {
@@ -4120,10 +4882,13 @@ struct ContentView: View {
         }
         .task {
             guard onlineFeaturesEnabled else { return }
+            await requestLeagueNotificationPermissionIfNeeded()
+            try? await Task.sleep(for: .milliseconds(350))
+            guard onlineFeaturesEnabled, onlineLeaderboard.isEmpty else { return }
             if !isGameCenterAuthenticated {
                 authenticateGameCenter(syncAfterAuthentication: true)
             } else {
-                await loadOnlineStats(forceRefresh: true)
+                await loadOnlineStats()
             }
         }
     }
@@ -4730,10 +5495,12 @@ struct ContentView: View {
             
             ScrollView {
                 VStack(spacing: 16) {
-                    modeHeader(title: L("Liga", "League"), subtitle: L("One-on-One auf Zeit", "Timed one-on-one"))
+                    modeHeader(title: L("Liga (WIP)", "League (WIP)"), subtitle: L("One-on-One auf Zeit", "Timed one-on-one"))
                     
                     if leagueMatchActive {
                         leagueMatchCard
+                    } else if leagueShowsStartMenu {
+                        leagueStartMenuView
                     } else {
                         leagueSetupView
                     }
@@ -4743,41 +5510,198 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .navigationTitle(L("Liga", "League"))
+        .navigationTitle(L("Liga (WIP)", "League (WIP)"))
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            if leagueMatchActive && leagueMatchPhase == .playing {
+                leagueUnknownButton
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial)
+            }
+        }
         .task {
             guard onlineFeaturesEnabled else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            if !isGameCenterAuthenticated {
+                authenticateGameCenter(syncAfterAuthentication: false)
+            } else if gameCenterFriendIDs.isEmpty {
+                await loadGameCenterFriends()
+            }
             if onlineLeaderboard.isEmpty {
-                await loadOnlineStats(forceRefresh: true)
+                await loadOnlineStats()
+            }
+            await ensureLeagueTestFriendIfNeeded()
+        }
+    }
+    
+    var leagueStartMenuView: some View {
+        VStack(spacing: 14) {
+            Button {
+                Haptics.tap()
+                showLeagueOpponentPicker()
+            } label: {
+                Label(L("Liga spielen", "Play league"), systemImage: "trophy.circle.fill")
+                    .font(.title3.weight(.bold))
+                    .frame(maxWidth: .infinity, minHeight: 56)
+            }
+            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+            
+            leagueStatsCard
+            
+            leagueMatchHistoryCard
+        }
+    }
+    
+    func showLeagueOpponentPicker() {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+            leagueShowsStartMenu = false
+            leagueOpponentPickerPulse = true
+        }
+        
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(850))
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                leagueOpponentPickerPulse = false
             }
         }
     }
     
-    var leagueSetupView: some View {
-        VStack(spacing: 14) {
-            leagueStatsCard
-            
-            if let leagueLastResult {
-                leagueResultCard(leagueLastResult)
+    func leagueSummaryOverlay(_ result: LeagueMatchResult) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label(result.didWin ? L("Gewonnen", "Won") : L("Verloren", "Lost"), systemImage: result.didWin ? "crown.fill" : "flag.checkered")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(result.didWin ? .green : .red)
+                Spacer()
+                Button {
+                    Haptics.tap()
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                        leagueSummaryResult = nil
+                        leagueShowsStartMenu = true
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
             }
             
+            HStack(spacing: 10) {
+                leagueMetricTile(title: L("Score", "Score"), value: "\(result.ownScore)")
+                leagueMetricTile(title: L("Gegner", "Opponent"), value: "\(result.opponentScore)")
+            }
+            
+            if let before = result.ratingBefore, let after = result.ratingAfter, let delta = result.ratingDelta {
+                HStack {
+                    Text("\(before) → \(after) ELO")
+                        .font(.headline.monospacedDigit().weight(.bold))
+                    Spacer()
+                    Text(delta >= 0 ? "+\(delta)" : "\(delta)")
+                        .font(.title2.monospacedDigit().weight(.black))
+                        .foregroundStyle(delta >= 0 ? .green : .red)
+                }
+                .padding(12)
+                .background((delta >= 0 ? Color.green : Color.red).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            }
+            
+            Text(L("\(result.correct) richtig · \(result.wrong) falsch · Gegner: \(result.opponentName)", "\(result.correct) correct · \(result.wrong) wrong · Opponent: \(result.opponentName)"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            
+            if !leagueLiveResultText.isEmpty {
+                Text(leagueLiveResultText)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tealAccentColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            
+            Button {
+                Haptics.tap()
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                    leagueSummaryResult = nil
+                    leagueShowsStartMenu = true
+                }
+            } label: {
+                Label(L("Zurück zum Liga-Menü", "Back to league menu"), systemImage: "list.bullet")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+        }
+        .padding(16)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    var leagueSetupView: some View {
+        VStack(spacing: 14) {
+            leagueStartMatchButton
+            leagueStatsCard
+            
             VStack(alignment: .leading, spacing: 10) {
-                Label(L("Gegner", "Opponent"), systemImage: "person.2.fill")
-                    .font(.headline)
+                HStack(spacing: 10) {
+                    Image(systemName: "scope")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(tealAccentColor)
+                        .rotationEffect(.degrees(leagueOpponentPickerPulse ? 8 : 0))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("Gegner auswählen", "Choose opponent"))
+                            .font(.headline)
+                        Text(L("Wähle jetzt, gegen wen du spielst.", "Now choose who you play against."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
                 
-                if leagueOpponents.isEmpty {
+                if leagueOpponents.isEmpty && leagueFriendOpponents.isEmpty {
                     Text(L("Noch keine Online-Gegner geladen. Du kannst trotzdem gegen den Liga-Durchschnitt starten.", "No online opponents loaded yet. You can still start against the league baseline."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    VStack(spacing: 8) {
-                        leagueOpponentButton(id: "", title: L("Liga-Durchschnitt", "League baseline"), subtitle: L("Ziel: 600 Punkte", "Target: 600 points"), score: 600)
-                        ForEach(leagueOpponents.prefix(8)) { opponent in
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("Standardgegner", "Preset opponents"))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    
+                    ForEach(leaguePresetOpponents) { opponent in
+                        leagueOpponentButton(
+                            id: opponent.id,
+                            title: L(opponent.titleDE, opponent.titleEN),
+                            subtitle: L(opponent.subtitleDE, opponent.subtitleEN),
+                            score: opponent.score
+                        )
+                    }
+                    
+                    if !leagueFriendOpponents.isEmpty {
+                        Text(L("Freunde 1gg1", "Friends 1v1"))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(tealAccentColor)
+                            .padding(.top, 4)
+                        
+                        ForEach(leagueFriendOpponents.prefix(8)) { opponent in
                             leagueOpponentButton(
                                 id: opponent.id,
                                 title: opponent.displayName,
-                                subtitle: L("Rating \(opponent.leagueRating) · \(opponent.leaguePlayed) Spiele", "Rating \(opponent.leagueRating) · \(opponent.leaguePlayed) matches"),
+                                subtitle: "\(LeagueLeaderboardRow.leagueTitle(for: opponent.leagueRating)) · \(opponent.leagueRating) ELO · \(opponent.leaguePlayed) \(L("Spiele", "matches"))",
+                                score: max(opponent.leagueBestScore, Int(opponent.leagueAverageScore.rounded()))
+                            )
+                        }
+                    }
+                    
+                    if !leagueGlobalOpponents.isEmpty {
+                        Text(L("Weitere Online-Gegner", "More online opponents"))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                        
+                        ForEach(leagueGlobalOpponents.prefix(6)) { opponent in
+                            leagueOpponentButton(
+                                id: opponent.id,
+                                title: opponent.displayName,
+                                subtitle: "\(LeagueLeaderboardRow.leagueTitle(for: opponent.leagueRating)) · \(opponent.leagueRating) ELO · \(opponent.leaguePlayed) \(L("Spiele", "matches"))",
                                 score: max(opponent.leagueBestScore, Int(opponent.leagueAverageScore.rounded()))
                             )
                         }
@@ -4786,16 +5710,12 @@ struct ContentView: View {
             }
             .padding(14)
             .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
-            
-            Button {
-                Haptics.tap()
-                startLeagueMatch()
-            } label: {
-                Label(L("One-on-One starten", "Start one-on-one"), systemImage: "timer")
-                    .font(.title3.weight(.bold))
-                    .frame(maxWidth: .infinity, minHeight: 56)
-            }
-            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(tealAccentColor.opacity(leagueOpponentPickerPulse ? 0.85 : 0.18), lineWidth: leagueOpponentPickerPulse ? 2 : 1)
+            )
+            .scaleEffect(leagueOpponentPickerPulse ? 1.012 : 1)
+            .animation(.spring(response: 0.34, dampingFraction: 0.68), value: leagueOpponentPickerPulse)
             
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -4827,6 +5747,34 @@ struct ContentView: View {
         }
     }
     
+    var leagueStartMatchButton: some View {
+        Button {
+            Haptics.tap()
+            Task { await startLeagueMatch() }
+        } label: {
+            Label(L("Match starten", "Start match"), systemImage: "play.fill")
+                .font(.title3.weight(.bold))
+                .frame(maxWidth: .infinity, minHeight: 56)
+        }
+        .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+        .disabled(leagueIsPreparingLiveMatch)
+    }
+    
+    var leagueUnknownButton: some View {
+        let isEnabled = leagueTimerIsRunning && !leagueInputIsLocked
+        return Button {
+            guard isEnabled else { return }
+            Haptics.notify(.warning)
+            submitLeagueAnswer(forcedCorrectness: false, keepsTypedAnswer: false)
+        } label: {
+            Label(L("Weiß ich nicht", "I don't know"), systemImage: "questionmark.circle.fill")
+                .font(.headline.weight(.semibold))
+                .frame(maxWidth: .infinity, minHeight: 48)
+        }
+        .buttonStyle(ActionButtonStyle(color: .orange, isProminent: false))
+        .disabled(!isEnabled)
+    }
+    
     var leagueStatsCard: some View {
         let stats = activeProfile.leagueStats ?? LeagueStats()
         return VStack(alignment: .leading, spacing: 12) {
@@ -4834,16 +5782,21 @@ struct ContentView: View {
                 Label(L("Deine Liga", "Your league"), systemImage: "bolt.trophy.fill")
                     .font(.headline)
                 Spacer()
-                Text("\(stats.rating)")
-                    .font(.title2.monospacedDigit().weight(.bold))
-                    .foregroundStyle(tealAccentColor)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(stats.leagueTitle)
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(tealAccentColor)
+                    Text("\(stats.rating) ELO")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
             }
             
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
                 leagueMetricTile(title: L("Spiele", "Matches"), value: "\(stats.played)")
-                leagueMetricTile(title: L("Bilanz", "Record"), value: "\(stats.wins)-\(stats.draws)-\(stats.losses)")
+                leagueMetricTile(title: L("Bilanz", "Record"), value: "\(stats.wins)-\(stats.losses)")
                 leagueMetricTile(title: L("Bestscore", "Best score"), value: "\(stats.bestScore)")
-                leagueMetricTile(title: L("Trefferquote", "Accuracy"), value: percentText(stats.accuracy))
+                leagueMetricTile(title: L("Bis Aufstieg", "To promote"), value: "\(max(stats.nextDivisionRating - stats.rating, 0))")
             }
         }
         .padding(14)
@@ -4863,6 +5816,61 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(tealAccentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+    
+    var leagueMatchHistoryCard: some View {
+        let matches = activeProfile.leagueStats?.recentMatches ?? []
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(L("Match-History", "Match history"), systemImage: "clock.arrow.circlepath")
+                    .font(.headline)
+                Spacer()
+                Text("\(matches.count)")
+                    .font(.caption.monospacedDigit().weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+            
+            if matches.isEmpty {
+                Text(L("Noch keine Liga-Matches gespielt.", "No league matches played yet."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(matches.prefix(5)) { match in
+                        leagueHistoryRow(match)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    func leagueHistoryRow(_ match: LeagueMatchResult) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: match.didWin ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(match.didWin ? .green : .red)
+                .frame(width: 22)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(match.opponentName)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Text("\(match.ownScore) : \(match.opponentScore) · \(match.correct) \(L("richtig", "correct")) · \(match.wrong) \(L("falsch", "wrong"))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            if let delta = match.ratingDelta {
+                Text(delta >= 0 ? "+\(delta)" : "\(delta)")
+                    .font(.caption.monospacedDigit().weight(.black))
+                    .foregroundStyle(delta >= 0 ? .green : .red)
+            }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
     
     func leagueOpponentButton(id: String, title: String, subtitle: String, score: Int) -> some View {
@@ -4894,8 +5902,51 @@ struct ContentView: View {
     
     var leagueMatchCard: some View {
         VStack(spacing: 16) {
+            if leagueMatchPhase == .loading || leagueMatchPhase == .countdown {
+                leagueMatchPreparationView
+            } else {
+                leaguePlayableView
+            }
+        }
+        .padding(14)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+        .onAppear {
+            prepareLeagueTimerAfterLayout()
+        }
+        .onDisappear {
+            leagueTimerStartTask?.cancel()
+        }
+    }
+    
+    var leagueMatchPreparationView: some View {
+        VStack(spacing: 18) {
+            Text(L("Lädt", "Loading"))
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            
+            if leagueMatchPhase == .loading {
+                ProgressView()
+                    .tint(tealAccentColor)
+            } else {
+                Text("\(leagueStartCountdown)")
+                    .font(.system(size: 72, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(tealAccentColor)
+                    .contentTransition(.numericText())
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 250)
+        .padding(18)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+        .animation(.spring(response: 0.28, dampingFraction: 0.84), value: leagueMatchPhase)
+        .animation(.spring(response: 0.28, dampingFraction: 0.84), value: leagueStartCountdown)
+    }
+    
+    var leaguePlayableView: some View {
+        VStack(spacing: 16) {
             HStack {
-                Label("\(leagueSecondsRemaining)s", systemImage: "timer")
+                Label(leagueTimerIsRunning ? "\(leagueSecondsRemaining)s" : L("Bereit", "Ready"), systemImage: "timer")
                     .font(.title2.monospacedDigit().weight(.bold))
                     .foregroundStyle(leagueSecondsRemaining <= 10 ? .red : tealAccentColor)
                 Spacer()
@@ -4903,10 +5954,24 @@ struct ContentView: View {
                     .font(.title2.monospacedDigit().weight(.bold))
             }
             
-            FlagImage(country: leagueCurrentCountry, width: 280, height: 170)
+            ZStack {
+                Group {
+                    if let leaguePreloadedFlagImage {
+                        Image(uiImage: leaguePreloadedFlagImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 280, height: 170)
+                    } else {
+                        FlagImage(country: leagueCurrentCountry, width: 280, height: 170)
+                    }
+                }
                 .padding(12)
                 .frame(maxWidth: .infinity)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                .opacity(leagueInputIsLocked ? 0.55 : 1)
+            }
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .animation(.spring(response: 0.22, dampingFraction: 0.82), value: leagueAnswerFeedback)
+            .animation(.easeOut(duration: 0.16), value: leagueInputIsLocked)
             
             TextField(L("Name der Flagge", "Flag name"), text: $leagueAnswerText)
                 .focused($isLeagueAnswerFocused)
@@ -4923,10 +5988,20 @@ struct ContentView: View {
                         .stroke(tealAccentColor.opacity(0.32), lineWidth: 1)
                 )
                 .onChange(of: leagueAnswerText) { _, newValue in
+                    guard !leagueInputIsLocked && Date() >= leagueTypingLockedUntil else {
+                        if newValue != leagueLockedAnswerText {
+                            leagueAnswerText = leagueLockedAnswerText
+                        }
+                        return
+                    }
                     evaluateLeagueAnswer(newValue)
                 }
+                .allowsHitTesting(leagueTimerIsRunning && !leagueInputIsLocked)
+                .opacity(leagueInputIsLocked ? 0.82 : 1)
             
-            leagueRecognitionView
+            if let leagueAnswerFeedback {
+                leagueFeedbackField(isCorrect: leagueAnswerFeedback)
+            }
             
             HStack(spacing: 10) {
                 leagueMetricTile(title: L("Richtig", "Correct"), value: "\(leagueCorrect)")
@@ -4942,21 +6017,32 @@ struct ContentView: View {
             }
             .buttonStyle(ActionButtonStyle(color: .red, isProminent: false))
         }
-        .padding(14)
-        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
+    }
+    
+    func leagueFeedbackField(isCorrect: Bool) -> some View {
+        Label(
+            isCorrect ? L("Richtig: \(leagueRevealedCountryName)", "Correct: \(leagueRevealedCountryName)") : L("Falsch: \(leagueRevealedCountryName)", "Wrong: \(leagueRevealedCountryName)"),
+            systemImage: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill"
+        )
+        .font(.subheadline.weight(.bold))
+        .foregroundStyle(isCorrect ? .green : .red)
+        .frame(maxWidth: .infinity, minHeight: 34)
+        .background((isCorrect ? Color.green : Color.red).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
     
     var leagueRecognitionView: some View {
         HStack(spacing: 10) {
             if let match = leagueAnswerMatch {
                 let isCurrentCountry = match.country == leagueCurrentCountry
-                Image(systemName: isCurrentCountry ? (match.isCertain ? "checkmark.circle.fill" : "scope") : "questionmark.circle")
+                Image(systemName: isCurrentCountry ? (match.isCertain ? "checkmark.circle.fill" : "scope") : (match.isCertain ? "xmark.circle.fill" : "questionmark.circle"))
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(isCurrentCountry ? tealAccentColor : .orange)
+                    .foregroundStyle(isCurrentCountry ? tealAccentColor : (match.isCertain ? .red : .orange))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(isCurrentCountry ? L("Erkannt: \(localizedCountryName(match.country, language: appLanguage))", "Recognized: \(localizedCountryName(match.country, language: appLanguage))") : L("Meintest du \(localizedCountryName(match.country, language: appLanguage))?", "Did you mean \(localizedCountryName(match.country, language: appLanguage))?"))
                         .font(.caption.weight(.semibold))
-                    Text(match.isCertain && isCurrentCountry ? L("Wird automatisch gewertet", "Will be submitted automatically") : L("Weiter tippen oder Enter drücken", "Keep typing or press Return"))
+                    Text(match.isCertain ? (isCurrentCountry ? L("Wird automatisch richtig gewertet", "Will be marked correct automatically") : L("Wird automatisch falsch gewertet", "Will be marked wrong automatically")) : L("Weiter tippen oder Enter drücken", "Keep typing or press Return"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -4976,22 +6062,40 @@ struct ContentView: View {
         .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
     }
     
-    func leagueResultCard(_ result: LeagueMatchResult) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(result.didDraw ? L("Unentschieden", "Draw") : (result.didWin ? L("Sieg", "Win") : L("Niederlage", "Loss")), systemImage: result.didWin ? "crown.fill" : "flag.checkered")
-                    .font(.headline)
-                    .foregroundStyle(result.didWin ? .green : (result.didDraw ? .orange : .red))
-                Spacer()
-                Text("\(result.ownScore) : \(result.opponentScore)")
-                    .font(.headline.monospacedDigit())
+    func leagueAnswerDetailRow(_ answer: LeagueAnswerRecord) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: answer.wasCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(answer.wasCorrect ? .green : .red)
+                .frame(width: 20)
+            
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(answer.countryName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text(answer.wasCorrect ? L("gewusst", "known") : L("nicht gewusst", "missed"))
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .foregroundStyle(answer.wasCorrect ? .green : .red)
+                        .background((answer.wasCorrect ? Color.green : Color.red).opacity(0.12), in: Capsule())
+                }
+                
+                Text(L("Eingabe: \(answer.submittedAnswer) · Erkannt: \(answer.detectedCountryName)", "Input: \(answer.submittedAnswer) · Detected: \(answer.detectedCountryName)"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+                
+                Text(L("\(leagueResponseTimeText(answer.responseTime)) · +\(answer.pointsAwarded) Punkte", "\(leagueResponseTimeText(answer.responseTime)) · +\(answer.pointsAwarded) points"))
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(answer.wasCorrect ? tealAccentColor : .secondary)
             }
-            Text(L("Gegner: \(result.opponentName) · \(result.correct) richtig · \(result.wrong) falsch", "Opponent: \(result.opponentName) · \(result.correct) correct · \(result.wrong) wrong"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            
+            Spacer(minLength: 0)
         }
-        .padding(14)
-        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+        .padding(8)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
     
     var leagueOpponents: [OnlinePlayerStats] {
@@ -5005,8 +6109,115 @@ struct ContentView: View {
             }
     }
     
+    var leaguePresetOpponents: [LeaguePresetOpponent] {
+        [
+            LeaguePresetOpponent(
+                id: "preset_rookie",
+                titleDE: "Bronze Herausforderer",
+                titleEN: "Bronze challenger",
+                subtitleDE: "Ziel: 900 Punkte · 850 ELO",
+                subtitleEN: "Target: 900 points · 850 ELO",
+                score: 900,
+                rating: 850
+            ),
+            LeaguePresetOpponent(
+                id: "preset_average",
+                titleDE: "Liga-Durchschnitt",
+                titleEN: "League baseline",
+                subtitleDE: "Ziel: 1500 Punkte · 1000 ELO",
+                subtitleEN: "Target: 1500 points · 1000 ELO",
+                score: 1500,
+                rating: 1000
+            ),
+            LeaguePresetOpponent(
+                id: "preset_rival",
+                titleDE: "Starker Rivale",
+                titleEN: "Strong rival",
+                subtitleDE: "Ziel: 2200 Punkte · 1250 ELO",
+                subtitleEN: "Target: 2200 points · 1250 ELO",
+                score: 2200,
+                rating: 1250
+            ),
+            LeaguePresetOpponent(
+                id: "preset_champion",
+                titleDE: "Meisterprüfung",
+                titleEN: "Champion check",
+                subtitleDE: "Ziel: 3000 Punkte · 1650 ELO",
+                subtitleEN: "Target: 3000 points · 1650 ELO",
+                score: 3000,
+                rating: 1650
+            )
+        ]
+    }
+    
+    var leagueFriendOpponents: [OnlinePlayerStats] {
+        friendLeaderboard
+            .filter { !isCurrentOnlinePlayer($0) }
+            .sorted {
+                if $0.leagueRating == $1.leagueRating {
+                    return $0.leagueBestScore > $1.leagueBestScore
+                }
+                return $0.leagueRating > $1.leagueRating
+            }
+    }
+    
+    var leagueGlobalOpponents: [OnlinePlayerStats] {
+        let friendIDs = Set(leagueFriendOpponents.map(\.id))
+        return leagueOpponents.filter { !friendIDs.contains($0.id) }
+    }
+    
     var selectedLeagueOpponent: OnlinePlayerStats? {
         leagueOpponents.first { $0.id == selectedLeagueOpponentID }
+    }
+    
+    var selectedLeaguePresetOpponent: LeaguePresetOpponent {
+        leaguePresetOpponents.first { $0.id == selectedLeagueOpponentID } ?? leaguePresetOpponents[1]
+    }
+    
+    func leagueResponseTimeText(_ seconds: Double) -> String {
+        String(format: "%.1f s", max(seconds, 0))
+    }
+    
+    func leaguePointsForAnswer(responseTime: Double) -> Int {
+        let basePoints = 100
+        let speedBonus = max(0, Int((8.0 - min(responseTime, 8.0)) * 16.0))
+        let timePressureBonus = max(0, leagueSecondsRemaining / 10)
+        return basePoints + speedBonus + timePressureBonus
+    }
+    
+    @MainActor
+    func requestLeagueNotificationPermissionIfNeeded() async {
+        guard !leagueNotificationsAuthorized else { return }
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+            leagueNotificationsAuthorized = true
+            return
+        }
+        guard settings.authorizationStatus == .notDetermined else { return }
+        do {
+            leagueNotificationsAuthorized = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+        } catch {
+            leagueNotificationsAuthorized = false
+        }
+    }
+    
+    func playLeagueSound(success: Bool) {
+        AudioServicesPlaySystemSound(success ? 1057 : 1053)
+    }
+    
+    func scheduleLeagueNotification(title: String, body: String) {
+        guard leagueNotificationsAuthorized else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "league-\(UUID().uuidString)",
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        )
+        UNUserNotificationCenter.current().add(request)
     }
     
     var onlineLeagueLeaderboard: [OnlinePlayerStats] {
@@ -5018,80 +6229,356 @@ struct ContentView: View {
         }
     }
     
-    func startLeagueMatch() {
+    @MainActor
+    func startLeagueMatch() async {
+        guard !leagueIsPreparingLiveMatch else { return }
+        leagueIsPreparingLiveMatch = true
+        defer { leagueIsPreparingLiveMatch = false }
+        
         leagueCorrect = 0
         leagueWrong = 0
         leagueScore = 0
         leagueSecondsRemaining = 60
         leagueRecentCountryCodes = []
+        leagueAnswerRecords = []
         leagueAnswerText = ""
         leagueAnswerMatch = nil
         leagueAutoSubmitTask?.cancel()
         leagueAutoSubmitTask = nil
+        leagueAdvanceTask?.cancel()
+        leagueAdvanceTask = nil
+        leagueFeedbackClearTask?.cancel()
+        leagueFeedbackClearTask = nil
+        leagueCountdownTask?.cancel()
+        leagueCountdownTask = nil
+        leagueTimerIsRunning = false
+        leagueInputIsLocked = false
+        leagueLockedAnswerText = ""
+        leagueTypingLockedUntil = .distantPast
+        leagueCurrentQuestionStartedAt = Date()
+        leagueLivePollTask?.cancel()
+        leagueLivePollTask = nil
+        leagueLiveMatchID = nil
+        leagueLivePlayerID = ""
+        leagueLiveOpponentName = ""
+        leagueLiveOpponentScore = nil
+        leagueLiveCountryCodes = []
+        leagueLiveCountryIndex = 0
+        leagueLiveResultText = ""
+        leagueAnswerFeedback = nil
+        leagueRevealedCountryName = ""
+        leagueMatchPhase = .loading
+        leagueStartCountdown = 3
+        leagueFirstFlagIsReady = false
+        leaguePreloadedFlagImage = nil
+        leagueTimerStartTask?.cancel()
+        leagueTimerStartTask = nil
+        await prepareLiveLeagueMatchIfNeeded()
         leagueCurrentCountry = nextLeagueCountry()
         leagueMatchActive = true
-        leagueLastResult = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+    }
+    
+    @MainActor
+    func prepareLiveLeagueMatchIfNeeded() async {
+        guard
+            onlineFeaturesEnabled,
+            let opponent = selectedLeagueOpponent,
+            leagueFriendOpponents.contains(where: { $0.id == opponent.id })
+        else { return }
+        
+        if !isGameCenterAuthenticated {
+            authenticateGameCenter(syncAfterAuthentication: false)
+        }
+        
+        let playerID = OnlineStatsService.playerID(gameCenterPlayerID: isGameCenterAuthenticated ? gameCenterPlayerID : nil)
+        let playerName = OnlineStatsService.normalizedName(onlinePlayerName, fallback: gameCenterAlias)
+        do {
+            let match = try await OnlineStatsService.findOrCreateLiveLeagueMatch(
+                currentPlayerID: playerID,
+                currentPlayerName: playerName,
+                opponent: opponent,
+                countries: availableCountries
+            )
+            leagueLiveMatchID = match.id
+            leagueLivePlayerID = playerID
+            leagueLiveOpponentName = match.opponentName(for: playerID)
+            leagueLiveOpponentScore = match.opponentScore(for: playerID)
+            leagueLiveCountryCodes = match.countryCodes
+            leagueLiveCountryIndex = 0
+            leagueLiveResultText = L("Async 1gg1 gegen \(leagueLiveOpponentName): \(match.countryCodes.count) identische Flaggen in exakt derselben Reihenfolge.", "Async 1v1 against \(leagueLiveOpponentName): \(match.countryCodes.count) identical flags in the exact same order.")
+        } catch {
+            leagueLiveResultText = L("Live 1gg1 konnte nicht vorbereitet werden: \(OnlineStatsService.userFacingMessage(for: error))", "Live 1v1 could not be prepared: \(OnlineStatsService.userFacingMessage(for: error))")
+        }
+    }
+    
+    func prepareLeagueTimerAfterLayout() {
+        leagueTimerStartTask?.cancel()
+        leagueTimerStartTask = Task { @MainActor in
+            await Task.yield()
+            leagueMatchPhase = .loading
+            await prepareFirstLeagueFlag()
+            guard leagueMatchActive else { return }
+            leagueFirstFlagIsReady = true
+            
+            leagueMatchPhase = .countdown
+            for value in stride(from: 3, through: 1, by: -1) {
+                leagueStartCountdown = value
+                try? await Task.sleep(for: .seconds(1))
+                guard leagueMatchActive else { return }
+            }
+            
+            leagueMatchPhase = .playing
+            leagueCurrentQuestionStartedAt = Date()
+            await Task.yield()
             isLeagueAnswerFocused = true
+            try? await Task.sleep(for: .milliseconds(180))
+            guard leagueMatchActive else { return }
+            leagueTimerIsRunning = true
+            startLeagueCountdown()
+        }
+    }
+    
+    func prepareFirstLeagueFlag() async {
+        for _ in 0..<8 {
+            guard leagueMatchActive else { return }
+            if let image = await preloadedLeagueFlagImage(for: leagueCurrentCountry) {
+                leaguePreloadedFlagImage = image
+                return
+            }
+            leagueCurrentCountry = nextLeagueCountry()
+        }
+        
+        leaguePreloadedFlagImage = nil
+    }
+    
+    func preloadedLeagueFlagImage(for country: Country) async -> UIImage? {
+        guard let url = country.flagImageURL else { return nil }
+        do {
+            let result = try await OnlineStatsService.withTimeout(seconds: 4) {
+                try await FlagImageCache.shared.loadImage(from: url)
+            }
+            return result
+        } catch {
+            return nil
+        }
+    }
+    
+    func startLeagueCountdown() {
+        leagueCountdownTask?.cancel()
+        let endDate = Date().addingTimeInterval(Double(leagueSecondsRemaining))
+        leagueCountdownTask = Task { @MainActor in
+            while leagueMatchActive && leagueTimerIsRunning {
+                let remaining = max(0, Int(ceil(endDate.timeIntervalSinceNow)))
+                leagueSecondsRemaining = remaining
+                if remaining == 0 {
+                    finishLeagueMatch()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(200))
+            }
         }
     }
     
     func submitLeagueAnswer() {
-        guard leagueMatchActive else { return }
+        submitLeagueAnswer(forcedCorrectness: nil, keepsTypedAnswer: true)
+    }
+    
+    func submitLeagueAnswer(forcedCorrectness: Bool?, keepsTypedAnswer: Bool) {
+        guard leagueMatchActive, leagueTimerIsRunning, !leagueInputIsLocked else { return }
         let answer = normalizedLeagueAnswer(leagueAnswerText)
-        guard !answer.isEmpty else { return }
+        guard !answer.isEmpty || forcedCorrectness != nil else { return }
         let match = leagueAnswerMatch ?? bestLeagueAnswerMatch(for: leagueAnswerText)
-        let isCorrect = match?.country == leagueCurrentCountry && (match?.isAcceptable == true || match?.isCertain == true)
+        let isCorrect = forcedCorrectness ?? (match?.country == leagueCurrentCountry && (match?.isAcceptable == true || match?.isCertain == true))
+        let correctCountryName = localizedCountryName(leagueCurrentCountry, language: appLanguage)
+        let submittedAnswer = leagueAnswerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let visibleSubmittedAnswer = submittedAnswer.isEmpty ? L("Weiß ich nicht", "I don't know") : submittedAnswer
+        let detectedCountryName = match.map { localizedCountryName($0.country, language: appLanguage) } ?? L("Keine eindeutige Erkennung", "No clear detection")
+        let responseTime = Date().timeIntervalSince(leagueCurrentQuestionStartedAt)
+        let pointsAwarded = isCorrect ? leaguePointsForAnswer(responseTime: responseTime) : 0
+        
+        leagueLockedAnswerText = keepsTypedAnswer ? leagueAnswerText : ""
+        leagueInputIsLocked = true
+        leagueTypingLockedUntil = .distantFuture
+        leagueMatchPhase = .feedback
+        leagueAnswerFeedback = isCorrect
+        leagueRevealedCountryName = correctCountryName
+        leagueAnswerRecords.append(
+            LeagueAnswerRecord(
+                id: UUID(),
+                countryCode: leagueCurrentCountry.code,
+                countryName: correctCountryName,
+                submittedAnswer: visibleSubmittedAnswer,
+                detectedCountryName: detectedCountryName,
+                wasCorrect: isCorrect,
+                responseTime: responseTime,
+                pointsAwarded: pointsAwarded
+            )
+        )
         
         if isCorrect {
             leagueCorrect += 1
-            leagueScore += 100 + max(leagueSecondsRemaining / 6, 0)
+            leagueScore += pointsAwarded
+            Haptics.tap(style: .heavy)
             Haptics.notify(.success)
+            playLeagueSound(success: true)
         } else {
             leagueWrong += 1
             leagueScore = max(0, leagueScore - 25)
-            Haptics.notify(.error)
+            Haptics.tap(style: .light)
+            playLeagueSound(success: false)
         }
         
         leagueRecentCountryCodes.append(leagueCurrentCountry.code)
         leagueRecentCountryCodes = Array(leagueRecentCountryCodes.suffix(12))
-        leagueAnswerText = ""
-        leagueAnswerMatch = nil
         leagueAutoSubmitTask?.cancel()
         leagueAutoSubmitTask = nil
-        leagueCurrentCountry = nextLeagueCountry()
+        leagueFeedbackClearTask?.cancel()
+        leagueFeedbackClearTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(650))
+            guard leagueMatchActive else { return }
+            leagueAnswerFeedback = nil
+            leagueRevealedCountryName = ""
+        }
+        leagueAdvanceTask?.cancel()
+        leagueAdvanceTask = Task { @MainActor in
+            guard leagueMatchActive else { return }
+            let nextCountry = nextLeagueCountry()
+            let nextImage = await preloadedLeagueFlagImage(for: nextCountry)
+            leagueAnswerText = ""
+            leagueLockedAnswerText = ""
+            leagueAnswerMatch = nil
+            leagueCurrentCountry = nextCountry
+            leaguePreloadedFlagImage = nextImage
+            leagueMatchPhase = .playing
+            leagueTypingLockedUntil = Date().addingTimeInterval(0.32)
+            try? await Task.sleep(for: .milliseconds(320))
+            guard leagueMatchActive, leagueCurrentCountry == nextCountry else { return }
+            leagueInputIsLocked = false
+            leagueTypingLockedUntil = .distantPast
+            leagueCurrentQuestionStartedAt = Date()
+            isLeagueAnswerFocused = true
+        }
     }
     
     func finishLeagueMatch() {
         guard leagueMatchActive else { return }
         leagueMatchActive = false
+        leagueTimerIsRunning = false
         isLeagueAnswerFocused = false
         leagueAutoSubmitTask?.cancel()
         leagueAutoSubmitTask = nil
+        leagueTimerStartTask?.cancel()
+        leagueTimerStartTask = nil
+        leagueCountdownTask?.cancel()
+        leagueCountdownTask = nil
+        leagueAdvanceTask?.cancel()
+        leagueAdvanceTask = nil
+        leagueFeedbackClearTask?.cancel()
+        leagueFeedbackClearTask = nil
+        leagueInputIsLocked = false
+        leagueLockedAnswerText = ""
+        leagueTypingLockedUntil = .distantPast
+        leagueAnswerFeedback = nil
+        leagueRevealedCountryName = ""
+        leagueMatchPhase = .loading
         
         let opponent = selectedLeagueOpponent
-        let opponentScore = opponent.map { max($0.leagueBestScore, Int($0.leagueAverageScore.rounded())) } ?? 600
-        let result = LeagueMatchResult(
+        let preset = selectedLeaguePresetOpponent
+        let opponentScore = opponent.map { max($0.leagueBestScore, Int($0.leagueAverageScore.rounded())) } ?? preset.score
+        let opponentRating = opponent?.leagueRating ?? preset.rating
+        let opponentName = opponent?.displayName ?? L(preset.titleDE, preset.titleEN)
+        let ratingBefore = activeProfile.leagueStats?.rating ?? 1000
+        let previewResult = LeagueMatchResult(
             id: UUID(),
             date: Date(),
-            opponentName: opponent?.displayName ?? L("Liga-Durchschnitt", "League baseline"),
+            opponentName: opponentName,
             ownScore: leagueScore,
             opponentScore: opponentScore,
             correct: leagueCorrect,
             wrong: leagueWrong,
-            duration: 60
+            duration: 60,
+            answerDetails: leagueAnswerRecords,
+            ratingBefore: nil,
+            ratingAfter: nil,
+            ratingDelta: nil
+        )
+        var previewStats = activeProfile.leagueStats ?? LeagueStats()
+        previewStats.recordMatch(previewResult, opponentRating: opponentRating)
+        let ratingAfter = previewStats.rating
+        let result = LeagueMatchResult(
+            id: previewResult.id,
+            date: previewResult.date,
+            opponentName: previewResult.opponentName,
+            ownScore: previewResult.ownScore,
+            opponentScore: previewResult.opponentScore,
+            correct: previewResult.correct,
+            wrong: previewResult.wrong,
+            duration: previewResult.duration,
+            answerDetails: previewResult.answerDetails,
+            ratingBefore: ratingBefore,
+            ratingAfter: ratingAfter,
+            ratingDelta: ratingAfter - ratingBefore
         )
         
-        leagueLastResult = result
+        leagueSummaryResult = result
+        leagueShowsStartMenu = true
         updateActiveProfile { profile in
-            profile.recordLeagueMatch(result)
+            profile.recordLeagueMatch(result, opponentRating: opponentRating)
         }
+        scheduleOnlineStatsSync()
+        submitLiveLeagueScoreIfNeeded(score: leagueScore)
         Haptics.notify(result.didWin ? .success : .warning)
+        playLeagueSound(success: result.didWin)
     }
     
     func nextLeagueCountry() -> Country {
+        if !leagueLiveCountryCodes.isEmpty {
+            let index = min(leagueLiveCountryIndex, leagueLiveCountryCodes.count - 1)
+            leagueLiveCountryIndex = min(leagueLiveCountryIndex + 1, leagueLiveCountryCodes.count)
+            if let country = availableCountries.first(where: { $0.code == leagueLiveCountryCodes[index] }) {
+                return country
+            }
+        }
+        
         let candidates = availableCountries.filter { !leagueRecentCountryCodes.contains($0.code) }
         return (candidates.isEmpty ? availableCountries : candidates).randomElement() ?? allCountries[0]
+    }
+    
+    func submitLiveLeagueScoreIfNeeded(score: Int) {
+        guard let matchID = leagueLiveMatchID, !leagueLivePlayerID.isEmpty else { return }
+        let playerID = leagueLivePlayerID
+        leagueLiveResultText = L("Dein Score ist hochgeladen. Warte auf \(leagueLiveOpponentName) ...", "Your score is uploaded. Waiting for \(leagueLiveOpponentName) ...")
+        leagueLivePollTask?.cancel()
+        leagueLivePollTask = Task { @MainActor in
+            do {
+                try await OnlineStatsService.submitLiveLeagueScore(matchID: matchID, playerID: playerID, score: score)
+            } catch {
+                leagueLiveResultText = L("Live-Score konnte nicht hochgeladen werden: \(OnlineStatsService.userFacingMessage(for: error))", "Live score could not be uploaded: \(OnlineStatsService.userFacingMessage(for: error))")
+                return
+            }
+            
+            for _ in 0..<18 {
+                guard !Task.isCancelled else { return }
+                if let match = try? await OnlineStatsService.fetchLiveLeagueMatch(matchID: matchID),
+                   let opponentScore = match.opponentScore(for: playerID) {
+                    leagueLiveOpponentScore = opponentScore
+                    if score >= opponentScore {
+                        leagueLiveResultText = L("Live 1gg1: \(score) : \(opponentScore) gegen \(leagueLiveOpponentName) - Sieg", "Live 1v1: \(score) : \(opponentScore) against \(leagueLiveOpponentName) - win")
+                    } else {
+                        leagueLiveResultText = L("Live 1gg1: \(score) : \(opponentScore) gegen \(leagueLiveOpponentName) - Niederlage", "Live 1v1: \(score) : \(opponentScore) against \(leagueLiveOpponentName) - loss")
+                    }
+                    playLeagueSound(success: score >= opponentScore)
+                    scheduleLeagueNotification(
+                        title: L("Async 1gg1 fertig", "Async 1v1 finished"),
+                        body: leagueLiveResultText
+                    )
+                    return
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+            
+            leagueLiveResultText = L("Live 1gg1: Dein Score \(score) ist gespeichert. \(leagueLiveOpponentName) ist noch nicht fertig.", "Live 1v1: Your score \(score) is saved. \(leagueLiveOpponentName) is not finished yet.")
+        }
     }
     
     func evaluateLeagueAnswer(_ value: String) {
@@ -5102,7 +6589,7 @@ struct ContentView: View {
         guard
             leagueMatchActive,
             let match,
-            match.country == leagueCurrentCountry,
+            !leagueInputIsLocked,
             match.isCertain
         else {
             return
@@ -5110,8 +6597,8 @@ struct ContentView: View {
         
         let submittedText = value
         leagueAutoSubmitTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(180))
-            guard leagueMatchActive, leagueAnswerText == submittedText else { return }
+            await Task.yield()
+            guard leagueMatchActive, leagueAnswerText == submittedText, leagueAnswerMatch?.isCertain == true else { return }
             submitLeagueAnswer()
         }
     }
@@ -5123,14 +6610,21 @@ struct ContentView: View {
         let scoredMatches = availableCountries.compactMap { country -> LeagueAnswerMatch? in
             let aliases = leagueAnswerAliases(for: country)
             guard let bestAlias = aliases
-                .map({ alias in (name: alias.displayName, score: leagueSimilarity(answer: answer, candidate: alias.normalizedName)) })
+                .map({ alias in (name: alias.displayName, normalizedName: alias.normalizedName, score: leagueSimilarity(answer: answer, candidate: alias.normalizedName)) })
                 .max(by: { $0.score < $1.score })
             else {
                 return nil
             }
             
             guard bestAlias.score >= 0.45 else { return nil }
-            return LeagueAnswerMatch(country: country, matchedName: bestAlias.name, confidence: bestAlias.score, runnerUpConfidence: 0)
+            return LeagueAnswerMatch(
+                country: country,
+                matchedName: bestAlias.name,
+                normalizedAnswer: answer,
+                normalizedMatchedName: bestAlias.normalizedName,
+                confidence: bestAlias.score,
+                runnerUpConfidence: 0
+            )
         }
         .sorted { first, second in
             if first.confidence == second.confidence {
@@ -5141,7 +6635,14 @@ struct ContentView: View {
         
         guard let best = scoredMatches.first else { return nil }
         let runnerUp = scoredMatches.dropFirst().first?.confidence ?? 0
-        return LeagueAnswerMatch(country: best.country, matchedName: best.matchedName, confidence: best.confidence, runnerUpConfidence: runnerUp)
+        return LeagueAnswerMatch(
+            country: best.country,
+            matchedName: best.matchedName,
+            normalizedAnswer: best.normalizedAnswer,
+            normalizedMatchedName: best.normalizedMatchedName,
+            confidence: best.confidence,
+            runnerUpConfidence: runnerUp
+        )
     }
     
     func leagueAnswerAliases(for country: Country) -> [(displayName: String, normalizedName: String)] {
@@ -5149,7 +6650,7 @@ struct ContentView: View {
             localizedCountryName(country, language: appLanguage),
             country.name,
             countryEnglishNameByCode[country.code]
-        ].compactMap { $0 }
+        ].compactMap { $0 } + leagueExtraAliases(for: country)
         
         let aliases = Set(rawAliases.flatMap { name -> [String] in
             let normalized = normalizedLeagueAnswer(name)
@@ -5160,7 +6661,7 @@ struct ContentView: View {
             if normalized.hasPrefix("demokratische republik ") {
                 values.append(normalized.replacingOccurrences(of: "demokratische republik ", with: ""))
             }
-            if normalized.contains("("), let prefix = normalized.split(separator: "(").first {
+            if name.contains("("), let prefix = name.split(separator: "(").first {
                 values.append(String(prefix))
             }
             return values
@@ -5172,9 +6673,49 @@ struct ContentView: View {
         .filter { !$0.normalizedName.isEmpty }
     }
     
+    func leagueExtraAliases(for country: Country) -> [String] {
+        switch country.code {
+        case "US": return ["USA", "U.S.A.", "America", "United States of America", "Vereinigte Staaten von Amerika"]
+        case "GB": return ["UK", "U.K.", "Great Britain", "Britain", "England", "Großbritannien", "Grossbritannien"]
+        case "AE": return ["UAE", "Emirates", "VAE"]
+        case "BA": return ["Bosnien", "Bosnia"]
+        case "BO": return ["Bolivia"]
+        case "BN": return ["Brunei Darussalam"]
+        case "BY": return ["Weissrussland", "Weißrussland"]
+        case "CD": return ["DR Kongo", "Demokratische Republik Kongo", "Kongo Kinshasa", "Congo Kinshasa", "DR Congo"]
+        case "CG": return ["Republik Kongo", "Kongo Brazzaville", "Congo Brazzaville"]
+        case "CI": return ["Elfenbeinkueste", "Elfenbeinkuste", "Ivory Coast", "Cote d Ivoire", "Côte d'Ivoire"]
+        case "CZ": return ["Tschechische Republik", "Czech Republic"]
+        case "DO": return ["Dominikanische Rep", "Dominican Rep"]
+        case "FM": return ["Micronesia"]
+        case "GQ": return ["Equatorial Guinea"]
+        case "GW": return ["Guinea Bissau"]
+        case "KR": return ["Korea Sued", "Korea Sud", "South Korea", "Republic of Korea"]
+        case "KP": return ["Korea Nord", "North Korea"]
+        case "LA": return ["Lao", "Laos"]
+        case "MD": return ["Moldova"]
+        case "MK": return ["Mazedonien", "Macedonia"]
+        case "MM": return ["Burma", "Birma"]
+        case "PS": return ["Palestine"]
+        case "RU": return ["Russian Federation"]
+        case "ST": return ["Sao Tome", "São Tomé"]
+        case "SZ": return ["Eswatini"]
+        case "TL": return ["Timor Leste", "East Timor"]
+        case "TR": return ["Turkey"]
+        case "TZ": return ["Tanzania"]
+        case "VA": return ["Vatican", "Vatikan"]
+        case "VN": return ["Viet Nam"]
+        case "ZA": return ["South Africa"]
+        default: return []
+        }
+    }
+    
     func leagueSimilarity(answer: String, candidate: String) -> Double {
         guard !answer.isEmpty, !candidate.isEmpty else { return 0 }
         if answer == candidate { return 1 }
+        if let tokenScore = leagueTokenPrefixSimilarity(answer: answer, candidate: candidate) {
+            return tokenScore
+        }
         
         let shorterCount = min(answer.count, candidate.count)
         let longerCount = max(answer.count, candidate.count)
@@ -5182,7 +6723,19 @@ struct ContentView: View {
         
         if candidate.hasPrefix(answer), answer.count >= 3 {
             let completeness = Double(answer.count) / Double(candidate.count)
-            return min(0.94, 0.78 + completeness * 0.16)
+            return min(0.97, 0.80 + completeness * 0.18)
+        }
+        
+        if answer.count < candidate.count, answer.count >= 3 {
+            let candidatePrefix = String(candidate.prefix(answer.count))
+            let prefixDistance = levenshteinDistance(answer, candidatePrefix, maxDistance: 2)
+            if prefixDistance <= 2 {
+                let prefixSimilarity = 1 - (Double(prefixDistance) / Double(max(answer.count, candidatePrefix.count)))
+                let completeness = Double(answer.count) / Double(candidate.count)
+                if prefixSimilarity >= 0.58 {
+                    return min(0.96, 0.72 + prefixSimilarity * 0.20 + completeness * 0.08)
+                }
+            }
         }
         
         if answer.hasPrefix(candidate), candidate.count >= 3 {
@@ -5200,10 +6753,50 @@ struct ContentView: View {
             maxDistance = 3
         }
         
-        let distance = levenshteinDistance(answer, candidate, maxDistance: maxDistance + 1)
+        let distance = levenshteinDistance(answer, candidate, maxDistance: maxDistance)
+        guard distance <= maxDistance else { return 0 }
         let similarity = 1 - (Double(distance) / Double(longerCount))
         let prefixBonus = min(Double(prefixLength) / Double(max(shorterCount, 1)), 1) * 0.08
         return min(similarity + prefixBonus, 0.99)
+    }
+    
+    func leagueTokenPrefixSimilarity(answer: String, candidate: String) -> Double? {
+        let answerTokens = answer.split(separator: " ").map(String.init)
+        let candidateTokens = candidate.split(separator: " ").map(String.init)
+        guard answerTokens.count > 1, candidateTokens.count >= answerTokens.count else { return nil }
+        
+        guard answerTokens.first == candidateTokens.first else { return nil }
+        
+        var tokenScores: [Double] = []
+        for index in answerTokens.indices {
+            let answerToken = answerTokens[index]
+            let candidateToken = candidateTokens[index]
+            
+            if candidateToken.hasPrefix(answerToken) {
+                tokenScores.append(1)
+                continue
+            }
+            
+            guard answerToken.count >= 3 else { return 0 }
+            let candidatePrefix = String(candidateToken.prefix(answerToken.count))
+            let allowedDistance = answerToken.count >= 4 ? 2 : 1
+            let distance = levenshteinDistance(answerToken, candidatePrefix, maxDistance: allowedDistance)
+            guard distance <= allowedDistance || hasSameLetters(answerToken, candidatePrefix) else { return 0 }
+            
+            let score = hasSameLetters(answerToken, candidatePrefix)
+                ? 0.78
+                : 1 - (Double(distance) / Double(max(answerToken.count, candidatePrefix.count)))
+            guard score >= 0.62 else { return 0 }
+            tokenScores.append(score)
+        }
+        
+        let averageTokenScore = tokenScores.reduce(0, +) / Double(tokenScores.count)
+        let completeness = Double(answer.count) / Double(candidate.count)
+        return min(0.98, 0.84 + averageTokenScore * 0.08 + completeness * 0.08)
+    }
+    
+    func hasSameLetters(_ first: String, _ second: String) -> Bool {
+        first.count == second.count && first.sorted() == second.sorted()
     }
     
     func commonPrefixLength(_ first: String, _ second: String) -> Int {
@@ -5420,8 +7013,50 @@ struct ContentView: View {
             }
             
             Section("Debug") {
-                Toggle(isOn: $fullVersionUnlocked) {
-                    Label(L("Vollversion freischalten", "Unlock full version"), systemImage: "ladybug.fill")
+                Toggle(isOn: $debugToolsEnabled) {
+                    Label(L("Debug-Werkzeuge", "Debug tools"), systemImage: "ladybug.fill")
+                }
+                
+                if debugToolsEnabled {
+                    Toggle(isOn: $fullVersionUnlocked) {
+                        Label(L("Vollversion freischalten", "Unlock full version"), systemImage: "lock.open.fill")
+                    }
+                    
+                    Stepper(value: Binding(
+                        get: { activeProfile.leagueStats?.rating ?? 1000 },
+                        set: { debugSetLeagueRating($0) }
+                    ), in: 100...3000, step: 50) {
+                        Label("\(L("Liga-ELO", "League ELO")): \(activeProfile.leagueStats?.rating ?? 1000)", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    
+                    Button {
+                        Haptics.tap()
+                        debugResetLeagueStats()
+                    } label: {
+                        Label(L("Liga-Stats zurücksetzen", "Reset league stats"), systemImage: "arrow.counterclockwise")
+                    }
+                    
+                    Menu {
+                        ForEach(MasteryTier.allCases) { tier in
+                            Button(tier.rawValue) {
+                                Haptics.tap()
+                                debugSetAllCountryTiers(tier)
+                            }
+                        }
+                    } label: {
+                        Label(L("Alle Flaggen-Stufen setzen", "Set all flag tiers"), systemImage: "slider.horizontal.3")
+                    }
+                    
+                    Button {
+                        Haptics.tap()
+                        Task { await createTestFriend() }
+                    } label: {
+                        Label(L("Testfreund erstellen/aktualisieren", "Create/update test friend"), systemImage: "person.crop.circle.badge.plus")
+                    }
+                    
+                    Text(L("Diese Werkzeuge sind nur für Entwicklung und Balancing gedacht und können vor dem Release komplett entfernt werden.", "These tools are only for development and balancing and can be removed before release."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             
@@ -5627,6 +7262,67 @@ struct ContentView: View {
         } catch {
             Haptics.notify(.error)
             onlineStatusText = L("Testfreund nicht erstellt: \(OnlineStatsService.userFacingMessage(for: error))", "Test friend not created: \(OnlineStatsService.userFacingMessage(for: error))")
+        }
+    }
+    
+    @MainActor
+    func ensureLeagueTestFriendIfNeeded() async {
+        guard onlineFeaturesEnabled, !leagueTestFriendEnsured else { return }
+        leagueTestFriendEnsured = true
+        
+        if !friendNames.contains(where: { normalizedFriendToken($0) == normalizedFriendToken(OnlineStatsService.testFriendName) }) {
+            addFriend(named: OnlineStatsService.testFriendName)
+        }
+        
+        guard !onlineLeaderboard.contains(where: { $0.id == OnlineStatsService.testFriendRecordName }) else { return }
+        guard !isSyncingOnlineStats else { return }
+        
+        isSyncingOnlineStats = true
+        defer {
+            isSyncingOnlineStats = false
+        }
+        
+        onlineStatusText = L("Testfreund wird bereitgestellt ...", "Preparing test friend ...")
+        do {
+            try await OnlineStatsService.createTestFriend(countries: availableCountries)
+            onlineLeaderboard = try await OnlineStatsService.fetchLeaderboard()
+            onlineLeaderboardRefreshID += 1
+            selectedOnlineScope = .friends
+            onlineStatusText = L("Testfreund FlaggenTest ist online und befreundet.", "Test friend FlaggenTest is online and added as friend.")
+        } catch {
+            onlineStatusText = L("Testfreund nicht bereitgestellt: \(OnlineStatsService.userFacingMessage(for: error))", "Test friend not prepared: \(OnlineStatsService.userFacingMessage(for: error))")
+        }
+    }
+    
+    func debugSetLeagueRating(_ rating: Int) {
+        updateActiveProfile { profile in
+            var stats = profile.leagueStats ?? LeagueStats()
+            stats.rating = rating
+            profile.leagueStats = stats
+        }
+    }
+    
+    func debugResetLeagueStats() {
+        updateActiveProfile { profile in
+            profile.leagueStats = LeagueStats()
+        }
+        leagueSummaryResult = nil
+    }
+    
+    func debugSetAllCountryTiers(_ tier: MasteryTier) {
+        updateActiveProfile { profile in
+            let now = Date()
+            for country in availableCountries {
+                let key = selectedSubject.statsKey(for: country)
+                var stats = profile.byCountry[key] ?? CountryStats()
+                stats.storedTier = tier
+                stats.lastPracticedAt = now
+                if tier != .f {
+                    stats.lastKnownAt = now
+                }
+                stats.appendTierHistory(tier: tier, date: now)
+                profile.byCountry[key] = stats
+            }
         }
     }
     
@@ -5837,13 +7533,10 @@ struct ContentView: View {
         await Task.yield()
         ensureTrainerProfile()
         if !didEnableOnlineByDefault {
-            onlineFeaturesEnabled = true
             didEnableOnlineByDefault = true
         }
         applyWeeklyTierDecay(showPopup: true)
-        if onlineFeaturesEnabled {
-            authenticateGameCenter(syncAfterAuthentication: true)
-        } else {
+        if !onlineFeaturesEnabled {
             disableOnlineRuntimeState()
         }
         hideStartupScreenAfterDelay()
@@ -5943,6 +7636,7 @@ struct ContentView: View {
                 gameCenterAlias = GKLocalPlayer.local.alias
                 gameCenterStatusText = L("Verbunden als \(GKLocalPlayer.local.alias)", "Connected as \(GKLocalPlayer.local.alias)")
                 Task {
+                    await restoreCloudBackupIfNeeded()
                     await loadGameCenterFriends()
                     if syncAfterAuthentication {
                         await syncOnlineStats()
@@ -5952,6 +7646,7 @@ struct ContentView: View {
                 isGameCenterAuthenticated = false
                 gameCenterPlayerID = ""
                 gameCenterAlias = ""
+                cloudBackupRestoreAttemptedPlayerID = ""
                 gameCenterFriendIDs = []
                 gameCenterStatusText = error?.localizedDescription ?? L("Game Center nicht verbunden", "Game Center not connected")
             }
@@ -6012,8 +7707,69 @@ struct ContentView: View {
         scheduleOnlineStatsSync()
     }
     
+    @MainActor
+    func restoreCloudBackupIfNeeded() async {
+        guard onlineFeaturesEnabled, isGameCenterAuthenticated, !gameCenterPlayerID.isEmpty else { return }
+        guard cloudBackupRestoreAttemptedPlayerID != gameCenterPlayerID else { return }
+        cloudBackupRestoreAttemptedPlayerID = gameCenterPlayerID
+        
+        do {
+            guard let cloudData = try await OnlineStatsService.fetchAppDataSnapshot(gameCenterPlayerID: gameCenterPlayerID) else { return }
+            let cloudProgress = backupProgressScore(for: cloudData)
+            let localProgress = backupProgressScore(for: appData)
+            guard cloudProgress > localProgress else { return }
+            
+            isRestoringCloudBackup = true
+            pendingOnlineSyncTask?.cancel()
+            appData = cloudData
+            AppStorageService.save(appData)
+            ensureTrainerProfile()
+            recapStartCounts = activeProfile.tierCounts(in: availableCountries)
+            recapEndCounts = recapStartCounts
+            onlineStatusText = L("Cloud-Statistik wiederhergestellt.", "Cloud stats restored.")
+            isRestoringCloudBackup = false
+        } catch {
+            onlineStatusText = L("Cloud-Backup nicht geladen: \(OnlineStatsService.userFacingMessage(for: error))", "Cloud backup not loaded: \(OnlineStatsService.userFacingMessage(for: error))")
+            isRestoringCloudBackup = false
+        }
+    }
+    
+    func backupProgressScore(for data: AppData) -> Int {
+        var total = 0
+        for profile in data.profiles {
+            var countryProgress = 0
+            for stats in profile.byCountry.values {
+                var tierBonus = 0
+                switch stats.tier {
+                case .s: tierBonus = 30
+                case .a: tierBonus = 18
+                case .b: tierBonus = 10
+                case .c, .d, .f: tierBonus = 0
+                }
+                countryProgress += stats.attempts
+                countryProgress += stats.cardReviews
+                countryProgress += stats.showmasterPlayed
+                countryProgress += tierBonus
+            }
+            
+            let leaguePlayed = profile.leagueStats?.played ?? 0
+            let leagueRating = profile.leagueStats?.rating ?? 1000
+            let leagueProgress = leaguePlayed * 25 + max(leagueRating - 1000, 0)
+            let practiceProgress = profile.practiceCardsByDay?.values.reduce(0, +) ?? 0
+            let achievementProgress = (profile.achievedAchievementDates?.count ?? 0) * 40
+            
+            total += profile.totalAnswers
+            total += practiceProgress
+            total += profile.showmasterCards
+            total += countryProgress
+            total += leagueProgress
+            total += achievementProgress
+        }
+        return total
+    }
+    
     func scheduleOnlineStatsSync() {
-        guard onlineFeaturesEnabled, isGameCenterAuthenticated else { return }
+        guard onlineFeaturesEnabled, isGameCenterAuthenticated, !isRestoringCloudBackup else { return }
         pendingOnlineSyncTask?.cancel()
         pendingOnlineSyncTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(4))
@@ -6051,6 +7807,7 @@ struct ContentView: View {
                 name: onlinePlayerName,
                 gameCenterPlayerID: isGameCenterAuthenticated ? gameCenterPlayerID : nil,
                 gameCenterAlias: gameCenterAlias,
+                appData: appData,
                 profile: activeProfile,
                 countries: availableCountries,
                 subject: selectedSubject,
@@ -6270,8 +8027,178 @@ struct ContentView: View {
         showRecentCountryCodes = []
         showDeckCountryCodes = []
         resetCurrentCardHint()
+        prepareShowCard()
         showSessionActive = true
-        nextShowCard()
+    }
+    
+    var miniWorldCupCurrentPlayer: MiniWorldCupPlayer? {
+        guard !miniWorldCupActivePlayers.isEmpty else { return nil }
+        let index = min(max(miniWorldCupCurrentPlayerIndex, 0), miniWorldCupActivePlayers.count - 1)
+        return miniWorldCupActivePlayers[index]
+    }
+    
+    var miniWorldCupEffectiveFlagCount: Int {
+        miniWorldCupActivePlayers.count <= 4 ? 1 : miniWorldCupFlagsPerPlayer
+    }
+    
+    var miniWorldCupEffectiveRequiredCorrect: Int {
+        min(miniWorldCupRequiredCorrect, miniWorldCupEffectiveFlagCount)
+    }
+    
+    var miniWorldCupTurnRuleText: String {
+        L("\(miniWorldCupEffectiveFlagCount) Flagge(n), \(miniWorldCupEffectiveRequiredCorrect) richtig zum Weiterkommen", "\(miniWorldCupEffectiveFlagCount) flag(s), \(miniWorldCupEffectiveRequiredCorrect) correct to advance")
+    }
+    
+    var miniWorldCupQuestionProgressText: String {
+        L("Flagge \(miniWorldCupCurrentAttempt)/\(miniWorldCupEffectiveFlagCount) · \(miniWorldCupCurrentCorrect) richtig", "Flag \(miniWorldCupCurrentAttempt)/\(miniWorldCupEffectiveFlagCount) · \(miniWorldCupCurrentCorrect) correct")
+    }
+    
+    var miniWorldCupSwipeColor: Color {
+        if miniWorldCupCardDragOffset.width > 24 { return .green }
+        if miniWorldCupCardDragOffset.width < -24 { return .red }
+        return tealAccentColor
+    }
+    
+    func addMiniWorldCupPlayer() {
+        let name = miniWorldCupNewPlayerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        guard !miniWorldCupPlayers.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else {
+            miniWorldCupNewPlayerName = ""
+            return
+        }
+        miniWorldCupPlayers.append(MiniWorldCupPlayer(name: name))
+        miniWorldCupNewPlayerName = ""
+    }
+    
+    func startMiniWorldCup() {
+        guard miniWorldCupPlayers.count >= 2 else { return }
+        miniWorldCupActivePlayers = miniWorldCupPlayers
+        miniWorldCupEliminations = []
+        miniWorldCupCurrentPlayerIndex = 0
+        miniWorldCupRound = 1
+        miniWorldCupCurrentAttempt = 1
+        miniWorldCupCurrentCorrect = 0
+        miniWorldCupCardDragOffset = .zero
+        miniWorldCupAnswerFeedback = nil
+        miniWorldCupCurrentCountry = nextMiniWorldCupCountry()
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+            miniWorldCupPhase = .handoff
+        }
+    }
+    
+    func resetMiniWorldCupToSetup(keepPlayers: Bool) {
+        if !keepPlayers {
+            miniWorldCupPlayers = []
+        }
+        miniWorldCupActivePlayers = []
+        miniWorldCupEliminations = []
+        miniWorldCupCurrentPlayerIndex = 0
+        miniWorldCupRound = 1
+        miniWorldCupCurrentAttempt = 1
+        miniWorldCupCurrentCorrect = 0
+        miniWorldCupCardDragOffset = .zero
+        miniWorldCupAnswerFeedback = nil
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+            miniWorldCupPhase = .setup
+        }
+    }
+    
+    func nextMiniWorldCupCountry() -> Country {
+        availableCountries.randomElement() ?? allCountries[0]
+    }
+    
+    func finishMiniWorldCupSwipe(width: CGFloat) {
+        let threshold: CGFloat = 82
+        guard abs(width) >= threshold else {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+                miniWorldCupCardDragOffset = .zero
+            }
+            return
+        }
+        
+        handleMiniWorldCupAnswer(known: width > 0)
+    }
+    
+    func handleMiniWorldCupAnswer(known: Bool) {
+        guard miniWorldCupPhase == .question, !miniWorldCupActivePlayers.isEmpty, miniWorldCupAnswerFeedback == nil else { return }
+        Haptics.tap(style: known ? .medium : .light)
+        miniWorldCupAnswerFeedback = known
+        
+        withAnimation(.easeInOut(duration: 0.18)) {
+            miniWorldCupCardDragOffset = CGSize(width: known ? 620 : -620, height: 0)
+        }
+        
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            finishMiniWorldCupAttempt(known: known)
+        }
+    }
+    
+    func finishMiniWorldCupAttempt(known: Bool) {
+        guard !miniWorldCupActivePlayers.isEmpty else { return }
+        let updatedCorrect = miniWorldCupCurrentCorrect + (known ? 1 : 0)
+        let flagCount = miniWorldCupEffectiveFlagCount
+        let requiredCorrect = miniWorldCupEffectiveRequiredCorrect
+        
+        if miniWorldCupCurrentAttempt >= flagCount {
+            if updatedCorrect >= requiredCorrect {
+                advanceMiniWorldCupCurrentPlayer(correctCount: updatedCorrect)
+            } else {
+                eliminateMiniWorldCupCurrentPlayer(correctCount: updatedCorrect, flagCount: flagCount)
+            }
+        } else {
+            miniWorldCupCurrentCorrect = updatedCorrect
+            miniWorldCupCurrentAttempt += 1
+            miniWorldCupCurrentCountry = nextMiniWorldCupCountry()
+            miniWorldCupCardDragOffset = .zero
+            miniWorldCupAnswerFeedback = nil
+        }
+    }
+    
+    func advanceMiniWorldCupCurrentPlayer(correctCount: Int) {
+        guard !miniWorldCupActivePlayers.isEmpty else { return }
+        miniWorldCupCurrentCorrect = correctCount
+        miniWorldCupCurrentPlayerIndex = (miniWorldCupCurrentPlayerIndex + 1) % miniWorldCupActivePlayers.count
+        prepareNextMiniWorldCupTurn()
+    }
+    
+    func eliminateMiniWorldCupCurrentPlayer(correctCount: Int, flagCount: Int) {
+        guard !miniWorldCupActivePlayers.isEmpty else { return }
+        let safeIndex = min(miniWorldCupCurrentPlayerIndex, miniWorldCupActivePlayers.count - 1)
+        let eliminated = miniWorldCupActivePlayers.remove(at: safeIndex)
+        miniWorldCupEliminations.insert(
+            MiniWorldCupElimination(
+                playerName: eliminated.name,
+                country: miniWorldCupCurrentCountry,
+                round: miniWorldCupRound,
+                correctCount: correctCount,
+                flagCount: flagCount
+            ),
+            at: 0
+        )
+        
+        if miniWorldCupActivePlayers.count <= 1 {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                miniWorldCupPhase = .finished
+                miniWorldCupCardDragOffset = .zero
+            }
+            return
+        }
+        
+        miniWorldCupCurrentPlayerIndex = safeIndex % miniWorldCupActivePlayers.count
+        prepareNextMiniWorldCupTurn()
+    }
+    
+    func prepareNextMiniWorldCupTurn() {
+        miniWorldCupRound += 1
+        miniWorldCupCurrentAttempt = 1
+        miniWorldCupCurrentCorrect = 0
+        miniWorldCupCurrentCountry = nextMiniWorldCupCountry()
+        miniWorldCupCardDragOffset = .zero
+        miniWorldCupAnswerFeedback = nil
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+            miniWorldCupPhase = .handoff
+        }
     }
     
     func finishPracticeSwipe(translation: CGSize, predictedTranslation: CGSize) {
@@ -6351,7 +8278,9 @@ struct ContentView: View {
     }
     
     func showSessionProgressText() -> String {
-        let displayedCurrent = max(showSessionCount, 1)
+        let displayedCurrent = selectedShowCardLimit > 0
+            ? min(showSessionCount + 1, selectedShowCardLimit)
+            : showSessionCount + 1
         let unit = selectedSubject == .capitals ? L("Land", "country") : L("Flagge", "flag")
         let base = L("\(displayedCurrent). \(unit)", "\(displayedCurrent). \(unit)")
         guard selectedShowCardLimit > 0 else { return base }
@@ -6410,7 +8339,6 @@ struct ContentView: View {
     
     func nextShowCard() {
         guard !showLimitReached else { return }
-        prepareShowCard()
         showSessionCount += 1
         showSessionEntries.append(ShowSessionEntry(country: currentCountry))
         updateActiveProfile { profile in
@@ -6420,6 +8348,9 @@ struct ContentView: View {
             }
         }
         checkForUnlockedAchievements()
+        
+        guard !showLimitReached else { return }
+        prepareShowCard()
     }
     
     func nextShowCountry() -> Country {
@@ -6700,6 +8631,7 @@ enum PracticeHistoryMark: Equatable {
     case unknown
     case current
     case pending
+    case seen
     
     var systemImage: String {
         switch self {
@@ -6707,6 +8639,7 @@ enum PracticeHistoryMark: Equatable {
         case .unknown: return "xmark"
         case .current: return "questionmark"
         case .pending: return "circle"
+        case .seen: return "eye.fill"
         }
     }
 }
@@ -6807,6 +8740,7 @@ struct PracticeHistoryPill: View {
         case .unknown: return .red
         case .current: return accentColor
         case .pending: return Color(.tertiarySystemFill)
+        case .seen: return accentColor.opacity(0.78)
         }
     }
     
@@ -6864,7 +8798,7 @@ struct ShowHistoryBar: View {
                     Button {
                         onSelectEntry(ShowHistoryPreview(entry: entry, index: index, total: totalSlots))
                     } label: {
-                        PracticeHistoryPill(mark: .known, accentColor: accentColor, isSelected: selectedEntryID == entry.id)
+                        PracticeHistoryPill(mark: .seen, accentColor: accentColor, isSelected: selectedEntryID == entry.id)
                     }
                     .buttonStyle(.plain)
                     .contentShape(Circle())
@@ -7412,26 +9346,103 @@ struct FlagImage: View {
     let country: Country
     let width: CGFloat
     let height: CGFloat
+    @State private var image: UIImage?
+    @State private var didFailLoading = false
     
     var body: some View {
-        AsyncImage(url: country.flagImageURL) { phase in
-            switch phase {
-            case .success(let image):
-                image
+        Group {
+            if let image {
+                Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
-            case .failure:
+            } else if didFailLoading {
                 Image(systemName: "flag.slash")
                     .font(.system(size: min(width, height) * 0.45))
                     .foregroundStyle(.secondary)
-            case .empty:
+            } else {
                 ProgressView()
-            @unknown default:
-                EmptyView()
             }
         }
         .frame(width: width, height: height)
         .clipped()
+        .task(id: country.code) {
+            await loadImage()
+        }
+    }
+    
+    @MainActor
+    private func loadImage() async {
+        guard let url = country.flagImageURL else {
+            image = nil
+            didFailLoading = true
+            return
+        }
+        
+        if let cachedImage = FlagImageCache.shared.image(for: url) {
+            image = cachedImage
+            didFailLoading = false
+            return
+        }
+        
+        image = nil
+        didFailLoading = false
+        do {
+            let loadedImage = try await FlagImageCache.shared.loadImage(from: url)
+            guard !Task.isCancelled else { return }
+            image = loadedImage
+        } catch {
+            guard !Task.isCancelled else { return }
+            didFailLoading = true
+        }
+    }
+}
+
+final class FlagImageCache {
+    static let shared = FlagImageCache()
+    
+    private let cache = NSCache<NSURL, UIImage>()
+    private var loadingTasks: [URL: Task<UIImage, Error>] = [:]
+    
+    private init() {
+        cache.countLimit = 220
+    }
+    
+    @MainActor
+    func image(for url: URL) -> UIImage? {
+        cache.object(forKey: url as NSURL)
+    }
+    
+    @MainActor
+    func loadImage(from url: URL) async throws -> UIImage {
+        if let cachedImage = image(for: url) {
+            return cachedImage
+        }
+        
+        if let task = loadingTasks[url] {
+            return try await task.value
+        }
+        
+        let task = Task.detached(priority: .utility) {
+            var request = URLRequest(url: url)
+            request.cachePolicy = .returnCacheDataElseLoad
+            request.timeoutInterval = 8
+            let (data, _) = try await URLSession.shared.data(for: request)
+            guard let image = UIImage(data: data) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            return image
+        }
+        
+        loadingTasks[url] = task
+        do {
+            let loadedImage = try await task.value
+            cache.setObject(loadedImage, forKey: url as NSURL)
+            loadingTasks[url] = nil
+            return loadedImage
+        } catch {
+            loadingTasks[url] = nil
+            throw error
+        }
     }
 }
 
@@ -8634,12 +10645,34 @@ struct LeagueLeaderboardRow: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(player.leagueRating)")
                     .font(.subheadline.monospacedDigit().weight(.bold))
-                Text(localized("Best \(player.leagueBestScore)", "Best \(player.leagueBestScore)", language: language))
+                Text(Self.leagueTitle(for: player.leagueRating))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 6)
+    }
+    
+    static func leagueTitle(for rating: Int) -> String {
+        let league: String
+        switch rating {
+        case ..<800: league = "Bronze"
+        case 800..<1100: league = "Silber"
+        case 1100..<1400: league = "Gold"
+        case 1400..<1700: league = "Platin"
+        case 1700..<2000: league = "Meister"
+        default: league = "Legende"
+        }
+        
+        let position = max(rating, 100) % 300
+        let division: String
+        switch position {
+        case 0..<100: division = "III"
+        case 100..<200: division = "II"
+        default: division = "I"
+        }
+        
+        return "\(league) \(division)"
     }
 }
 
@@ -9165,7 +11198,6 @@ struct CountryStatsRow: View {
     func percent(_ value: Double) -> String {
         String(format: "%.1f %%", value * 100)
     }
-    
     func seconds(_ value: Double?) -> String {
         guard let value else { return "-" }
         return String(format: "%.2f s", value)
