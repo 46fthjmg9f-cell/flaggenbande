@@ -652,16 +652,6 @@ struct LeagueMatchResult: Identifiable, Codable {
     }
 }
 
-struct LeaguePresetOpponent: Identifiable {
-    let id: String
-    let titleDE: String
-    let titleEN: String
-    let subtitleDE: String
-    let subtitleEN: String
-    let score: Int
-    let rating: Int
-}
-
 struct LeagueStats: Codable {
     var rating: Int = 1000
     var played: Int = 0
@@ -676,9 +666,7 @@ struct LeagueStats: Codable {
     var bestWinStreak: Int = 0
     var recentMatches: [LeagueMatchResult] = []
     
-    var averageScore: Double {
-        played == 0 ? 0 : Double(totalScore) / Double(played)
-    }
+    var averageScore: Double { 0 }
     
     var accuracy: Double {
         let total = totalCorrect + totalWrong
@@ -718,27 +706,10 @@ struct LeagueStats: Codable {
     mutating func recordMatch(_ result: LeagueMatchResult, opponentRating: Int) {
         played += 1
         bestScore = max(bestScore, result.ownScore)
-        totalScore += result.ownScore
         totalCorrect += result.correct
         totalWrong += result.wrong
-        
-        let actualScore: Double
-        
-        if result.didWin {
-            wins += 1
-            actualScore = 1
-            currentWinStreak += 1
-            bestWinStreak = max(bestWinStreak, currentWinStreak)
-        } else {
-            losses += 1
-            actualScore = 0
-            currentWinStreak = 0
-        }
-        
-        let expectedScore = 1 / (1 + pow(10, Double(opponentRating - rating) / 400))
-        let performanceBonus = min(max(Double(result.ownScore - result.opponentScore) / 1000, -0.08), 0.08)
-        let delta = Int((32 * (actualScore - expectedScore + performanceBonus)).rounded())
-        rating = max(100, rating + delta)
+        currentWinStreak = result.ownScore > 0 ? currentWinStreak + 1 : 0
+        bestWinStreak = max(bestWinStreak, currentWinStreak)
         
         recentMatches.insert(result, at: 0)
         recentMatches = Array(recentMatches.prefix(12))
@@ -1020,7 +991,9 @@ struct UserProfile: Identifiable, Codable {
     mutating func applyWeeklyTierDecay(now: Date = Date()) -> [TierDecayChange] {
         var changes: [TierDecayChange] = []
         for key in Array(byCountry.keys) {
-            if var change = byCountry[key]?.applyWeeklyDecay(now: now) {
+            guard var countryStats = byCountry[key] else { continue }
+            if var change = countryStats.applyWeeklyDecay(now: now) {
+                byCountry[key] = countryStats
                 change.statsKey = key
                 changes.append(change)
             }
@@ -1147,28 +1120,8 @@ struct OnlinePlayerStats: Identifiable {
     }
 }
 
-struct LeagueLiveMatch {
-    let id: String
-    let playerAID: String
-    let playerBID: String
-    let playerAName: String
-    let playerBName: String
-    let countryCodes: [String]
-    let playerAScore: Int?
-    let playerBScore: Int?
-    
-    func opponentName(for playerID: String) -> String {
-        playerID == playerAID ? playerBName : playerAName
-    }
-    
-    func opponentScore(for playerID: String) -> Int? {
-        playerID == playerAID ? playerBScore : playerAScore
-    }
-}
-
 enum OnlineStatsService {
     static let recordType = "PlayerStats"
-    static let liveMatchRecordType = "LeagueLiveMatch"
     static let nicknameRecordType = "NicknameClaim"
     static let playerIDKey = "onlinePlayerID"
     static let testFriendName = "FlaggenTest"
@@ -1319,67 +1272,6 @@ enum OnlineStatsService {
                 }
                 return $0.totalPracticed > $1.totalPracticed
             }
-    }
-    
-    static func findOrCreateLiveLeagueMatch(
-        currentPlayerID: String,
-        currentPlayerName: String,
-        opponent: OnlinePlayerStats,
-        countries: [Country]
-    ) async throws -> LeagueLiveMatch {
-        try await ensureAccountAvailable()
-        let ids = [currentPlayerID, opponent.id].sorted()
-        let recordName = "league_live_" + ids.joined(separator: "_").filter { $0.isLetter || $0.isNumber || $0 == "_" }
-        let recordID = CKRecord.ID(recordName: recordName)
-        
-        if let existing = try await fetchRecord(recordID: recordID),
-           let match = LeagueLiveMatch(record: existing),
-           match.countryCodes.count >= 20,
-           existing["createdAt"] as? Date ?? .distantPast > Date().addingTimeInterval(-900),
-           (match.playerAScore == nil || match.playerBScore == nil) {
-            return match
-        }
-        
-        let currentIsA = currentPlayerID == ids[0]
-        let sequence = countries.shuffled().prefix(80).map(\.code).joined(separator: "|")
-        let record = CKRecord(recordType: liveMatchRecordType, recordID: recordID)
-        record["playerAID"] = ids[0] as CKRecordValue
-        record["playerBID"] = ids[1] as CKRecordValue
-        record["playerAName"] = (currentIsA ? currentPlayerName : opponent.displayName) as CKRecordValue
-        record["playerBName"] = (currentIsA ? opponent.displayName : currentPlayerName) as CKRecordValue
-        record["countryCodes"] = sequence as CKRecordValue
-        record["createdAt"] = Date() as CKRecordValue
-        record["updatedAt"] = Date() as CKRecordValue
-        try await save(record: record)
-        return LeagueLiveMatch(record: record) ?? LeagueLiveMatch(
-            id: recordName,
-            playerAID: ids[0],
-            playerBID: ids[1],
-            playerAName: currentIsA ? currentPlayerName : opponent.displayName,
-            playerBName: currentIsA ? opponent.displayName : currentPlayerName,
-            countryCodes: sequence.split(separator: "|").map(String.init),
-            playerAScore: nil,
-            playerBScore: nil
-        )
-    }
-    
-    static func submitLiveLeagueScore(matchID: String, playerID: String, score: Int) async throws {
-        try await ensureAccountAvailable()
-        let recordID = CKRecord.ID(recordName: matchID)
-        guard let record = try await fetchRecord(recordID: recordID) else { return }
-        if (record["playerAID"] as? String) == playerID {
-            record["playerAScore"] = score as CKRecordValue
-        } else if (record["playerBID"] as? String) == playerID {
-            record["playerBScore"] = score as CKRecordValue
-        }
-        record["updatedAt"] = Date() as CKRecordValue
-        try await save(record: record)
-    }
-    
-    static func fetchLiveLeagueMatch(matchID: String) async throws -> LeagueLiveMatch? {
-        try await ensureAccountAvailable()
-        guard let record = try await fetchRecord(recordID: CKRecord.ID(recordName: matchID)) else { return nil }
-        return LeagueLiveMatch(record: record)
     }
     
     static func createTestFriend(countries: [Country]) async throws {
@@ -1733,32 +1625,12 @@ extension OnlinePlayerStats {
     }
 }
 
-extension LeagueLiveMatch {
-    init?(record: CKRecord) {
-        guard let playerAID = record["playerAID"] as? String,
-              let playerBID = record["playerBID"] as? String,
-              let playerAName = record["playerAName"] as? String,
-              let playerBName = record["playerBName"] as? String,
-              let countryCodesRaw = record["countryCodes"] as? String else {
-            return nil
-        }
-        
-        id = record.recordID.recordName
-        self.playerAID = playerAID
-        self.playerBID = playerBID
-        self.playerAName = playerAName
-        self.playerBName = playerBName
-        countryCodes = countryCodesRaw.split(separator: "|").map(String.init)
-        playerAScore = (record["playerAScore"] as? NSNumber)?.intValue
-        playerBScore = (record["playerBScore"] as? NSNumber)?.intValue
-    }
-}
-
 enum CountryScope {
     static let worldwide = "Alle Länder"
 }
 
 enum AppScreen: String, CaseIterable, Hashable, Identifiable {
+    case games = "games"
     case practice = "practice"
     case showmaster = "showmaster"
     case miniWorldCup = "miniWorldCup"
@@ -1771,23 +1643,25 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
     
     func title(language: AppLanguage) -> String {
         switch self {
+        case .games: return localized("Spielen", "Play", language: language)
         case .practice: return localized("Üben", "Practice", language: language)
         case .showmaster: return "Showmaster"
-        case .miniWorldCup: return "Mini-WM"
-        case .league: return localized("Liga (WIP)", "League (WIP)", language: language)
+        case .miniWorldCup: return localized("Partymodus Beta", "Party Mode Beta", language: language)
+        case .league: return localized("Flaggenrun Beta", "Flag Run Beta", language: language)
         case .statistics: return localized("Statistik", "Statistics", language: language)
         case .globe: return localized("Globus", "Globe", language: language)
         case .achievements: return localized("Achievements", "Achievements", language: language)
-        case .friends: return localized("Freunde", "Friends", language: language)
+        case .friends: return localized("Online", "Online", language: language)
         case .options: return localized("Optionen", "Options", language: language)
         }
     }
     
     var iconName: String {
         switch self {
+        case .games: return "play.rectangle.fill"
         case .practice: return "rectangle.stack.fill"
         case .showmaster: return "rectangle.on.rectangle"
-        case .miniWorldCup: return "trophy.fill"
+        case .miniWorldCup: return "person.3.fill"
         case .league: return "trophy.circle.fill"
         case .statistics: return "chart.bar.fill"
         case .globe: return "globe.europe.africa.fill"
@@ -1801,24 +1675,26 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
     
     func infoText(language: AppLanguage) -> String {
         switch self {
+        case .games:
+            return localized("Alle Spielmodi an einem Ort: Üben, Showmaster, Partymodus und Flaggenrun.", "All game modes in one place: Practice, Showmaster, Party Mode, and Flag Run.", language: language)
         case .practice:
-            return localized("Trainiere einzelne Flaggen oder Hauptstädte. Du wischt Karten als gewusst oder nicht gewusst, damit schwierige Karten häufiger kommen.", "Train individual flags or capitals. Swipe cards as known or not known so difficult cards appear more often.", language: language)
+            return localized("Trainiere Flaggen oder Hauptstädte mit Wischkarten. Rechts heißt gewusst, links heißt nicht gewusst; schwierige Karten kommen dadurch häufiger wieder.", "Train flags or capitals with swipe cards. Right means known, left means not known; difficult cards then appear more often.", language: language)
         case .showmaster:
-            return localized("Starte eine kurze Kartenrunde ohne Eingabe. Du entscheidest selbst, ob eine Flagge gewusst wurde.", "Start a short card round without typing. You decide whether a flag was known.", language: language)
+            return localized("Spiele eine schnelle Kartenrunde zum Abfragen. Du siehst nacheinander Flaggen und entscheidest selbst, ob die Antwort gezählt wird.", "Play a quick quiz round. You see flags one after another and decide yourself whether the answer counts.", language: language)
         case .miniWorldCup:
-            return localized("Gib das Handy im Kreis weiter. Jede Person bekommt Flaggen, braucht genug richtige Antworten und scheidet sonst aus.", "Pass the phone around. Each person gets flags, needs enough correct answers, and is eliminated otherwise.", language: language)
+            return localized("Party-Modus zum Handy-Weitergeben. Jede Person bekommt pro Runde Flaggen, braucht genug richtige Antworten und fliegt sonst aus dem Turnier.", "Party mode for passing the phone around. Each person gets flags per round, needs enough correct answers, and is otherwise eliminated from the tournament.", language: language)
         case .league:
-            return localized("WIP: Liga, ELO und 1-gegen-1-Runden. Dieser Bereich ist noch im Aufbau.", "WIP: league, ELO, and 1v1 rounds. This area is still being built.", language: language)
+            return localized("WIP: Zeitmodus für deinen besten Flaggenrun. Verbessere deinen Highscore und vergleiche ihn online.", "WIP: timed mode for your best Flag Run. Improve your high score and compare it online.", language: language)
         case .statistics:
-            return localized("Sieh deine Lernstände, Trefferquoten, Serien und gespeicherten Ergebnisse.", "View your mastery levels, accuracy, streaks, and saved results.", language: language)
+            return localized("Zeigt Lernstände, Trefferquoten, Serien, Matchverläufe und welche Länder du sicher oder unsicher kannst.", "Shows mastery levels, accuracy, streaks, match history, and which countries are strong or weak for you.", language: language)
         case .globe:
-            return localized("Erkunde deine Länder auf dem Globus und öffne einzelne Statistiken direkt über die Karte.", "Explore your countries on the globe and open individual stats directly from the map.", language: language)
+            return localized("Erkunde deinen Fortschritt auf dem Globus. Farben zeigen Lernstufen, einzelne Länder öffnen Detailstatistiken.", "Explore your progress on the globe. Colors show mastery levels, and individual countries open detailed stats.", language: language)
         case .achievements:
-            return localized("Hier siehst du freigeschaltete Erfolge und deinen Fortschritt zu den nächsten Zielen.", "See unlocked achievements and your progress toward the next goals.", language: language)
+            return localized("Sammelt Erfolge für Üben, Showmaster und Spezialziele. Du siehst, was freigeschaltet ist und was als Nächstes fehlt.", "Collects achievements for practice, Showmaster, and special goals. You see what is unlocked and what is still missing.", language: language)
         case .friends:
-            return localized("Verbinde Onlinefunktionen, vergleiche Fortschritt und verwalte Freundesdaten.", "Connect online features, compare progress, and manage friend data.", language: language)
+            return localized("Verwaltet Onlinefunktionen, Freundesvergleiche, Ranglisten und Cloud-Sync.", "Manages online features, friend comparisons, leaderboards, and cloud sync.", language: language)
         case .options:
-            return localized("Passe Sprache, Daten, Onlinefunktionen, Debugschalter und App-Einstellungen an.", "Adjust language, data, online features, debug toggles, and app settings.", language: language)
+            return localized("Einstellungen für Sprache, Daten, Vollversion, Onlinefunktionen und Debug-Hilfen während der Entwicklung.", "Settings for language, data, full version, online features, and debug helpers during development.", language: language)
         }
     }
 }
@@ -1879,9 +1755,9 @@ struct GameCenterAuthView: UIViewControllerRepresentable {
 }
 
 enum OnlineLeaderboardMetric {
-    case total
     case week
-    case achievements
+    case flaggenrun
+    case flaggenscore
 }
 
 enum OnlineLeaderboardScope: String, CaseIterable, Identifiable {
@@ -1938,11 +1814,39 @@ struct MiniWorldCupElimination: Identifiable, Equatable {
     let flagCount: Int
 }
 
+struct MiniWorldCupRoundResult: Identifiable, Equatable {
+    let id = UUID()
+    let playerName: String
+    let country: Country
+    let round: Int
+    let correctCount: Int
+    let flagCount: Int
+    let didAdvance: Bool
+}
+
 struct MiniWorldCupBracketRow: Identifiable {
     let place: Int
     let elimination: MiniWorldCupElimination
     
     var id: UUID { elimination.id }
+}
+
+struct MiniWorldCupUndoSnapshot {
+    let activePlayers: [MiniWorldCupPlayer]
+    let eliminations: [MiniWorldCupElimination]
+    let roundResults: [MiniWorldCupRoundResult]
+    let phase: MiniWorldCupPhase
+    let currentPlayerIndex: Int
+    let currentCountry: Country
+    let round: Int
+    let currentAttempt: Int
+    let currentCorrect: Int
+    let currentAttemptResults: [Bool]
+    let cardIsFlipped: Bool
+    let cardWasRevealed: Bool
+    let recentCountryCodes: [String]
+    let deckCountryCodes: [String]
+    let suddenDeathIsActive: Bool
 }
 
 enum MiniWorldCupPhase {
@@ -2094,6 +1998,7 @@ struct ContentView: View {
     @AppStorage("appTheme") private var appThemeRawValue: String = AppTheme.system.rawValue
     @AppStorage("appAccent") private var appAccentRawValue: String = AppAccent.teal.rawValue
     @AppStorage("friendNames") private var friendNamesRawValue: String = ""
+    @AppStorage("tierDecayPopupLastShownSignature") private var tierDecayPopupLastShownSignature: String = ""
     @AppStorage("includePartiallyRecognizedFlags") private var includePartiallyRecognizedFlags: Bool = false
     @AppStorage("onlineFeaturesEnabled") private var onlineFeaturesEnabled: Bool = true
     @AppStorage("didEnableOnlineByDefault") private var didEnableOnlineByDefault: Bool = false
@@ -2137,8 +2042,6 @@ struct ContentView: View {
     @State private var selectedShowCardLimit: Int = 0
     @State private var showAvoidsRecentRepeats: Bool = true
     @State private var leagueShowsStartMenu: Bool = true
-    @State private var leagueOpponentPickerPulse: Bool = false
-    @State private var selectedLeagueOpponentID: String = "preset_average"
     @State private var leagueMatchActive: Bool = false
     @State private var leagueSecondsRemaining: Int = 60
     @State private var leagueCurrentCountry: Country = allCountries[0]
@@ -2166,18 +2069,9 @@ struct ContentView: View {
     @State private var leaguePreloadedFlagImage: UIImage?
     @State private var leagueTypingLockedUntil: Date = .distantPast
     @State private var leagueCurrentQuestionStartedAt: Date = Date()
-    @State private var leagueIsPreparingLiveMatch: Bool = false
-    @State private var leagueLiveMatchID: String?
-    @State private var leagueLivePlayerID: String = ""
-    @State private var leagueLiveOpponentName: String = ""
-    @State private var leagueLiveOpponentScore: Int?
-    @State private var leagueLiveCountryCodes: [String] = []
-    @State private var leagueLiveCountryIndex: Int = 0
-    @State private var leagueLiveResultText: String = ""
-    @State private var leagueLivePollTask: Task<Void, Never>?
     @State private var leagueNotificationsAuthorized: Bool = false
-    @State private var leagueTestFriendEnsured: Bool = false
     @FocusState private var isLeagueAnswerFocused: Bool
+    @FocusState private var isMiniWorldCupNameFocused: Bool
     @State private var practiceSessionSeenCountryCodes: Set<String> = []
     @State private var showRecentCountryCodes: [String] = []
     @State private var showDeckCountryCodes: [String] = []
@@ -2201,16 +2095,33 @@ struct ContentView: View {
     @State private var miniWorldCupNewPlayerName: String = ""
     @State private var miniWorldCupActivePlayers: [MiniWorldCupPlayer] = []
     @State private var miniWorldCupEliminations: [MiniWorldCupElimination] = []
+    @State private var miniWorldCupRoundResults: [MiniWorldCupRoundResult] = []
     @State private var miniWorldCupPhase: MiniWorldCupPhase = .setup
     @State private var miniWorldCupCurrentPlayerIndex: Int = 0
     @State private var miniWorldCupCurrentCountry: Country = allCountries[0]
     @State private var miniWorldCupRound: Int = 1
     @State private var miniWorldCupFlagsPerPlayer: Int = 2
     @State private var miniWorldCupRequiredCorrect: Int = 1
+    @State private var miniWorldCupSuddenDeathEnabled: Bool = true
+    @State private var miniWorldCupSuddenDeathThreshold: Int = 4
+    @State private var miniWorldCupSuddenDeathIsActive: Bool = false
     @State private var miniWorldCupCurrentAttempt: Int = 1
     @State private var miniWorldCupCurrentCorrect: Int = 0
+    @State private var miniWorldCupCurrentAttemptResults: [Bool] = []
+    @State private var miniWorldCupAdvancePopupText: String?
+    @State private var miniWorldCupMustKnowPulse: Bool = false
+    @State private var miniWorldCupCardIsFlipped: Bool = false
+    @State private var miniWorldCupCardWasRevealed: Bool = false
+    @State private var miniWorldCupCardEntryOffset: CGFloat = 0
+    @State private var miniWorldCupCardEntryOpacity: Double = 1
     @State private var miniWorldCupCardDragOffset: CGSize = .zero
     @State private var miniWorldCupAnswerFeedback: Bool?
+    @State private var miniWorldCupRecentCountryCodes: [String] = []
+    @State private var miniWorldCupDeckCountryCodes: [String] = []
+    @State private var miniWorldCupUndoSnapshot: MiniWorldCupUndoSnapshot?
+    @State private var miniWorldCupSuddenDeathAnnouncementVisible: Bool = false
+    @State private var miniWorldCupEliminationPopupText: String?
+    @State private var miniWorldCupDangerShakeTrigger: Int = 0
     @State private var currentCountry: Country = allCountries[0]
     @State private var cardIsFlipped: Bool = false
     @State private var cardHintIsVisible: Bool = false
@@ -2228,6 +2139,7 @@ struct ContentView: View {
     @State private var globeResetToken: Int = 0
     @State private var tierDecayPopup: TierDecayPopup?
     @State private var selectedTierDecayChangeID: String?
+    @State private var tierDecayShowsAllChanges: Bool = false
     @State private var achievementPopupItem: AchievementItem?
     @State private var achievementSortMode: AchievementSortMode = .category
     @State private var selectedMenuInfoScreen: AppScreen?
@@ -2240,6 +2152,8 @@ struct ContentView: View {
                 startView
                     .navigationDestination(for: AppScreen.self) { screen in
                         switch screen {
+                        case .games:
+                            gameModesView
                         case .practice:
                             practiceView
                         case .showmaster:
@@ -2640,6 +2554,10 @@ struct ContentView: View {
             .filter { !$0.isEmpty }
     }
     
+    var onlineDisplayName: String {
+        OnlineStatsService.normalizedName(onlinePlayerName, fallback: gameCenterAlias.isEmpty ? L("Nicht gesetzt", "Not set") : gameCenterAlias)
+    }
+    
     var deduplicatedOnlineLeaderboard: [OnlinePlayerStats] {
         var playersByKey: [String: OnlinePlayerStats] = [:]
         let newestFirst = onlineLeaderboard.sorted { $0.updatedAt > $1.updatedAt }
@@ -2671,8 +2589,53 @@ struct ContentView: View {
         }
     }
     
+    var gameCenterFriendPlayers: [OnlinePlayerStats] {
+        let manualFriendIDs = Set(friendNames.compactMap { onlinePlayer(forFriend: $0)?.id })
+        return friendLeaderboard
+            .filter { gameCenterFriendIDs.contains($0.gameCenterPlayerID) && !manualFriendIDs.contains($0.id) }
+            .sorted { $0.displayName < $1.displayName }
+    }
+    
+    func onlinePlayer(forFriend friend: String) -> OnlinePlayerStats? {
+        let token = normalizedFriendToken(friend)
+        return deduplicatedOnlineLeaderboard.first { player in
+            normalizedFriendToken(player.playerName) == token ||
+            normalizedFriendToken(player.gameCenterAlias) == token ||
+            normalizedFriendToken(player.friendCode) == token ||
+            normalizedFriendToken(player.displayName) == token
+        }
+    }
+    
+    func openFriendStatsFromFriendList(_ player: OnlinePlayerStats) {
+        isShowingFriendList = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            selectedOnlineGlobePlayer = player
+        }
+    }
+    
     var scopedOnlineLeaderboard: [OnlinePlayerStats] {
         selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
+    }
+    
+    var scopedFlaggenrunLeaderboard: [OnlinePlayerStats] {
+        let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
+        return source.sorted {
+            if $0.leagueBestScore == $1.leagueBestScore {
+                return $0.learnedThisWeek > $1.learnedThisWeek
+            }
+            return $0.leagueBestScore > $1.leagueBestScore
+        }
+    }
+    
+    var friendFlaggenscoreLeaderboard: [OnlinePlayerStats] {
+        friendLeaderboard.sorted {
+            let firstScore = onlineFlaggenbossScore(for: $0)
+            let secondScore = onlineFlaggenbossScore(for: $1)
+            if firstScore == secondScore {
+                return $0.learnedThisWeek > $1.learnedThisWeek
+            }
+            return firstScore > secondScore
+        }
     }
     
     var scopedLearnedThisWeekLeaderboard: [OnlinePlayerStats] {
@@ -3221,51 +3184,8 @@ struct ContentView: View {
                     subjectModePickerCard()
                     
                     VStack(spacing: 12) {
-                        ForEach(AppScreen.allCases, id: \.self) { screen in
-                            HStack(spacing: 10) {
-                                NavigationLink(value: screen) {
-                                    HStack(spacing: 14) {
-                                        Image(systemName: screen.iconName)
-                                            .font(.title3)
-                                            .frame(width: 28)
-                                        Text(screen.title(language: appLanguage))
-                                            .font(.title3.weight(.semibold))
-                                            .lineLimit(1)
-                                            .minimumScaleFactor(0.82)
-                                        Spacer()
-                                        if screen == .globe && !fullVersionUnlocked {
-                                            Image(systemName: "lock.fill")
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        Image(systemName: "chevron.right")
-                                            .font(.headline)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    .padding(.vertical, 14)
-                                    .padding(.leading, 14)
-                                    .contentShape(Rectangle())
-                                }
-                                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
-                                .buttonStyle(.plain)
-                                
-                                Button {
-                                    Haptics.tap()
-                                    selectedMenuInfoScreen = screen
-                                } label: {
-                                    Image(systemName: "info.circle.fill")
-                                        .font(.title3)
-                                        .foregroundStyle(tealAccentColor)
-                                        .frame(width: 44, height: 44)
-                                        .contentShape(Circle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(L("Info zu \(screen.title(language: appLanguage))", "Info about \(screen.title(language: appLanguage))"))
-                            }
-                            .padding(.trailing, 6)
-                            .frame(maxWidth: .infinity)
-                            .background(panelBackgroundColor)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        ForEach(mainMenuScreens, id: \.self) { screen in
+                            menuScreenRow(screen)
                         }
                     }
                     
@@ -3303,6 +3223,81 @@ struct ContentView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+    }
+    
+    var mainMenuScreens: [AppScreen] {
+        [.games, .statistics, .globe, .achievements, .friends, .options]
+    }
+    
+    var gameModeScreens: [AppScreen] {
+        [.practice, .showmaster, .miniWorldCup, .league]
+    }
+    
+    func menuScreenRow(_ screen: AppScreen) -> some View {
+        HStack(spacing: 10) {
+            NavigationLink(value: screen) {
+                HStack(spacing: 14) {
+                    Image(systemName: screen.iconName)
+                        .font(.title3)
+                        .frame(width: 28)
+                    Text(screen.title(language: appLanguage))
+                        .font(.title3.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                    Spacer()
+                    if screen == .globe && !fullVersionUnlocked {
+                        Image(systemName: "lock.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 14)
+                .padding(.leading, 14)
+                .contentShape(Rectangle())
+            }
+            .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+            .buttonStyle(.plain)
+            
+            Button {
+                Haptics.tap()
+                selectedMenuInfoScreen = screen
+            } label: {
+                Image(systemName: "info.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(tealAccentColor)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L("Info zu \(screen.title(language: appLanguage))", "Info about \(screen.title(language: appLanguage))"))
+        }
+        .padding(.trailing, 6)
+        .frame(maxWidth: .infinity)
+        .background(panelBackgroundColor)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+    
+    var gameModesView: some View {
+        ZStack {
+            appBackgroundGradient
+                .ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 18) {
+                    modeHeader(title: L("Spielen", "Play"), subtitle: L("Wähle einen Spielmodus.", "Choose a game mode."))
+                    subjectModePickerCard()
+                    VStack(spacing: 12) {
+                        ForEach(gameModeScreens, id: \.self) { screen in
+                            menuScreenRow(screen)
+                        }
+                    }
+                }
+                .padding()
+                .frame(maxWidth: 620)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .navigationTitle(L("Spielen", "Play"))
+        .navigationBarTitleDisplayMode(.inline)
     }
     
     func menuInfoSheet(for screen: AppScreen) -> some View {
@@ -3994,14 +3989,18 @@ struct ContentView: View {
             
             ScrollView {
                 VStack(spacing: 18) {
-                    modeHeader(title: "Mini-WM", subtitle: L("Handy weitergeben, Flagge wischen, bis nur noch eine Person übrig ist.", "Pass the phone, swipe the flag, until one person remains."))
+                    modeHeader(title: L("Partymodus Beta", "Party Mode Beta"), subtitle: L("Handy weitergeben, Flagge wischen, bis nur noch eine Person übrig ist.", "Pass the phone, swipe the flag, until one person remains."))
                     
                     switch miniWorldCupPhase {
                     case .setup:
                         miniWorldCupSetupView
                     case .handoff:
+                        miniWorldCupControlsView
+                        miniWorldCupIntermediateResultsView
                         miniWorldCupHandoffView
                     case .question:
+                        miniWorldCupControlsView
+                        miniWorldCupIntermediateResultsView
                         miniWorldCupQuestionView
                     case .finished:
                         miniWorldCupResultView
@@ -4011,9 +4010,77 @@ struct ContentView: View {
                 .frame(maxWidth: 620)
                 .frame(maxWidth: .infinity)
             }
+            
+            if miniWorldCupSuddenDeathAnnouncementVisible {
+                miniWorldCupToast(icon: "bolt.fill", title: "Sudden Death", tint: .orange)
+                    .padding(.horizontal, 22)
+                    .transition(.scale(scale: 0.88).combined(with: .opacity))
+                    .zIndex(2)
+            }
+            
         }
-        .navigationTitle("Mini-WM")
+        .navigationTitle(L("Partymodus Beta", "Party Mode Beta"))
         .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            if miniWorldCupPhase == .handoff || miniWorldCupPhase == .question {
+                miniWorldCupCurrentPlayerBottomBar
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8)
+                    .background(.ultraThinMaterial)
+            }
+        }
+    }
+    
+    var miniWorldCupCurrentPlayerBottomBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "person.fill")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(miniWorldCupHandoffTint, in: Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(L("Dran", "Turn"))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Text(miniWorldCupCurrentPlayer?.name ?? "-")
+                    .font(.headline.weight(.bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            Spacer()
+            Text("\(miniWorldCupActivePlayers.count)")
+                .font(.headline.monospacedDigit().weight(.black))
+                .foregroundStyle(miniWorldCupHandoffTint)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(miniWorldCupHandoffTint.opacity(0.28), lineWidth: 1)
+        )
+    }
+    
+    func miniWorldCupToast(icon: String, title: String, tint: Color) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(tint)
+            Text(title)
+                .font(.headline.weight(.bold))
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: 420)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(tint.opacity(0.32), lineWidth: 1)
+        )
+        .shadow(color: tint.opacity(0.18), radius: 18, y: 8)
     }
     
     var miniWorldCupSetupView: some View {
@@ -4026,7 +4093,8 @@ struct ContentView: View {
                     TextField(L("Name", "Name"), text: $miniWorldCupNewPlayerName)
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled()
-                        .submitLabel(.done)
+                        .submitLabel(.next)
+                        .focused($isMiniWorldCupNameFocused)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 11)
                         .background(tealAccentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
@@ -4084,7 +4152,7 @@ struct ContentView: View {
                 Haptics.tap()
                 startMiniWorldCup()
             } label: {
-                Label(L("Mini-WM starten", "Start mini world cup"), systemImage: "play.fill")
+                Label(L("Partymodus starten", "Start party mode"), systemImage: "play.fill")
                     .font(.title3.weight(.bold))
                     .frame(maxWidth: .infinity, minHeight: 54)
             }
@@ -4121,13 +4189,132 @@ struct ContentView: View {
                 }
             }
             
-            Text(L("Standard: 2 Flaggen, 1 richtige Antwort. Ab 4 verbleibenden Personen wird automatisch auf 1 Flagge pro Person gewechselt.", "Default: 2 flags, 1 correct answer. At 4 remaining people, the game automatically switches to 1 flag per person."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            Toggle(isOn: $miniWorldCupSuddenDeathEnabled) {
+                Text("Sudden Death")
+            }
+            .toggleStyle(.switch)
+            
+            if miniWorldCupSuddenDeathEnabled {
+                Stepper(value: $miniWorldCupSuddenDeathThreshold, in: 2...12) {
+                    HStack {
+                        Text(L("Sudden Death ab", "Sudden Death at"))
+                        Spacer()
+                        Text("\(miniWorldCupSuddenDeathThreshold)")
+                            .font(.headline.monospacedDigit())
+                            .foregroundStyle(tealAccentColor)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
         .padding(14)
         .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+    }
+    
+    var miniWorldCupTurnStatusView: some View {
+        HStack(spacing: 10) {
+            Image(systemName: miniWorldCupMustKnowNextFlag ? "exclamationmark.triangle.fill" : "scope")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(miniWorldCupTurnStatusColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(miniWorldCupTurnStatusTitle)
+                    .font(.subheadline.weight(.bold))
+                Text(miniWorldCupTurnStatusSubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(miniWorldCupTurnStatusColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(miniWorldCupTurnStatusColor.opacity(miniWorldCupMustKnowNextFlag ? 0.55 : 0.24), lineWidth: miniWorldCupMustKnowNextFlag ? 2 : 1)
+        )
+        .scaleEffect(miniWorldCupMustKnowNextFlag && miniWorldCupMustKnowPulse ? 1.018 : 1)
+        .animation(.easeInOut(duration: 0.48), value: miniWorldCupMustKnowPulse)
+        .onChange(of: miniWorldCupMustKnowNextFlag) { _, mustKnow in
+            guard mustKnow else {
+                miniWorldCupMustKnowPulse = false
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.48).repeatForever(autoreverses: true)) {
+                miniWorldCupMustKnowPulse.toggle()
+            }
+        }
+    }
+    
+    var miniWorldCupAttemptReviewView: some View {
+        HStack(spacing: 7) {
+            ForEach(0..<miniWorldCupEffectiveFlagCount, id: \.self) { index in
+                PracticeHistoryPill(
+                    mark: miniWorldCupHistoryMark(for: index),
+                    accentColor: miniWorldCupMustKnowNextFlag ? .orange : tealAccentColor,
+                    isSelected: false
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke((miniWorldCupMustKnowNextFlag ? Color.orange : tealAccentColor).opacity(0.2), lineWidth: 1)
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.72), value: miniWorldCupCurrentAttemptResults)
+    }
+    
+    var miniWorldCupIntermediateResultsView: some View {
+        Group {
+            if !miniWorldCupRoundResults.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(L("Zwischenergebnis", "Interim result"), systemImage: "list.bullet.rectangle.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                    
+                    ForEach(miniWorldCupRoundResults.suffix(4)) { result in
+                        HStack(spacing: 8) {
+                            Image(systemName: result.didAdvance ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(result.didAdvance ? .green : .red)
+                            Text(result.playerName)
+                                .font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text(result.didAdvance ? L("weiter", "next") : L("raus", "out"))
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(result.didAdvance ? .green : .red)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+    
+    var miniWorldCupControlsView: some View {
+        HStack(spacing: 10) {
+            Button {
+                Haptics.tap()
+                resetMiniWorldCupToSetup(keepPlayers: true)
+            } label: {
+                Label(L("Abbrechen", "Cancel"), systemImage: "xmark")
+                    .frame(maxWidth: .infinity, minHeight: 42)
+            }
+            .buttonStyle(ActionButtonStyle(color: .secondary))
+            
+            Button {
+                Haptics.tap()
+                undoMiniWorldCupTurn()
+            } label: {
+                Label(L("Rückgängig", "Undo"), systemImage: "arrow.uturn.backward")
+                    .frame(maxWidth: .infinity, minHeight: 42)
+            }
+            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+            .disabled(miniWorldCupUndoSnapshot == nil)
+        }
     }
     
     var miniWorldCupHandoffView: some View {
@@ -4137,11 +4324,12 @@ struct ContentView: View {
                 .foregroundStyle(tealAccentColor)
                 .padding(.top, 4)
             
-            Text(L("Handy weitergeben", "Pass the phone"))
+            Text(miniWorldCupHandoffTitle)
                 .font(.title.bold())
+                .foregroundStyle(miniWorldCupHandoffTint)
             
-            Text(L("Gib das Handy an", "Give the phone to"))
-                .font(.subheadline)
+            Text(miniWorldCupHandoffSubtitle)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
             
             Text(miniWorldCupCurrentPlayer?.name ?? "-")
@@ -4160,11 +4348,7 @@ struct ContentView: View {
             
             Button {
                 Haptics.tap()
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                    miniWorldCupCardDragOffset = .zero
-                    miniWorldCupAnswerFeedback = nil
-                    miniWorldCupPhase = .question
-                }
+                presentMiniWorldCupQuestion()
             } label: {
                 Label(L("OK, ich habe das Handy", "OK, I have the phone"), systemImage: "checkmark.circle.fill")
                     .frame(maxWidth: .infinity, minHeight: 54)
@@ -4172,7 +4356,12 @@ struct ContentView: View {
             .buttonStyle(ActionButtonStyle(color: tealAccentColor))
         }
         .padding(18)
+        .background(miniWorldCupHandoffTint.opacity(miniWorldCupHasHandoffOutcome ? 0.12 : 0), in: RoundedRectangle(cornerRadius: 12))
         .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(miniWorldCupHandoffTint.opacity(miniWorldCupHasHandoffOutcome ? 0.38 : 0.16), lineWidth: 1)
+        )
         .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
     
@@ -4182,12 +4371,6 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(miniWorldCupCurrentPlayer?.name ?? "-")
                         .font(.title2.weight(.bold))
-                    Text(L("Wischen!", "Swipe!"))
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-                    Text(miniWorldCupQuestionProgressText)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(tealAccentColor)
                 }
                 Spacer()
                 Text("\(miniWorldCupActivePlayers.count)")
@@ -4197,36 +4380,83 @@ struct ContentView: View {
                     .background(tealAccentColor, in: Circle())
             }
             
-            VStack(spacing: 12) {
-                FlagImage(country: miniWorldCupCurrentCountry, width: 260, height: 170)
-                    .padding(.top, 12)
-                Text(L("Wischen!", "Swipe!"))
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.secondary)
+            miniWorldCupAttemptReviewView
+            
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(miniWorldCupSwipeColor.opacity(min(abs(miniWorldCupCardDragOffset.width) / 130, 0.24)))
+                    .frame(height: 260)
+                    .overlay(alignment: miniWorldCupCardDragOffset.width >= 0 ? .leading : .trailing) {
+                        Image(systemName: miniWorldCupCardDragOffset.width >= 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .font(.system(size: 44, weight: .bold))
+                            .foregroundStyle(miniWorldCupCardDragOffset.width >= 0 ? .green : .red)
+                            .opacity(min(abs(miniWorldCupCardDragOffset.width) / 130, 1))
+                            .padding(.horizontal, 26)
+                    }
+                
+                FlipCard(
+                    country: miniWorldCupCurrentCountry,
+                    isFlipped: miniWorldCupCardIsFlipped,
+                    hasGoldAura: false,
+                    language: appLanguage,
+                    subject: selectedSubject,
+                    capital: capitalName(for: miniWorldCupCurrentCountry)
+                )
+                .id(miniWorldCupCurrentCountry.id)
+                .offset(
+                    x: miniWorldCupCardDragOffset.width + miniWorldCupDangerShakeOffset,
+                    y: miniWorldCupCardEntryOffset + miniWorldCupCardDragOffset.height * 0.15
+                )
+                .opacity((miniWorldCupAnswerFeedback == nil ? 1 : 0.82) * miniWorldCupCardEntryOpacity)
+                .scaleEffect((miniWorldCupCardEntryOpacity < 1 ? 0.985 : 1) * (miniWorldCupMustKnowNextFlag && miniWorldCupMustKnowPulse ? 1.035 : 1))
+                .rotationEffect(.degrees(Double(miniWorldCupCardDragOffset.width / 18)))
+                .animation(.spring(response: 0.32, dampingFraction: 0.88), value: miniWorldCupCurrentCountry.id)
+                .animation(.spring(response: 0.34, dampingFraction: 0.86), value: miniWorldCupCardEntryOffset)
+                .animation(.easeOut(duration: 0.2), value: miniWorldCupCardEntryOpacity)
+                .animation(.interpolatingSpring(stiffness: 360, damping: 8), value: miniWorldCupDangerShakeTrigger)
+                .gesture(
+                    DragGesture(minimumDistance: 8)
+                        .onChanged { value in
+                            guard miniWorldCupAnswerFeedback == nil else { return }
+                            miniWorldCupCardDragOffset = value.translation
+                        }
+                        .onEnded { value in
+                            guard miniWorldCupAnswerFeedback == nil else { return }
+                            finishMiniWorldCupSwipe(width: value.predictedEndTranslation.width)
+                        }
+                )
             }
-            .frame(maxWidth: .infinity, minHeight: 300)
-            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 14))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .onTapGesture {
+                revealMiniWorldCupCard()
+            }
             .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(miniWorldCupSwipeColor.opacity(0.55), lineWidth: abs(miniWorldCupCardDragOffset.width) > 8 ? 3 : 1)
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(miniWorldCupSwipeColor.opacity(0.42), lineWidth: abs(miniWorldCupCardDragOffset.width) > 8 ? 3 : 1)
             )
-            .offset(x: miniWorldCupCardDragOffset.width, y: miniWorldCupCardDragOffset.height * 0.15)
-            .rotationEffect(.degrees(Double(miniWorldCupCardDragOffset.width / 18)))
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        guard miniWorldCupAnswerFeedback == nil else { return }
-                        miniWorldCupCardDragOffset = value.translation
-                    }
-                    .onEnded { value in
-                        guard miniWorldCupAnswerFeedback == nil else { return }
-                        finishMiniWorldCupSwipe(width: value.predictedEndTranslation.width)
-                    }
-            )
-            .animation(.spring(response: 0.28, dampingFraction: 0.78), value: miniWorldCupCardDragOffset)
+            
+            Text(L("Wischen!", "Swipe!"))
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(.secondary)
             
         }
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        .onChange(of: miniWorldCupMustKnowNextFlag) { _, mustKnow in
+            guard mustKnow else {
+                miniWorldCupMustKnowPulse = false
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.42).repeatForever(autoreverses: true)) {
+                miniWorldCupMustKnowPulse.toggle()
+            }
+        }
+        .onAppear {
+            if miniWorldCupMustKnowNextFlag {
+                withAnimation(.easeInOut(duration: 0.42).repeatForever(autoreverses: true)) {
+                    miniWorldCupMustKnowPulse.toggle()
+                }
+            }
+        }
     }
     
     var miniWorldCupResultView: some View {
@@ -4252,7 +4482,7 @@ struct ContentView: View {
                 Haptics.tap()
                 resetMiniWorldCupToSetup(keepPlayers: true)
             } label: {
-                Label(L("Neue Mini-WM", "New mini world cup"), systemImage: "arrow.clockwise")
+                Label(L("Neuer Partymodus", "New party mode"), systemImage: "arrow.clockwise")
                     .frame(maxWidth: .infinity, minHeight: 52)
             }
             .buttonStyle(ActionButtonStyle(color: tealAccentColor))
@@ -4261,20 +4491,30 @@ struct ContentView: View {
     
     var miniWorldCupBracketView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(L("Turnierbaum", "Tournament bracket"), systemImage: "trophy.fill")
+            Label(L("Turnierbaum", "Tournament bracket"), systemImage: "list.bullet.rectangle.fill")
                 .font(.headline)
+            
+            ForEach(miniWorldCupResultRoundKeys, id: \.self) { round in
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("Runde \(round)", "Round \(round)"))
+                        .font(.subheadline.weight(.bold))
+                    
+                    ForEach(miniWorldCupResults(forRound: round)) { result in
+                        miniWorldCupResultRow(result)
+                    }
+                }
+                .padding(10)
+                .background(tealAccentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            }
             
             if let winner = miniWorldCupActivePlayers.first {
                 HStack(spacing: 10) {
-                    Text("1.")
-                        .font(.caption.monospacedDigit().weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 34, alignment: .leading)
+                    Image(systemName: "crown.fill")
+                        .foregroundStyle(.yellow)
                     VStack(alignment: .leading, spacing: 2) {
-                        Label(winner.name, systemImage: "crown.fill")
+                        Text(winner.name)
                             .font(.headline)
-                            .foregroundStyle(.yellow)
-                        Text(L("Champion", "Champion"))
+                        Text(L("Gewinner", "Winner"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -4283,91 +4523,40 @@ struct ContentView: View {
                 .padding(10)
                 .background(Color.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
             }
-            
-            ForEach(miniWorldCupBracketStageKeys, id: \.self) { stageKey in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(miniWorldCupStageTitle(for: stageKey))
-                            .font(.subheadline.weight(.bold))
-                        Spacer()
-                        Text(miniWorldCupStageRange(for: stageKey))
-                            .font(.caption.monospacedDigit().weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    ForEach(miniWorldCupRows(forStage: stageKey)) { row in
-                        miniWorldCupBracketRow(row)
-                    }
-                }
-                .padding(10)
-                .background(tealAccentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-            }
         }
         .padding(14)
         .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
     }
     
-    func miniWorldCupBracketRow(_ row: MiniWorldCupBracketRow) -> some View {
-        HStack(spacing: 10) {
-            Text("\(row.place).")
-                .font(.caption.monospacedDigit().weight(.bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 34, alignment: .leading)
+    func miniWorldCupResultRow(_ result: MiniWorldCupRoundResult) -> some View {
+        let tint: Color = result.didAdvance ? .green : .red
+        return HStack(spacing: 10) {
+            Image(systemName: result.didAdvance ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.elimination.playerName)
+                Text(result.playerName)
                     .font(.headline)
-                Text(L("Raus bei \(localizedCountryName(row.elimination.country, language: appLanguage))", "Out on \(localizedCountryName(row.elimination.country, language: appLanguage))"))
+                Text(L("\(result.correctCount)/\(result.flagCount) richtig", "\(result.correctCount)/\(result.flagCount) correct"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(L("Runde \(row.elimination.round) · \(row.elimination.correctCount)/\(row.elimination.flagCount) richtig", "Round \(row.elimination.round) · \(row.elimination.correctCount)/\(row.elimination.flagCount) correct"))
+                Text(localizedCountryName(result.country, language: appLanguage))
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(tealAccentColor)
+                    .foregroundStyle(tint)
             }
             Spacer()
-            FlagImage(country: row.elimination.country, width: 42, height: 28)
+            FlagImage(country: result.country, width: 42, height: 28)
         }
         .padding(10)
-        .background(panelBackgroundColor.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
     }
     
-    var miniWorldCupBracketRows: [MiniWorldCupBracketRow] {
-        Array(miniWorldCupEliminations.enumerated()).map { index, elimination in
-            MiniWorldCupBracketRow(place: index + 2, elimination: elimination)
-        }
+    var miniWorldCupResultRoundKeys: [Int] {
+        Array(Set(miniWorldCupRoundResults.map(\.round))).sorted()
     }
     
-    var miniWorldCupBracketStageKeys: [Int] {
-        Array(Set(miniWorldCupBracketRows.map { miniWorldCupStageKey(for: $0.place) })).sorted()
-    }
-    
-    func miniWorldCupRows(forStage stageKey: Int) -> [MiniWorldCupBracketRow] {
-        miniWorldCupBracketRows.filter { miniWorldCupStageKey(for: $0.place) == stageKey }
-    }
-    
-    func miniWorldCupStageKey(for place: Int) -> Int {
-        switch place {
-        case 2: return 2
-        case 3...4: return 4
-        case 5...8: return 8
-        case 9...16: return 16
-        default: return 32
-        }
-    }
-    
-    func miniWorldCupStageTitle(for stageKey: Int) -> String {
-        switch stageKey {
-        case 2: return L("Finale", "Final")
-        case 4: return L("Halbfinale", "Semifinal")
-        case 8: return L("Viertelfinale", "Quarterfinal")
-        case 16: return L("Achtelfinale", "Round of 16")
-        default: return L("Frühe Runden", "Early rounds")
-        }
-    }
-    
-    func miniWorldCupStageRange(for stageKey: Int) -> String {
-        let places = miniWorldCupRows(forStage: stageKey).map(\.place).sorted()
-        guard let first = places.first, let last = places.last else { return "" }
-        return first == last ? L("Platz \(first)", "Place \(first)") : L("Platz \(first)-\(last)", "Places \(first)-\(last)")
+    func miniWorldCupResults(forRound round: Int) -> [MiniWorldCupRoundResult] {
+        miniWorldCupRoundResults.filter { $0.round == round }
     }
     
     var achievementsView: some View {
@@ -4505,14 +4694,16 @@ struct ContentView: View {
                 let knownAnswers = totalCardKnown(in: filteredStatisticsCountries)
                 let totalFlags = filteredStatisticsCountries.count
                 
-                StatRow(title: selectedSubject == .capitals ? L("Gesehene Länder", "Seen countries") : L("Gesehene Flaggen", "Seen flags"), value: "\(seenFlags) / \(totalFlags) · \(percent(seenFlags, of: totalFlags))")
-                StatRow(title: selectedSubject == .capitals ? L("Mindestens einmal die Hauptstadt gewusst", "Known capital at least once") : L("Mindestens einmal gewusst", "Known at least once"), value: "\(knownOnceFlags) / \(totalFlags) · \(percent(knownOnceFlags, of: totalFlags))")
-                StatRow(title: selectedSubject == .capitals ? L("Gewusste Hauptstädte insgesamt", "Known capitals total") : L("Gewusst insgesamt", "Known total"), value: "\(knownAnswers)")
-                StatRow(title: selectedSubject == .capitals ? L("Geübte Länder", "Practiced countries") : L("Geübte Flaggen", "Practiced flags"), value: "\(totalCardReviews(in: filteredStatisticsCountries))")
-                StatRow(title: selectedSubject == .capitals ? L("Hauptstädte nicht gewusst", "Capitals not known") : L("Nicht gewusst", "Not known"), value: "\(totalCardUnknown(in: filteredStatisticsCountries))")
-                StatRow(title: selectedSubject == .capitals ? L("Gespielte Länder im Showmaster", "Countries played in Showmaster") : L("Gespielte Flaggen im Showmaster", "Flags played in Showmaster"), value: "\(activeProfile.showmasterCards)")
-                StatRow(title: L("Streak", "Streak"), value: "\(currentLearningStreak) \(L("Tage", "days"))")
-                StatRow(title: L("Beste Streak", "Best streak"), value: "\((activeProfile.bestLearningStreak ?? 0)) \(L("Tage", "days"))")
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
+                    CompactStatTile(title: selectedSubject == .capitals ? L("Gesehen", "Seen") : L("Gesehen", "Seen"), value: "\(seenFlags)/\(totalFlags)", subtitle: percent(seenFlags, of: totalFlags))
+                    CompactStatTile(title: L("Mind. 1x gewusst", "Known once"), value: "\(knownOnceFlags)/\(totalFlags)", subtitle: percent(knownOnceFlags, of: totalFlags))
+                    CompactStatTile(title: L("Gewusst", "Known"), value: "\(knownAnswers)", subtitle: L("gesamt", "total"))
+                    CompactStatTile(title: L("Geübt", "Practiced"), value: "\(totalCardReviews(in: filteredStatisticsCountries))", subtitle: selectedSubject == .capitals ? L("Länder", "countries") : L("Flaggen", "flags"))
+                    CompactStatTile(title: L("Nicht gewusst", "Not known"), value: "\(totalCardUnknown(in: filteredStatisticsCountries))", subtitle: "")
+                    CompactStatTile(title: "Showmaster", value: "\(activeProfile.showmasterCards)", subtitle: L("Karten", "cards"))
+                    CompactStatTile(title: L("Streak", "Streak"), value: "\(currentLearningStreak)", subtitle: L("Tage", "days"))
+                    CompactStatTile(title: L("Beste Streak", "Best streak"), value: "\((activeProfile.bestLearningStreak ?? 0))", subtitle: L("Tage", "days"))
+                }
                 
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
@@ -4820,8 +5011,19 @@ struct ContentView: View {
                             Text(gameCenterStatusText)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            Text(L("Spitzname: \(onlineDisplayName)", "Nickname: \(onlineDisplayName)"))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
                         }
                         Spacer()
+                        Image(systemName: onlineStatusIconName)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(onlineStatusColor)
+                            .frame(width: 30, height: 30)
+                            .background(onlineStatusColor.opacity(0.12), in: Circle())
+                            .accessibilityLabel(onlineStatusText)
                         Button {
                             Haptics.tap()
                             isShowingFriendInfo = true
@@ -4850,7 +5052,7 @@ struct ContentView: View {
                     .id(onlineLeaderboardRefreshID)
             } else {
                 Section(L("Online ausgeschaltet", "Online off")) {
-                    Label(L("Freunde und Ranglisten sind pausiert", "Friends and leaderboards are paused"), systemImage: "wifi.slash")
+                    Label(L("Online und Ranglisten sind pausiert", "Online and leaderboards are paused"), systemImage: "wifi.slash")
                         .foregroundStyle(.secondary)
                     Text(L("Aktiviere die Online-Funktionen in den Optionen, wenn du Game Center verbinden, deine Statistik hochladen, Bestenlisten laden oder fremde Globusse ansehen möchtest.", "Turn on online features in Options when you want to connect Game Center, upload your stats, load leaderboards, or view other players' globes."))
                         .font(.caption)
@@ -4860,7 +5062,7 @@ struct ContentView: View {
         }
         .scrollContentBackground(.hidden)
         .background(appBackgroundGradient.ignoresSafeArea())
-        .navigationTitle(L("Freunde", "Friends"))
+        .navigationTitle(L("Online", "Online"))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -4894,7 +5096,7 @@ struct ContentView: View {
     }
     
     var friendsComparisonSection: some View {
-        Section(L("Freunde", "Friends")) {
+        Section(L("Online-Freunde", "Online friends")) {
             if friendNames.isEmpty && gameCenterFriendIDs.isEmpty {
                 Text(L("Füge Freunde unten in diesem Reiter hinzu.", "Add friends below in this tab."))
                     .font(.caption)
@@ -4904,8 +5106,8 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(friendLeaderboard.enumerated()), id: \.element.id) { index, player in
-                    onlinePlayerRow(rank: index + 1, player: player, metric: .total)
+                ForEach(Array(friendFlaggenscoreLeaderboard.enumerated()), id: \.element.id) { index, player in
+                    onlinePlayerRow(rank: index + 1, player: player, metric: .flaggenscore)
                 }
             }
         }
@@ -4951,7 +5153,27 @@ struct ContentView: View {
                     
                     ForEach(friendNames, id: \.self) { friend in
                         HStack {
-                            Text(friend)
+                            if let player = onlinePlayer(forFriend: friend) {
+                                Button {
+                                    Haptics.tap()
+                                    openFriendStatsFromFriendList(player)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(player.displayName)
+                                        Text(L("Freundstatistik öffnen", "Open friend stats"))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(friend)
+                                    Text(L("Noch keine Online-Statistik gefunden", "No online stats found yet"))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                             Spacer()
                             Button(role: .destructive) {
                                 Haptics.tap(style: .medium)
@@ -4961,6 +5183,27 @@ struct ContentView: View {
                             }
                             .buttonStyle(.plain)
                         }
+                    }
+                    
+                    ForEach(gameCenterFriendPlayers) { player in
+                        Button {
+                            Haptics.tap()
+                            openFriendStatsFromFriendList(player)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(player.displayName)
+                                    Text(L("Game-Center-Freund", "Game Center friend"))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                     
                     if !gameCenterFriendIDs.isEmpty {
@@ -5004,49 +5247,40 @@ struct ContentView: View {
     
     @ViewBuilder
     var onlineComparisonSection: some View {
-        Section(L("Online-Vergleich", "Online comparison")) {
-            if isSyncingOnlineStats {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text(onlineStatusText)
+        if selectedOnlineScope == .global && !fullVersionUnlocked {
+            Section {
+                premiumFeatureNotice(feature: L("Globale Bestenlisten", "Global leaderboards"))
+            }
+        }
+        
+        if selectedOnlineScope == .friends {
+            Section(L("Flaggenboss Score", "Flaggenboss score")) {
+                if friendFlaggenscoreLeaderboard.isEmpty {
+                    Text(L("Keine Freundes-Statistiken gefunden. Füge Freunde oben rechts hinzu oder warte, bis Freunde ihre Statistik hochgeladen haben.", "No friend stats found. Add friends from the top-right button or wait until friends have uploaded their stats."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                } else {
+                    ForEach(Array(friendFlaggenscoreLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
+                        onlinePlayerRow(rank: index + 1, player: player, metric: .flaggenscore)
+                    }
                 }
-            } else {
-                Label(onlineStatusText, systemImage: onlineLeaderboard.isEmpty ? "icloud" : "icloud.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            
-            if selectedOnlineScope == .global && !fullVersionUnlocked {
-                premiumFeatureNotice(feature: L("Globale Bestenlisten", "Global leaderboards"))
-            } else {
-            if selectedOnlineScope == .friends && scopedOnlineLeaderboard.isEmpty {
-                Text(L("Keine Freundes-Statistiken gefunden. Füge Freunde oben rechts hinzu oder warte, bis Game-Center-Freunde ihre Statistik hochgeladen haben.", "No friend stats found. Add friends from the top-right button or wait until Game Center friends have uploaded their stats."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            
-            ForEach(Array(scopedOnlineLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
-                onlinePlayerRow(rank: index + 1, player: player, metric: .total)
-            }
             }
         }
         
         if selectedOnlineScope == .global && !fullVersionUnlocked {
             EmptyView()
         } else {
-        Section(L("Letzte 7 Tage", "Last 7 days")) {
-            ForEach(Array(scopedLearnedThisWeekLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
-                onlinePlayerRow(rank: index + 1, player: player, metric: .week)
+            Section(selectedSubject == .capitals ? L("Hauptstädte gelernt - 7 Tage", "Capitals learned - 7 days") : L("Flaggen gelernt - 7 Tage", "Flags learned - 7 days")) {
+                ForEach(Array(scopedLearnedThisWeekLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
+                    onlinePlayerRow(rank: index + 1, player: player, metric: .week)
+                }
             }
-        }
-        
-        Section(L("Meiste Achievements", "Most achievements")) {
-            ForEach(Array(scopedAchievementLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
-                onlinePlayerRow(rank: index + 1, player: player, metric: .achievements)
+            
+            Section(L("Flaggenrun Highscore", "Flag Run high score")) {
+                ForEach(Array(scopedFlaggenrunLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
+                    onlinePlayerRow(rank: index + 1, player: player, metric: .flaggenrun)
+                }
             }
-        }
         }
     }
     
@@ -5055,16 +5289,13 @@ struct ContentView: View {
             Haptics.tap()
             selectedOnlineGlobePlayer = player
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .center, spacing: 10) {
-                    Text("#\(rank)")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, alignment: .leading)
+                    rankBadge(rank)
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text(player.displayName)
-                            .font(.headline)
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.72)
@@ -5085,8 +5316,8 @@ struct ContentView: View {
                     
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(onlineMetricValue(for: player, metric: metric))
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(tealAccentColor)
+                            .font(.subheadline.monospacedDigit().weight(.bold))
+                            .foregroundStyle(rankAccentColor(rank))
                         Text(onlineMetricTitle(metric))
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
@@ -5094,43 +5325,91 @@ struct ContentView: View {
                     .fixedSize(horizontal: true, vertical: false)
                 }
                 
-                if metric == .total {
+                if metric == .flaggenscore {
                     SLevelBar(value: player.tierS, total: max(availableCountries.count, 1), accentColor: tealAccentColor)
                         .frame(height: 10)
                         .padding(.leading, 46)
                 }
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 5)
+            .padding(.horizontal, rank <= 3 ? 8 : 0)
+            .background(rankBackground(rank), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(rankAccentColor(rank).opacity(rank <= 3 ? 0.35 : 0), lineWidth: 1)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
     
+    func rankBadge(_ rank: Int) -> some View {
+        Text(rank <= 3 ? "\(rank)" : "#\(rank)")
+            .font(.caption.monospacedDigit().weight(.black))
+            .foregroundStyle(rank <= 3 ? .white : .secondary)
+            .frame(width: 32, height: 28)
+            .background(rank <= 3 ? rankAccentColor(rank) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+    }
+    
     func onlineMetricSubtitle(for player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> String {
         switch metric {
-        case .total:
-            return selectedSubject == .capitals ? L("Hauptstädte auf S", "Capitals on S") : L("Flaggen auf S", "Flags on S")
         case .week:
             return selectedSubject == .capitals ? L("Hauptstädte gewusst", "Capitals known") : L("Flaggen gewusst", "Flags known")
-        case .achievements:
-            return L("Achievements", "Achievements")
+        case .flaggenrun:
+            return L("Bester Run", "Best run")
+        case .flaggenscore:
+            return L("Gleiche Berechnung wie Statistik", "Same calculation as statistics")
         }
     }
     
     func onlineMetricValue(for player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> String {
         switch metric {
-        case .total: return "\(percent(player.tierS, of: availableCountries.count)) · \(player.tierS)"
         case .week: return "\(player.learnedThisWeek)"
-        case .achievements: return "\(player.achievementCount)"
+        case .flaggenrun: return "\(player.leagueBestScore)"
+        case .flaggenscore: return String(format: "%.1f", onlineFlaggenbossScore(for: player) * 100)
         }
     }
     
     func onlineMetricTitle(_ metric: OnlineLeaderboardMetric) -> String {
         switch metric {
-        case .total: return "S"
         case .week: return selectedSubject == .capitals ? L("gewusst", "known") : L("gewusst", "known")
-        case .achievements: return L("Erfolge", "badges")
+        case .flaggenrun: return L("Highscore", "high score")
+        case .flaggenscore: return L("Boss", "boss")
         }
+    }
+    
+    var onlineStatusIconName: String {
+        if isSyncingOnlineStats { return "icloud.and.arrow.up" }
+        return onlineLeaderboard.isEmpty ? "icloud.slash" : "icloud.fill"
+    }
+    
+    var onlineStatusColor: Color {
+        if isSyncingOnlineStats { return .orange }
+        return onlineLeaderboard.isEmpty ? .secondary : tealAccentColor
+    }
+    
+    func rankAccentColor(_ rank: Int) -> Color {
+        switch rank {
+        case 1: return Color(red: 0.95, green: 0.66, blue: 0.12)
+        case 2: return Color(red: 0.62, green: 0.66, blue: 0.72)
+        case 3: return Color(red: 0.72, green: 0.42, blue: 0.20)
+        default: return tealAccentColor
+        }
+    }
+    
+    func rankBackground(_ rank: Int) -> Color {
+        rank <= 3 ? rankAccentColor(rank).opacity(0.12) : Color.clear
+    }
+    
+    func onlineFlaggenbossScore(for player: OnlinePlayerStats) -> Double {
+        let weightedTotal =
+            Double(player.tierS) * tierScoreValue(for: .s) +
+            Double(player.tierA) * tierScoreValue(for: .a) +
+            Double(player.tierB) * tierScoreValue(for: .b) +
+            Double(player.tierC) * tierScoreValue(for: .c) +
+            Double(player.tierD) * tierScoreValue(for: .d) +
+            Double(player.tierF) * tierScoreValue(for: .f)
+        return weightedTotal / Double(max(availableCountries.count, 1))
     }
     
     func percentText(_ value: Double) -> String {
@@ -5361,6 +5640,8 @@ struct ContentView: View {
     
     func tierDecayPopupView(_ popup: TierDecayPopup) -> some View {
         let selectedChange = popup.changes.first { $0.id == selectedTierDecayChangeID } ?? popup.changes.first
+        let visibleChanges = tierDecayShowsAllChanges ? popup.changes : Array(popup.changes.prefix(4))
+        let hiddenChangeCount = max(popup.changes.count - visibleChanges.count, 0)
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "sparkles")
@@ -5385,6 +5666,7 @@ struct ContentView: View {
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.88)) {
                         tierDecayPopup = nil
                         selectedTierDecayChangeID = nil
+                        tierDecayShowsAllChanges = false
                     }
                 } label: {
                     Image(systemName: "xmark")
@@ -5398,13 +5680,27 @@ struct ContentView: View {
             
             ScrollView {
                 VStack(spacing: 8) {
-                    ForEach(popup.changes) { change in
+                    ForEach(visibleChanges) { change in
                         tierDecayChangeButton(change)
+                    }
+                    
+                    if hiddenChangeCount > 0 {
+                        Button {
+                            Haptics.tap()
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                tierDecayShowsAllChanges = true
+                            }
+                        } label: {
+                            Label(L("Alle \(popup.changes.count) anzeigen", "Show all \(popup.changes.count)"), systemImage: "chevron.down.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity, minHeight: 42)
+                        }
+                        .buttonStyle(ActionButtonStyle(color: tealAccentColor, isProminent: false))
                     }
                 }
                 .padding(.vertical, 2)
             }
-            .frame(maxHeight: 260)
+            .frame(maxHeight: tierDecayShowsAllChanges ? 260 : 190)
             
             if let selectedChange {
                 tierDecayDetailView(selectedChange)
@@ -5495,7 +5791,7 @@ struct ContentView: View {
             
             ScrollView {
                 VStack(spacing: 16) {
-                    modeHeader(title: L("Liga (WIP)", "League (WIP)"), subtitle: L("One-on-One auf Zeit", "Timed one-on-one"))
+                    modeHeader(title: L("Flaggenrun Beta", "Flag Run Beta"), subtitle: L("Highscore auf Zeit", "Timed high score"))
                     
                     if leagueMatchActive {
                         leagueMatchCard
@@ -5510,7 +5806,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .navigationTitle(L("Liga (WIP)", "League (WIP)"))
+        .navigationTitle(L("Flaggenrun Beta", "Flag Run Beta"))
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             if leagueMatchActive && leagueMatchPhase == .playing {
@@ -5531,7 +5827,6 @@ struct ContentView: View {
             if onlineLeaderboard.isEmpty {
                 await loadOnlineStats()
             }
-            await ensureLeagueTestFriendIfNeeded()
         }
     }
     
@@ -5539,9 +5834,11 @@ struct ContentView: View {
         VStack(spacing: 14) {
             Button {
                 Haptics.tap()
-                showLeagueOpponentPicker()
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                    leagueShowsStartMenu = false
+                }
             } label: {
-                Label(L("Liga spielen", "Play league"), systemImage: "trophy.circle.fill")
+                Label(L("Flaggenrun starten", "Start Flag Run"), systemImage: "trophy.circle.fill")
                     .font(.title3.weight(.bold))
                     .frame(maxWidth: .infinity, minHeight: 56)
             }
@@ -5549,30 +5846,18 @@ struct ContentView: View {
             
             leagueStatsCard
             
+            flaggenrunLeaderboardCard
+            
             leagueMatchHistoryCard
-        }
-    }
-    
-    func showLeagueOpponentPicker() {
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-            leagueShowsStartMenu = false
-            leagueOpponentPickerPulse = true
-        }
-        
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(850))
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                leagueOpponentPickerPulse = false
-            }
         }
     }
     
     func leagueSummaryOverlay(_ result: LeagueMatchResult) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label(result.didWin ? L("Gewonnen", "Won") : L("Verloren", "Lost"), systemImage: result.didWin ? "crown.fill" : "flag.checkered")
+                Label(L("Runde beendet", "Round complete"), systemImage: "flag.checkered")
                     .font(.title2.weight(.bold))
-                    .foregroundStyle(result.didWin ? .green : .red)
+                    .foregroundStyle(tealAccentColor)
                 Spacer()
                 Button {
                     Haptics.tap()
@@ -5590,32 +5875,12 @@ struct ContentView: View {
             
             HStack(spacing: 10) {
                 leagueMetricTile(title: L("Score", "Score"), value: "\(result.ownScore)")
-                leagueMetricTile(title: L("Gegner", "Opponent"), value: "\(result.opponentScore)")
+                leagueMetricTile(title: L("Bestscore", "Best score"), value: "\(activeProfile.leagueStats?.bestScore ?? result.ownScore)")
             }
             
-            if let before = result.ratingBefore, let after = result.ratingAfter, let delta = result.ratingDelta {
-                HStack {
-                    Text("\(before) → \(after) ELO")
-                        .font(.headline.monospacedDigit().weight(.bold))
-                    Spacer()
-                    Text(delta >= 0 ? "+\(delta)" : "\(delta)")
-                        .font(.title2.monospacedDigit().weight(.black))
-                        .foregroundStyle(delta >= 0 ? .green : .red)
-                }
-                .padding(12)
-                .background((delta >= 0 ? Color.green : Color.red).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-            }
-            
-            Text(L("\(result.correct) richtig · \(result.wrong) falsch · Gegner: \(result.opponentName)", "\(result.correct) correct · \(result.wrong) wrong · Opponent: \(result.opponentName)"))
+            Text(L("\(result.correct) richtig · \(result.wrong) falsch · \(result.answerDetails?.count ?? result.totalAnswers) Flaggen", "\(result.correct) correct · \(result.wrong) wrong · \(result.answerDetails?.count ?? result.totalAnswers) flags"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            
-            if !leagueLiveResultText.isEmpty {
-                Text(leagueLiveResultText)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(tealAccentColor)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             
             Button {
                 Haptics.tap()
@@ -5624,7 +5889,7 @@ struct ContentView: View {
                     leagueShowsStartMenu = true
                 }
             } label: {
-                Label(L("Zurück zum Liga-Menü", "Back to league menu"), systemImage: "list.bullet")
+                Label(L("Zurück zu Flaggenrun", "Back to Flag Run"), systemImage: "list.bullet")
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
             .buttonStyle(ActionButtonStyle(color: tealAccentColor))
@@ -5637,113 +5902,7 @@ struct ContentView: View {
         VStack(spacing: 14) {
             leagueStartMatchButton
             leagueStatsCard
-            
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 10) {
-                    Image(systemName: "scope")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(tealAccentColor)
-                        .rotationEffect(.degrees(leagueOpponentPickerPulse ? 8 : 0))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L("Gegner auswählen", "Choose opponent"))
-                            .font(.headline)
-                        Text(L("Wähle jetzt, gegen wen du spielst.", "Now choose who you play against."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }
-                
-                if leagueOpponents.isEmpty && leagueFriendOpponents.isEmpty {
-                    Text(L("Noch keine Online-Gegner geladen. Du kannst trotzdem gegen den Liga-Durchschnitt starten.", "No online opponents loaded yet. You can still start against the league baseline."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(L("Standardgegner", "Preset opponents"))
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-                    
-                    ForEach(leaguePresetOpponents) { opponent in
-                        leagueOpponentButton(
-                            id: opponent.id,
-                            title: L(opponent.titleDE, opponent.titleEN),
-                            subtitle: L(opponent.subtitleDE, opponent.subtitleEN),
-                            score: opponent.score
-                        )
-                    }
-                    
-                    if !leagueFriendOpponents.isEmpty {
-                        Text(L("Freunde 1gg1", "Friends 1v1"))
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(tealAccentColor)
-                            .padding(.top, 4)
-                        
-                        ForEach(leagueFriendOpponents.prefix(8)) { opponent in
-                            leagueOpponentButton(
-                                id: opponent.id,
-                                title: opponent.displayName,
-                                subtitle: "\(LeagueLeaderboardRow.leagueTitle(for: opponent.leagueRating)) · \(opponent.leagueRating) ELO · \(opponent.leaguePlayed) \(L("Spiele", "matches"))",
-                                score: max(opponent.leagueBestScore, Int(opponent.leagueAverageScore.rounded()))
-                            )
-                        }
-                    }
-                    
-                    if !leagueGlobalOpponents.isEmpty {
-                        Text(L("Weitere Online-Gegner", "More online opponents"))
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 4)
-                        
-                        ForEach(leagueGlobalOpponents.prefix(6)) { opponent in
-                            leagueOpponentButton(
-                                id: opponent.id,
-                                title: opponent.displayName,
-                                subtitle: "\(LeagueLeaderboardRow.leagueTitle(for: opponent.leagueRating)) · \(opponent.leagueRating) ELO · \(opponent.leaguePlayed) \(L("Spiele", "matches"))",
-                                score: max(opponent.leagueBestScore, Int(opponent.leagueAverageScore.rounded()))
-                            )
-                        }
-                    }
-                }
-            }
-            .padding(14)
-            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(tealAccentColor.opacity(leagueOpponentPickerPulse ? 0.85 : 0.18), lineWidth: leagueOpponentPickerPulse ? 2 : 1)
-            )
-            .scaleEffect(leagueOpponentPickerPulse ? 1.012 : 1)
-            .animation(.spring(response: 0.34, dampingFraction: 0.68), value: leagueOpponentPickerPulse)
-            
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label(L("Online-Liga", "Online league"), systemImage: onlineFeaturesEnabled ? "network" : "network.slash")
-                        .font(.headline)
-                    Spacer()
-                    Button {
-                        Haptics.tap()
-                        Task { await syncOnlineStats() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .frame(width: 34, height: 34)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!onlineFeaturesEnabled || isSyncingOnlineStats)
-                }
-                
-                Text(onlineStatusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                ForEach(onlineLeagueLeaderboard.prefix(6)) { player in
-                    LeagueLeaderboardRow(player: player, isCurrentPlayer: isCurrentOnlinePlayer(player), language: appLanguage)
-                }
-            }
-            .padding(14)
-            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+            leagueMatchHistoryCard
         }
     }
     
@@ -5757,7 +5916,6 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, minHeight: 56)
         }
         .buttonStyle(ActionButtonStyle(color: tealAccentColor))
-        .disabled(leagueIsPreparingLiveMatch)
     }
     
     var leagueUnknownButton: some View {
@@ -5779,24 +5937,23 @@ struct ContentView: View {
         let stats = activeProfile.leagueStats ?? LeagueStats()
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label(L("Deine Liga", "Your league"), systemImage: "bolt.trophy.fill")
+                Label(L("Flaggenrun", "Flag Run"), systemImage: "bolt.trophy.fill")
                     .font(.headline)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(stats.leagueTitle)
+                    Text(L("Highscore", "High score"))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(tealAccentColor)
-                    Text("\(stats.rating) ELO")
+                    Text("\(stats.bestScore) \(L("Punkte", "points"))")
                         .font(.caption.monospacedDigit().weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
             }
             
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
-                leagueMetricTile(title: L("Spiele", "Matches"), value: "\(stats.played)")
-                leagueMetricTile(title: L("Bilanz", "Record"), value: "\(stats.wins)-\(stats.losses)")
+                leagueMetricTile(title: L("Runden", "Rounds"), value: "\(stats.played)")
                 leagueMetricTile(title: L("Bestscore", "Best score"), value: "\(stats.bestScore)")
-                leagueMetricTile(title: L("Bis Aufstieg", "To promote"), value: "\(max(stats.nextDivisionRating - stats.rating, 0))")
+                leagueMetricTile(title: L("Quote", "Rate"), value: percentText(stats.accuracy))
             }
         }
         .padding(14)
@@ -5831,7 +5988,7 @@ struct ContentView: View {
             }
             
             if matches.isEmpty {
-                Text(L("Noch keine Liga-Matches gespielt.", "No league matches played yet."))
+                Text(L("Noch keine Flaggenruns gespielt.", "No Flag Runs played yet."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -5846,58 +6003,66 @@ struct ContentView: View {
         .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
     }
     
+    var flaggenrunLeaderboardCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(L("Globale Flaggenrun-Bestenliste", "Global Flag Run leaderboard"), systemImage: "globe.europe.africa.fill")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    Haptics.tap()
+                    Task { await syncOnlineStats() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.plain)
+                .disabled(!onlineFeaturesEnabled || isSyncingOnlineStats)
+            }
+            
+            if !onlineFeaturesEnabled {
+                Text(L("Onlinefunktionen sind ausgeschaltet.", "Online features are turned off."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if onlineLeagueLeaderboard.isEmpty {
+                Text(L("Noch keine globalen Highscores geladen.", "No global high scores loaded yet."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(Array(onlineLeagueLeaderboard.prefix(8).enumerated()), id: \.element.id) { index, player in
+                        LeagueLeaderboardRow(rank: index + 1, player: player, isCurrentPlayer: isCurrentOnlinePlayer(player), language: appLanguage)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+        .task {
+            guard onlineFeaturesEnabled, onlineLeaderboard.isEmpty else { return }
+            await loadOnlineStats()
+        }
+    }
+    
     func leagueHistoryRow(_ match: LeagueMatchResult) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: match.didWin ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(match.didWin ? .green : .red)
+            Image(systemName: "bolt.circle.fill")
+                .foregroundStyle(tealAccentColor)
                 .frame(width: 22)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(match.opponentName)
+                Text(L("Score \(match.ownScore)", "Score \(match.ownScore)"))
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text("\(match.ownScore) : \(match.opponentScore) · \(match.correct) \(L("richtig", "correct")) · \(match.wrong) \(L("falsch", "wrong"))")
+                Text("\(match.correct) \(L("richtig", "correct")) · \(match.wrong) \(L("falsch", "wrong"))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             
             Spacer()
-            
-            if let delta = match.ratingDelta {
-                Text(delta >= 0 ? "+\(delta)" : "\(delta)")
-                    .font(.caption.monospacedDigit().weight(.black))
-                    .foregroundStyle(delta >= 0 ? .green : .red)
-            }
         }
         .padding(8)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-    }
-    
-    func leagueOpponentButton(id: String, title: String, subtitle: String, score: Int) -> some View {
-        let isSelected = selectedLeagueOpponentID == id
-        return Button {
-            Haptics.tap()
-            selectedLeagueOpponentID = id
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(isSelected ? tealAccentColor : .secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text("\(score)")
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(tealAccentColor)
-            }
-            .padding(10)
-            .background(isSelected ? tealAccentColor.opacity(0.12) : Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.plain)
     }
     
     var leagueMatchCard: some View {
@@ -6098,82 +6263,6 @@ struct ContentView: View {
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
     
-    var leagueOpponents: [OnlinePlayerStats] {
-        deduplicatedOnlineLeaderboard
-            .filter { !isCurrentOnlinePlayer($0) }
-            .sorted {
-                if $0.leagueRating == $1.leagueRating {
-                    return $0.leagueBestScore > $1.leagueBestScore
-                }
-                return $0.leagueRating > $1.leagueRating
-            }
-    }
-    
-    var leaguePresetOpponents: [LeaguePresetOpponent] {
-        [
-            LeaguePresetOpponent(
-                id: "preset_rookie",
-                titleDE: "Bronze Herausforderer",
-                titleEN: "Bronze challenger",
-                subtitleDE: "Ziel: 900 Punkte · 850 ELO",
-                subtitleEN: "Target: 900 points · 850 ELO",
-                score: 900,
-                rating: 850
-            ),
-            LeaguePresetOpponent(
-                id: "preset_average",
-                titleDE: "Liga-Durchschnitt",
-                titleEN: "League baseline",
-                subtitleDE: "Ziel: 1500 Punkte · 1000 ELO",
-                subtitleEN: "Target: 1500 points · 1000 ELO",
-                score: 1500,
-                rating: 1000
-            ),
-            LeaguePresetOpponent(
-                id: "preset_rival",
-                titleDE: "Starker Rivale",
-                titleEN: "Strong rival",
-                subtitleDE: "Ziel: 2200 Punkte · 1250 ELO",
-                subtitleEN: "Target: 2200 points · 1250 ELO",
-                score: 2200,
-                rating: 1250
-            ),
-            LeaguePresetOpponent(
-                id: "preset_champion",
-                titleDE: "Meisterprüfung",
-                titleEN: "Champion check",
-                subtitleDE: "Ziel: 3000 Punkte · 1650 ELO",
-                subtitleEN: "Target: 3000 points · 1650 ELO",
-                score: 3000,
-                rating: 1650
-            )
-        ]
-    }
-    
-    var leagueFriendOpponents: [OnlinePlayerStats] {
-        friendLeaderboard
-            .filter { !isCurrentOnlinePlayer($0) }
-            .sorted {
-                if $0.leagueRating == $1.leagueRating {
-                    return $0.leagueBestScore > $1.leagueBestScore
-                }
-                return $0.leagueRating > $1.leagueRating
-            }
-    }
-    
-    var leagueGlobalOpponents: [OnlinePlayerStats] {
-        let friendIDs = Set(leagueFriendOpponents.map(\.id))
-        return leagueOpponents.filter { !friendIDs.contains($0.id) }
-    }
-    
-    var selectedLeagueOpponent: OnlinePlayerStats? {
-        leagueOpponents.first { $0.id == selectedLeagueOpponentID }
-    }
-    
-    var selectedLeaguePresetOpponent: LeaguePresetOpponent {
-        leaguePresetOpponents.first { $0.id == selectedLeagueOpponentID } ?? leaguePresetOpponents[1]
-    }
-    
     func leagueResponseTimeText(_ seconds: Double) -> String {
         String(format: "%.1f s", max(seconds, 0))
     }
@@ -6222,19 +6311,15 @@ struct ContentView: View {
     
     var onlineLeagueLeaderboard: [OnlinePlayerStats] {
         deduplicatedOnlineLeaderboard.sorted {
-            if $0.leagueRating == $1.leagueRating {
-                return $0.leagueBestScore > $1.leagueBestScore
+            if $0.leagueBestScore == $1.leagueBestScore {
+                return $0.leaguePlayed > $1.leaguePlayed
             }
-            return $0.leagueRating > $1.leagueRating
+            return $0.leagueBestScore > $1.leagueBestScore
         }
     }
     
     @MainActor
     func startLeagueMatch() async {
-        guard !leagueIsPreparingLiveMatch else { return }
-        leagueIsPreparingLiveMatch = true
-        defer { leagueIsPreparingLiveMatch = false }
-        
         leagueCorrect = 0
         leagueWrong = 0
         leagueScore = 0
@@ -6256,15 +6341,6 @@ struct ContentView: View {
         leagueLockedAnswerText = ""
         leagueTypingLockedUntil = .distantPast
         leagueCurrentQuestionStartedAt = Date()
-        leagueLivePollTask?.cancel()
-        leagueLivePollTask = nil
-        leagueLiveMatchID = nil
-        leagueLivePlayerID = ""
-        leagueLiveOpponentName = ""
-        leagueLiveOpponentScore = nil
-        leagueLiveCountryCodes = []
-        leagueLiveCountryIndex = 0
-        leagueLiveResultText = ""
         leagueAnswerFeedback = nil
         leagueRevealedCountryName = ""
         leagueMatchPhase = .loading
@@ -6273,42 +6349,8 @@ struct ContentView: View {
         leaguePreloadedFlagImage = nil
         leagueTimerStartTask?.cancel()
         leagueTimerStartTask = nil
-        await prepareLiveLeagueMatchIfNeeded()
         leagueCurrentCountry = nextLeagueCountry()
         leagueMatchActive = true
-    }
-    
-    @MainActor
-    func prepareLiveLeagueMatchIfNeeded() async {
-        guard
-            onlineFeaturesEnabled,
-            let opponent = selectedLeagueOpponent,
-            leagueFriendOpponents.contains(where: { $0.id == opponent.id })
-        else { return }
-        
-        if !isGameCenterAuthenticated {
-            authenticateGameCenter(syncAfterAuthentication: false)
-        }
-        
-        let playerID = OnlineStatsService.playerID(gameCenterPlayerID: isGameCenterAuthenticated ? gameCenterPlayerID : nil)
-        let playerName = OnlineStatsService.normalizedName(onlinePlayerName, fallback: gameCenterAlias)
-        do {
-            let match = try await OnlineStatsService.findOrCreateLiveLeagueMatch(
-                currentPlayerID: playerID,
-                currentPlayerName: playerName,
-                opponent: opponent,
-                countries: availableCountries
-            )
-            leagueLiveMatchID = match.id
-            leagueLivePlayerID = playerID
-            leagueLiveOpponentName = match.opponentName(for: playerID)
-            leagueLiveOpponentScore = match.opponentScore(for: playerID)
-            leagueLiveCountryCodes = match.countryCodes
-            leagueLiveCountryIndex = 0
-            leagueLiveResultText = L("Async 1gg1 gegen \(leagueLiveOpponentName): \(match.countryCodes.count) identische Flaggen in exakt derselben Reihenfolge.", "Async 1v1 against \(leagueLiveOpponentName): \(match.countryCodes.count) identical flags in the exact same order.")
-        } catch {
-            leagueLiveResultText = L("Live 1gg1 konnte nicht vorbereitet werden: \(OnlineStatsService.userFacingMessage(for: error))", "Live 1v1 could not be prepared: \(OnlineStatsService.userFacingMessage(for: error))")
-        }
     }
     
     func prepareLeagueTimerAfterLayout() {
@@ -6482,18 +6524,12 @@ struct ContentView: View {
         leagueRevealedCountryName = ""
         leagueMatchPhase = .loading
         
-        let opponent = selectedLeagueOpponent
-        let preset = selectedLeaguePresetOpponent
-        let opponentScore = opponent.map { max($0.leagueBestScore, Int($0.leagueAverageScore.rounded())) } ?? preset.score
-        let opponentRating = opponent?.leagueRating ?? preset.rating
-        let opponentName = opponent?.displayName ?? L(preset.titleDE, preset.titleEN)
-        let ratingBefore = activeProfile.leagueStats?.rating ?? 1000
-        let previewResult = LeagueMatchResult(
+        let result = LeagueMatchResult(
             id: UUID(),
             date: Date(),
-            opponentName: opponentName,
+            opponentName: L("Highscore", "High score"),
             ownScore: leagueScore,
-            opponentScore: opponentScore,
+            opponentScore: 0,
             correct: leagueCorrect,
             wrong: leagueWrong,
             duration: 60,
@@ -6502,83 +6538,20 @@ struct ContentView: View {
             ratingAfter: nil,
             ratingDelta: nil
         )
-        var previewStats = activeProfile.leagueStats ?? LeagueStats()
-        previewStats.recordMatch(previewResult, opponentRating: opponentRating)
-        let ratingAfter = previewStats.rating
-        let result = LeagueMatchResult(
-            id: previewResult.id,
-            date: previewResult.date,
-            opponentName: previewResult.opponentName,
-            ownScore: previewResult.ownScore,
-            opponentScore: previewResult.opponentScore,
-            correct: previewResult.correct,
-            wrong: previewResult.wrong,
-            duration: previewResult.duration,
-            answerDetails: previewResult.answerDetails,
-            ratingBefore: ratingBefore,
-            ratingAfter: ratingAfter,
-            ratingDelta: ratingAfter - ratingBefore
-        )
         
         leagueSummaryResult = result
         leagueShowsStartMenu = true
         updateActiveProfile { profile in
-            profile.recordLeagueMatch(result, opponentRating: opponentRating)
+            profile.recordLeagueMatch(result)
         }
         scheduleOnlineStatsSync()
-        submitLiveLeagueScoreIfNeeded(score: leagueScore)
-        Haptics.notify(result.didWin ? .success : .warning)
-        playLeagueSound(success: result.didWin)
+        Haptics.notify(.success)
+        playLeagueSound(success: true)
     }
     
     func nextLeagueCountry() -> Country {
-        if !leagueLiveCountryCodes.isEmpty {
-            let index = min(leagueLiveCountryIndex, leagueLiveCountryCodes.count - 1)
-            leagueLiveCountryIndex = min(leagueLiveCountryIndex + 1, leagueLiveCountryCodes.count)
-            if let country = availableCountries.first(where: { $0.code == leagueLiveCountryCodes[index] }) {
-                return country
-            }
-        }
-        
         let candidates = availableCountries.filter { !leagueRecentCountryCodes.contains($0.code) }
         return (candidates.isEmpty ? availableCountries : candidates).randomElement() ?? allCountries[0]
-    }
-    
-    func submitLiveLeagueScoreIfNeeded(score: Int) {
-        guard let matchID = leagueLiveMatchID, !leagueLivePlayerID.isEmpty else { return }
-        let playerID = leagueLivePlayerID
-        leagueLiveResultText = L("Dein Score ist hochgeladen. Warte auf \(leagueLiveOpponentName) ...", "Your score is uploaded. Waiting for \(leagueLiveOpponentName) ...")
-        leagueLivePollTask?.cancel()
-        leagueLivePollTask = Task { @MainActor in
-            do {
-                try await OnlineStatsService.submitLiveLeagueScore(matchID: matchID, playerID: playerID, score: score)
-            } catch {
-                leagueLiveResultText = L("Live-Score konnte nicht hochgeladen werden: \(OnlineStatsService.userFacingMessage(for: error))", "Live score could not be uploaded: \(OnlineStatsService.userFacingMessage(for: error))")
-                return
-            }
-            
-            for _ in 0..<18 {
-                guard !Task.isCancelled else { return }
-                if let match = try? await OnlineStatsService.fetchLiveLeagueMatch(matchID: matchID),
-                   let opponentScore = match.opponentScore(for: playerID) {
-                    leagueLiveOpponentScore = opponentScore
-                    if score >= opponentScore {
-                        leagueLiveResultText = L("Live 1gg1: \(score) : \(opponentScore) gegen \(leagueLiveOpponentName) - Sieg", "Live 1v1: \(score) : \(opponentScore) against \(leagueLiveOpponentName) - win")
-                    } else {
-                        leagueLiveResultText = L("Live 1gg1: \(score) : \(opponentScore) gegen \(leagueLiveOpponentName) - Niederlage", "Live 1v1: \(score) : \(opponentScore) against \(leagueLiveOpponentName) - loss")
-                    }
-                    playLeagueSound(success: score >= opponentScore)
-                    scheduleLeagueNotification(
-                        title: L("Async 1gg1 fertig", "Async 1v1 finished"),
-                        body: leagueLiveResultText
-                    )
-                    return
-                }
-                try? await Task.sleep(for: .seconds(2))
-            }
-            
-            leagueLiveResultText = L("Live 1gg1: Dein Score \(score) ist gespeichert. \(leagueLiveOpponentName) ist noch nicht fertig.", "Live 1v1: Your score \(score) is saved. \(leagueLiveOpponentName) is not finished yet.")
-        }
     }
     
     func evaluateLeagueAnswer(_ value: String) {
@@ -6888,16 +6861,18 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 
-                Button {
-                    Haptics.tap()
-                    Task {
-                        await storeKit.restorePurchases()
-                        fullVersionUnlocked = storeKit.purchasedFullVersion
+                if !fullVersionUnlocked {
+                    Button {
+                        Haptics.tap()
+                        Task {
+                            await storeKit.restorePurchases()
+                            fullVersionUnlocked = storeKit.purchasedFullVersion
+                        }
+                    } label: {
+                        Label(L("Käufe wiederherstellen", "Restore purchases"), systemImage: "arrow.clockwise")
                     }
-                } label: {
-                    Label(L("Käufe wiederherstellen", "Restore purchases"), systemImage: "arrow.clockwise")
+                    .disabled(storeKit.isLoading)
                 }
-                .disabled(storeKit.isLoading)
             }
             
             Section(L("Sprache", "Language")) {
@@ -6940,15 +6915,6 @@ struct ContentView: View {
             }
             
             Section(L("Online", "Online")) {
-                HStack(spacing: 10) {
-                    Label(L("Fortschritt online vergleichen", "Compare progress online"), systemImage: "network")
-                        .font(.subheadline.weight(.semibold))
-                    
-                    infoButton(isPresented: $isShowingOnlineInfo) {
-                        Text(L("Verbindet Game Center und CloudKit, lädt deine Statistik hoch und zeigt Freunde, Ranglisten und globale Achievement-Werte.", "Connects Game Center and CloudKit, uploads your stats, and shows friends, leaderboards, and global achievement values."))
-                    }
-                }
-                
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         Text(L("Spitzname", "Nickname"))
@@ -7023,17 +6989,17 @@ struct ContentView: View {
                     }
                     
                     Stepper(value: Binding(
-                        get: { activeProfile.leagueStats?.rating ?? 1000 },
-                        set: { debugSetLeagueRating($0) }
-                    ), in: 100...3000, step: 50) {
-                        Label("\(L("Liga-ELO", "League ELO")): \(activeProfile.leagueStats?.rating ?? 1000)", systemImage: "chart.line.uptrend.xyaxis")
+                        get: { activeProfile.leagueStats?.bestScore ?? 0 },
+                        set: { debugSetFlaggenrunHighscore($0) }
+                    ), in: 0...100000, step: 500) {
+                        Label("\(L("Flaggenrun-Highscore", "Flag Run high score")): \(activeProfile.leagueStats?.bestScore ?? 0)", systemImage: "chart.line.uptrend.xyaxis")
                     }
                     
                     Button {
                         Haptics.tap()
                         debugResetLeagueStats()
                     } label: {
-                        Label(L("Liga-Stats zurücksetzen", "Reset league stats"), systemImage: "arrow.counterclockwise")
+                        Label(L("Flaggenrun-Stats zurücksetzen", "Reset Flag Run stats"), systemImage: "arrow.counterclockwise")
                     }
                     
                     Menu {
@@ -7265,39 +7231,10 @@ struct ContentView: View {
         }
     }
     
-    @MainActor
-    func ensureLeagueTestFriendIfNeeded() async {
-        guard onlineFeaturesEnabled, !leagueTestFriendEnsured else { return }
-        leagueTestFriendEnsured = true
-        
-        if !friendNames.contains(where: { normalizedFriendToken($0) == normalizedFriendToken(OnlineStatsService.testFriendName) }) {
-            addFriend(named: OnlineStatsService.testFriendName)
-        }
-        
-        guard !onlineLeaderboard.contains(where: { $0.id == OnlineStatsService.testFriendRecordName }) else { return }
-        guard !isSyncingOnlineStats else { return }
-        
-        isSyncingOnlineStats = true
-        defer {
-            isSyncingOnlineStats = false
-        }
-        
-        onlineStatusText = L("Testfreund wird bereitgestellt ...", "Preparing test friend ...")
-        do {
-            try await OnlineStatsService.createTestFriend(countries: availableCountries)
-            onlineLeaderboard = try await OnlineStatsService.fetchLeaderboard()
-            onlineLeaderboardRefreshID += 1
-            selectedOnlineScope = .friends
-            onlineStatusText = L("Testfreund FlaggenTest ist online und befreundet.", "Test friend FlaggenTest is online and added as friend.")
-        } catch {
-            onlineStatusText = L("Testfreund nicht bereitgestellt: \(OnlineStatsService.userFacingMessage(for: error))", "Test friend not prepared: \(OnlineStatsService.userFacingMessage(for: error))")
-        }
-    }
-    
-    func debugSetLeagueRating(_ rating: Int) {
+    func debugSetFlaggenrunHighscore(_ highscore: Int) {
         updateActiveProfile { profile in
             var stats = profile.leagueStats ?? LeagueStats()
-            stats.rating = rating
+            stats.bestScore = highscore
             profile.leagueStats = stats
         }
     }
@@ -7695,11 +7632,22 @@ struct ContentView: View {
         }
         
         if showPopup, !decayChanges.isEmpty {
+            let signature = tierDecayPopupSignature(for: decayChanges)
+            guard tierDecayPopupLastShownSignature != signature else { return }
+            tierDecayPopupLastShownSignature = signature
             selectedTierDecayChangeID = decayChanges.first?.id
+            tierDecayShowsAllChanges = false
             withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
                 tierDecayPopup = TierDecayPopup(changes: decayChanges)
             }
         }
+    }
+    
+    func tierDecayPopupSignature(for changes: [TierDecayChange]) -> String {
+        changes
+            .map(\.id)
+            .sorted()
+            .joined(separator: "|")
     }
     
     func saveLocalCache() {
@@ -7880,6 +7828,10 @@ struct ContentView: View {
         showSessionCount = 0
         showRecap = false
         achievementPopupItem = nil
+        tierDecayPopup = nil
+        selectedTierDecayChangeID = nil
+        tierDecayShowsAllChanges = false
+        tierDecayPopupLastShownSignature = ""
         resetCurrentCardHint()
     }
     
@@ -8037,8 +7989,30 @@ struct ContentView: View {
         return miniWorldCupActivePlayers[index]
     }
     
+    var miniWorldCupHasHandoffOutcome: Bool {
+        miniWorldCupAdvancePopupText != nil || miniWorldCupEliminationPopupText != nil
+    }
+    
+    var miniWorldCupHandoffTint: Color {
+        if miniWorldCupAdvancePopupText != nil { return .green }
+        if miniWorldCupEliminationPopupText != nil { return .red }
+        return tealAccentColor
+    }
+    
+    var miniWorldCupHandoffTitle: String {
+        miniWorldCupAdvancePopupText ?? miniWorldCupEliminationPopupText ?? L("Handy weitergeben", "Pass the phone")
+    }
+    
+    var miniWorldCupHandoffSubtitle: String {
+        miniWorldCupHasHandoffOutcome ? L("Handy weitergeben an", "Pass the phone to") : L("Gib das Handy an", "Give the phone to")
+    }
+    
+    var miniWorldCupIsInSuddenDeathRange: Bool {
+        miniWorldCupSuddenDeathEnabled && miniWorldCupActivePlayers.count <= miniWorldCupSuddenDeathThreshold
+    }
+    
     var miniWorldCupEffectiveFlagCount: Int {
-        miniWorldCupActivePlayers.count <= 4 ? 1 : miniWorldCupFlagsPerPlayer
+        miniWorldCupIsInSuddenDeathRange ? 1 : miniWorldCupFlagsPerPlayer
     }
     
     var miniWorldCupEffectiveRequiredCorrect: Int {
@@ -8046,16 +8020,73 @@ struct ContentView: View {
     }
     
     var miniWorldCupTurnRuleText: String {
-        L("\(miniWorldCupEffectiveFlagCount) Flagge(n), \(miniWorldCupEffectiveRequiredCorrect) richtig zum Weiterkommen", "\(miniWorldCupEffectiveFlagCount) flag(s), \(miniWorldCupEffectiveRequiredCorrect) correct to advance")
+        let rule = L("\(miniWorldCupEffectiveFlagCount) Flagge(n), \(miniWorldCupEffectiveRequiredCorrect) richtig zum Weiterkommen", "\(miniWorldCupEffectiveFlagCount) flag(s), \(miniWorldCupEffectiveRequiredCorrect) correct to advance")
+        return miniWorldCupIsInSuddenDeathRange ? "Sudden Death · \(rule)" : rule
     }
     
     var miniWorldCupQuestionProgressText: String {
         L("Flagge \(miniWorldCupCurrentAttempt)/\(miniWorldCupEffectiveFlagCount) · \(miniWorldCupCurrentCorrect) richtig", "Flag \(miniWorldCupCurrentAttempt)/\(miniWorldCupEffectiveFlagCount) · \(miniWorldCupCurrentCorrect) correct")
     }
     
+    var miniWorldCupCorrectNeeded: Int {
+        max(miniWorldCupEffectiveRequiredCorrect - miniWorldCupCurrentCorrect, 0)
+    }
+    
+    var miniWorldCupRemainingAttemptsIncludingCurrent: Int {
+        max(miniWorldCupEffectiveFlagCount - miniWorldCupCurrentAttempt + 1, 0)
+    }
+    
+    var miniWorldCupMustKnowNextFlag: Bool {
+        miniWorldCupCorrectNeeded > 0 && miniWorldCupCorrectNeeded == miniWorldCupRemainingAttemptsIncludingCurrent
+    }
+    
+    var miniWorldCupTurnStatusColor: Color {
+        if miniWorldCupMustKnowNextFlag { return .orange }
+        if miniWorldCupCorrectNeeded == 0 { return .green }
+        return tealAccentColor
+    }
+    
+    var miniWorldCupTurnStatusTitle: String {
+        if miniWorldCupCorrectNeeded == 0 {
+            return L("Weiterkommen gesichert", "Advance secured")
+        }
+        if miniWorldCupMustKnowNextFlag {
+            return L("Nächste Flagge muss sitzen", "Next flag must be correct")
+        }
+        return L("Noch alles drin", "Still possible")
+    }
+    
+    var miniWorldCupTurnStatusSubtitle: String {
+        if miniWorldCupCorrectNeeded == 0 {
+            return L("Du kannst diese Runde nicht mehr rausfliegen.", "You cannot be eliminated this turn anymore.")
+        }
+        return L("Noch \(miniWorldCupCorrectNeeded) richtige bei \(miniWorldCupRemainingAttemptsIncludingCurrent) Flagge(n).", "Need \(miniWorldCupCorrectNeeded) more correct with \(miniWorldCupRemainingAttemptsIncludingCurrent) flag(s).")
+    }
+    
+    var miniWorldCupCanStillAdvanceText: String {
+        if miniWorldCupCorrectNeeded == 0 { return L("geschafft", "secured") }
+        if miniWorldCupMustKnowNextFlag { return L("Pflichttreffer", "must hit") }
+        return L("machbar", "possible")
+    }
+    
+    func miniWorldCupHistoryMark(for index: Int) -> PracticeHistoryMark {
+        if index < miniWorldCupCurrentAttemptResults.count {
+            return miniWorldCupCurrentAttemptResults[index] ? .known : .unknown
+        }
+        return .pending
+    }
+    
+    var miniWorldCupDangerShakeOffset: CGFloat {
+        if miniWorldCupMustKnowNextFlag && miniWorldCupAnswerFeedback == nil {
+            return miniWorldCupMustKnowPulse ? 14 : -14
+        }
+        return miniWorldCupDangerShakeTrigger.isMultiple(of: 2) ? 0 : -9
+    }
+    
     var miniWorldCupSwipeColor: Color {
         if miniWorldCupCardDragOffset.width > 24 { return .green }
         if miniWorldCupCardDragOffset.width < -24 { return .red }
+        if miniWorldCupMustKnowNextFlag { return .orange }
         return tealAccentColor
     }
     
@@ -8068,18 +8099,29 @@ struct ContentView: View {
         }
         miniWorldCupPlayers.append(MiniWorldCupPlayer(name: name))
         miniWorldCupNewPlayerName = ""
+        Task { @MainActor in
+            isMiniWorldCupNameFocused = true
+        }
     }
     
     func startMiniWorldCup() {
         guard miniWorldCupPlayers.count >= 2 else { return }
         miniWorldCupActivePlayers = miniWorldCupPlayers
         miniWorldCupEliminations = []
+        miniWorldCupRoundResults = []
         miniWorldCupCurrentPlayerIndex = 0
         miniWorldCupRound = 1
         miniWorldCupCurrentAttempt = 1
         miniWorldCupCurrentCorrect = 0
-        miniWorldCupCardDragOffset = .zero
-        miniWorldCupAnswerFeedback = nil
+        miniWorldCupCurrentAttemptResults = []
+        miniWorldCupRecentCountryCodes = []
+        miniWorldCupDeckCountryCodes = []
+        miniWorldCupUndoSnapshot = nil
+        miniWorldCupSuddenDeathIsActive = miniWorldCupIsInSuddenDeathRange
+        miniWorldCupSuddenDeathAnnouncementVisible = false
+        miniWorldCupAdvancePopupText = nil
+        miniWorldCupEliminationPopupText = nil
+        resetMiniWorldCupCardState()
         miniWorldCupCurrentCountry = nextMiniWorldCupCountry()
         withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
             miniWorldCupPhase = .handoff
@@ -8092,19 +8134,133 @@ struct ContentView: View {
         }
         miniWorldCupActivePlayers = []
         miniWorldCupEliminations = []
+        miniWorldCupRoundResults = []
         miniWorldCupCurrentPlayerIndex = 0
         miniWorldCupRound = 1
         miniWorldCupCurrentAttempt = 1
         miniWorldCupCurrentCorrect = 0
-        miniWorldCupCardDragOffset = .zero
-        miniWorldCupAnswerFeedback = nil
+        miniWorldCupCurrentAttemptResults = []
+        miniWorldCupRecentCountryCodes = []
+        miniWorldCupDeckCountryCodes = []
+        miniWorldCupUndoSnapshot = nil
+        miniWorldCupSuddenDeathIsActive = false
+        miniWorldCupSuddenDeathAnnouncementVisible = false
+        miniWorldCupAdvancePopupText = nil
+        miniWorldCupEliminationPopupText = nil
+        resetMiniWorldCupCardState()
         withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
             miniWorldCupPhase = .setup
         }
     }
     
     func nextMiniWorldCupCountry() -> Country {
-        availableCountries.randomElement() ?? allCountries[0]
+        let countries = availableCountries.isEmpty ? allCountries : availableCountries
+        if miniWorldCupDeckCountryCodes.isEmpty {
+            miniWorldCupDeckCountryCodes = countries.map(\.code).shuffled()
+        }
+        
+        let recentLimit = min(6, max(2, countries.count / 4))
+        let recentCodes = Set(miniWorldCupRecentCountryCodes.suffix(recentLimit))
+        let nextCode = miniWorldCupDeckCountryCodes.first { !recentCodes.contains($0) }
+            ?? miniWorldCupDeckCountryCodes.first
+            ?? countries.randomElement()?.code
+        guard let nextCode, let country = countries.first(where: { $0.code == nextCode }) ?? allCountries.first(where: { $0.code == nextCode }) else {
+            return allCountries[0]
+        }
+        
+        miniWorldCupDeckCountryCodes.removeAll { $0 == nextCode }
+        miniWorldCupRecentCountryCodes.append(nextCode)
+        if miniWorldCupRecentCountryCodes.count > 12 {
+            miniWorldCupRecentCountryCodes.removeFirst(miniWorldCupRecentCountryCodes.count - 12)
+        }
+        return country
+    }
+    
+    func resetMiniWorldCupCardState() {
+        miniWorldCupCardIsFlipped = false
+        miniWorldCupCardWasRevealed = false
+        miniWorldCupCardEntryOffset = 0
+        miniWorldCupCardEntryOpacity = 1
+        miniWorldCupCardDragOffset = .zero
+        miniWorldCupAnswerFeedback = nil
+    }
+    
+    func presentMiniWorldCupQuestion() {
+        miniWorldCupAdvancePopupText = nil
+        miniWorldCupEliminationPopupText = nil
+        miniWorldCupCardIsFlipped = false
+        miniWorldCupCardWasRevealed = false
+        miniWorldCupCardDragOffset = .zero
+        miniWorldCupAnswerFeedback = nil
+        miniWorldCupCardEntryOffset = -34
+        miniWorldCupCardEntryOpacity = 0
+        
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+            miniWorldCupPhase = .question
+        }
+        
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(40))
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                miniWorldCupCardEntryOffset = 0
+                miniWorldCupCardEntryOpacity = 1
+            }
+        }
+    }
+    
+    func revealMiniWorldCupCard() {
+        guard miniWorldCupPhase == .question, miniWorldCupAnswerFeedback == nil else { return }
+        Haptics.tap()
+        miniWorldCupCardWasRevealed = true
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            miniWorldCupCardIsFlipped.toggle()
+        }
+    }
+    
+    func saveMiniWorldCupUndoSnapshotIfNeeded() {
+        guard miniWorldCupCurrentAttempt == 1 else { return }
+        miniWorldCupUndoSnapshot = MiniWorldCupUndoSnapshot(
+            activePlayers: miniWorldCupActivePlayers,
+            eliminations: miniWorldCupEliminations,
+            roundResults: miniWorldCupRoundResults,
+            phase: miniWorldCupPhase,
+            currentPlayerIndex: miniWorldCupCurrentPlayerIndex,
+            currentCountry: miniWorldCupCurrentCountry,
+            round: miniWorldCupRound,
+            currentAttempt: miniWorldCupCurrentAttempt,
+            currentCorrect: miniWorldCupCurrentCorrect,
+            currentAttemptResults: miniWorldCupCurrentAttemptResults,
+            cardIsFlipped: miniWorldCupCardIsFlipped,
+            cardWasRevealed: miniWorldCupCardWasRevealed,
+            recentCountryCodes: miniWorldCupRecentCountryCodes,
+            deckCountryCodes: miniWorldCupDeckCountryCodes,
+            suddenDeathIsActive: miniWorldCupSuddenDeathIsActive
+        )
+    }
+    
+    func undoMiniWorldCupTurn() {
+        guard let snapshot = miniWorldCupUndoSnapshot else { return }
+        miniWorldCupActivePlayers = snapshot.activePlayers
+        miniWorldCupEliminations = snapshot.eliminations
+        miniWorldCupRoundResults = snapshot.roundResults
+        miniWorldCupPhase = snapshot.phase
+        miniWorldCupCurrentPlayerIndex = snapshot.currentPlayerIndex
+        miniWorldCupCurrentCountry = snapshot.currentCountry
+        miniWorldCupRound = snapshot.round
+        miniWorldCupCurrentAttempt = snapshot.currentAttempt
+        miniWorldCupCurrentCorrect = snapshot.currentCorrect
+        miniWorldCupCurrentAttemptResults = snapshot.currentAttemptResults
+        miniWorldCupCardIsFlipped = snapshot.cardIsFlipped
+        miniWorldCupCardWasRevealed = snapshot.cardWasRevealed
+        miniWorldCupRecentCountryCodes = snapshot.recentCountryCodes
+        miniWorldCupDeckCountryCodes = snapshot.deckCountryCodes
+        miniWorldCupSuddenDeathIsActive = snapshot.suddenDeathIsActive
+        miniWorldCupCardDragOffset = .zero
+        miniWorldCupAnswerFeedback = nil
+        miniWorldCupAdvancePopupText = nil
+        miniWorldCupEliminationPopupText = nil
+        miniWorldCupSuddenDeathAnnouncementVisible = false
+        miniWorldCupUndoSnapshot = nil
     }
     
     func finishMiniWorldCupSwipe(width: CGFloat) {
@@ -8121,51 +8277,106 @@ struct ContentView: View {
     
     func handleMiniWorldCupAnswer(known: Bool) {
         guard miniWorldCupPhase == .question, !miniWorldCupActivePlayers.isEmpty, miniWorldCupAnswerFeedback == nil else { return }
-        Haptics.tap(style: known ? .medium : .light)
-        miniWorldCupAnswerFeedback = known
+        saveMiniWorldCupUndoSnapshotIfNeeded()
+        let countsAsKnown = known && !miniWorldCupCardWasRevealed
+        Haptics.tap(style: countsAsKnown ? .medium : .light)
+        miniWorldCupAnswerFeedback = countsAsKnown
+        if !countsAsKnown {
+            miniWorldCupDangerShakeTrigger += 1
+        }
         
         withAnimation(.easeInOut(duration: 0.18)) {
-            miniWorldCupCardDragOffset = CGSize(width: known ? 620 : -620, height: 0)
+            miniWorldCupCardDragOffset = CGSize(width: countsAsKnown ? 620 : -620, height: 0)
         }
         
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(180))
-            finishMiniWorldCupAttempt(known: known)
+            finishMiniWorldCupAttempt(known: countsAsKnown)
         }
     }
     
     func finishMiniWorldCupAttempt(known: Bool) {
         guard !miniWorldCupActivePlayers.isEmpty else { return }
         let updatedCorrect = miniWorldCupCurrentCorrect + (known ? 1 : 0)
+        let updatedAttemptResults = miniWorldCupCurrentAttemptResults + [known]
         let flagCount = miniWorldCupEffectiveFlagCount
         let requiredCorrect = miniWorldCupEffectiveRequiredCorrect
+        let remainingAfterThisAttempt = max(flagCount - miniWorldCupCurrentAttempt, 0)
+        let canStillAdvance = updatedCorrect + remainingAfterThisAttempt >= requiredCorrect
+        miniWorldCupCurrentAttemptResults = updatedAttemptResults
+        
+        if !canStillAdvance {
+            showMiniWorldCupEliminationPopup(correctCount: updatedCorrect, flagCount: flagCount)
+            return
+        }
         
         if miniWorldCupCurrentAttempt >= flagCount {
             if updatedCorrect >= requiredCorrect {
-                advanceMiniWorldCupCurrentPlayer(correctCount: updatedCorrect)
+                advanceMiniWorldCupCurrentPlayer(correctCount: updatedCorrect, flagCount: flagCount)
             } else {
-                eliminateMiniWorldCupCurrentPlayer(correctCount: updatedCorrect, flagCount: flagCount)
+                showMiniWorldCupEliminationPopup(correctCount: updatedCorrect, flagCount: flagCount)
             }
         } else {
             miniWorldCupCurrentCorrect = updatedCorrect
             miniWorldCupCurrentAttempt += 1
             miniWorldCupCurrentCountry = nextMiniWorldCupCountry()
+            miniWorldCupCardIsFlipped = false
+            miniWorldCupCardWasRevealed = false
             miniWorldCupCardDragOffset = .zero
             miniWorldCupAnswerFeedback = nil
+            miniWorldCupCardEntryOffset = -34
+            miniWorldCupCardEntryOpacity = 0
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(35))
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                    miniWorldCupCardEntryOffset = 0
+                    miniWorldCupCardEntryOpacity = 1
+                }
+            }
         }
     }
     
-    func advanceMiniWorldCupCurrentPlayer(correctCount: Int) {
+    func advanceMiniWorldCupCurrentPlayer(correctCount: Int, flagCount: Int) {
         guard !miniWorldCupActivePlayers.isEmpty else { return }
+        let safeIndex = min(max(miniWorldCupCurrentPlayerIndex, 0), miniWorldCupActivePlayers.count - 1)
+        let player = miniWorldCupActivePlayers[safeIndex]
+        miniWorldCupRoundResults.append(
+            MiniWorldCupRoundResult(
+                playerName: player.name,
+                country: miniWorldCupCurrentCountry,
+                round: miniWorldCupRound,
+                correctCount: correctCount,
+                flagCount: flagCount,
+                didAdvance: true
+            )
+        )
         miniWorldCupCurrentCorrect = correctCount
-        miniWorldCupCurrentPlayerIndex = (miniWorldCupCurrentPlayerIndex + 1) % miniWorldCupActivePlayers.count
+        miniWorldCupAdvancePopupText = L("\(player.name) ist weiter", "\(player.name) advances")
+        miniWorldCupEliminationPopupText = nil
+        miniWorldCupCurrentPlayerIndex = (safeIndex + 1) % miniWorldCupActivePlayers.count
         prepareNextMiniWorldCupTurn()
+    }
+    
+    func showMiniWorldCupEliminationPopup(correctCount: Int, flagCount: Int) {
+        miniWorldCupEliminationPopupText = L("\(miniWorldCupCurrentPlayer?.name ?? "-") ist raus", "\(miniWorldCupCurrentPlayer?.name ?? "-") is out")
+        miniWorldCupAdvancePopupText = nil
+        eliminateMiniWorldCupCurrentPlayer(correctCount: correctCount, flagCount: flagCount)
     }
     
     func eliminateMiniWorldCupCurrentPlayer(correctCount: Int, flagCount: Int) {
         guard !miniWorldCupActivePlayers.isEmpty else { return }
-        let safeIndex = min(miniWorldCupCurrentPlayerIndex, miniWorldCupActivePlayers.count - 1)
+        let safeIndex = min(max(miniWorldCupCurrentPlayerIndex, 0), miniWorldCupActivePlayers.count - 1)
         let eliminated = miniWorldCupActivePlayers.remove(at: safeIndex)
+        miniWorldCupRoundResults.append(
+            MiniWorldCupRoundResult(
+                playerName: eliminated.name,
+                country: miniWorldCupCurrentCountry,
+                round: miniWorldCupRound,
+                correctCount: correctCount,
+                flagCount: flagCount,
+                didAdvance: false
+            )
+        )
         miniWorldCupEliminations.insert(
             MiniWorldCupElimination(
                 playerName: eliminated.name,
@@ -8193,11 +8404,28 @@ struct ContentView: View {
         miniWorldCupRound += 1
         miniWorldCupCurrentAttempt = 1
         miniWorldCupCurrentCorrect = 0
+        miniWorldCupCurrentAttemptResults = []
+        let shouldEnterSuddenDeath = miniWorldCupIsInSuddenDeathRange && !miniWorldCupSuddenDeathIsActive
+        miniWorldCupSuddenDeathIsActive = miniWorldCupIsInSuddenDeathRange
         miniWorldCupCurrentCountry = nextMiniWorldCupCountry()
-        miniWorldCupCardDragOffset = .zero
-        miniWorldCupAnswerFeedback = nil
+        resetMiniWorldCupCardState()
         withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
             miniWorldCupPhase = .handoff
+        }
+        if shouldEnterSuddenDeath {
+            showMiniWorldCupSuddenDeathAnnouncement()
+        }
+    }
+    
+    func showMiniWorldCupSuddenDeathAnnouncement() {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+            miniWorldCupSuddenDeathAnnouncementVisible = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1100))
+            withAnimation(.easeOut(duration: 0.2)) {
+                miniWorldCupSuddenDeathAnnouncementVisible = false
+            }
         }
     }
     
@@ -9087,6 +9315,7 @@ struct PracticeRecapView: View {
     let accentColor: Color
     let onRepeat: () -> Void
     let onDismiss: () -> Void
+    @State private var showsAllChanges: Bool = false
     
     var total: Int { known + unknown }
     
@@ -9137,7 +9366,9 @@ struct PracticeRecapView: View {
     }
     
     var sessionDetails: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let visibleChanges = showsAllChanges ? changes : Array(changes.prefix(5))
+        let hiddenChangeCount = max(changes.count - visibleChanges.count, 0)
+        return VStack(alignment: .leading, spacing: 10) {
             Text(localized("Sessionstatistiken", "Session stats", language: language))
                 .font(.subheadline.weight(.bold))
             
@@ -9146,7 +9377,7 @@ struct PracticeRecapView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(changes) { change in
+                ForEach(visibleChanges) { change in
                     let didImprove = isImprovement(change)
                     HStack(spacing: 10) {
                         Image(systemName: change.wasKnown ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -9173,6 +9404,20 @@ struct PracticeRecapView: View {
                             .stroke(didImprove ? Color.green.opacity(0.42) : Color.clear, lineWidth: 1.2)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                
+                if hiddenChangeCount > 0 {
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            showsAllChanges = true
+                        }
+                    } label: {
+                        Label(localized("Alle \(changes.count) anzeigen", "Show all \(changes.count)", language: language), systemImage: "chevron.down.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, minHeight: 40)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(accentColor)
                 }
             }
         }
@@ -9567,6 +9812,7 @@ struct MasteryScoreCard: View {
                     Text(localized("Stufenpunkte geteilt durch alle Karten", "Tier points divided by all cards", language: language))
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             
@@ -9575,10 +9821,13 @@ struct MasteryScoreCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 
-                Text("(S x 100 + A x 80 + B x 60 + C x 40 + D x 20 + F x 0) / \(max(totalCards, 1))")
-                    .font(.caption.monospacedDigit())
+                Text("S x 100 + A x 80 + B x 60 + C x 40 + D x 20 + F x 0")
+                    .font(.caption2.monospacedDigit())
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
+                Text("/ \(max(totalCards, 1))")
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(accentColor)
             }
             .padding(12)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
@@ -9595,6 +9844,8 @@ struct MasteryScoreCard: View {
                         Text(row.tier.description)
                             .font(.caption)
                             .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
                         
                         Spacer(minLength: 8)
                         
@@ -9615,10 +9866,12 @@ struct MasteryScoreCard: View {
                 Text(String(format: "%.0f / %d = %.1f", weightedPoints, max(totalCards, 1), score * 100))
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(accentColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
             }
         }
         .padding(16)
-        .frame(width: 340, alignment: .leading)
+        .frame(width: 360, alignment: .leading)
         .presentationCompactAdaptation(.popover)
     }
 }
@@ -10620,22 +10873,24 @@ struct OnlinePlayerStatsRow: View {
 }
 
 struct LeagueLeaderboardRow: View {
+    let rank: Int
     let player: OnlinePlayerStats
     let isCurrentPlayer: Bool
     let language: AppLanguage
     
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: isCurrentPlayer ? "person.crop.circle.fill.badge.checkmark" : "person.crop.circle")
-                .font(.title3)
-                .foregroundStyle(isCurrentPlayer ? .green : .secondary)
-                .frame(width: 30)
+            Text("\(rank)")
+                .font(.caption.monospacedDigit().weight(.black))
+                .foregroundStyle(rank <= 3 ? .white : (isCurrentPlayer ? .green : .secondary))
+                .frame(width: 30, height: 28)
+                .background(rank <= 3 ? rankAccentColor : Color.clear, in: RoundedRectangle(cornerRadius: 7))
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(player.displayName)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text(localized("\(player.leaguePlayed) Spiele · \(player.leagueWins) Siege", "\(player.leaguePlayed) matches · \(player.leagueWins) wins", language: language))
+                Text(localized("\(player.leaguePlayed) Runden", "\(player.leaguePlayed) rounds", language: language))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -10643,36 +10898,30 @@ struct LeagueLeaderboardRow: View {
             Spacer()
             
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(player.leagueRating)")
+                Text("\(player.leagueBestScore)")
                     .font(.subheadline.monospacedDigit().weight(.bold))
-                Text(Self.leagueTitle(for: player.leagueRating))
+                    .foregroundStyle(rankAccentColor)
+                Text(localized("Bestscore", "Best score", language: language))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 6)
+        .padding(.horizontal, rank <= 3 ? 8 : 0)
+        .background(rank <= 3 ? rankAccentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(rankAccentColor.opacity(rank <= 3 ? 0.35 : 0), lineWidth: 1)
+        )
     }
     
-    static func leagueTitle(for rating: Int) -> String {
-        let league: String
-        switch rating {
-        case ..<800: league = "Bronze"
-        case 800..<1100: league = "Silber"
-        case 1100..<1400: league = "Gold"
-        case 1400..<1700: league = "Platin"
-        case 1700..<2000: league = "Meister"
-        default: league = "Legende"
+    var rankAccentColor: Color {
+        switch rank {
+        case 1: return Color(red: 0.95, green: 0.66, blue: 0.12)
+        case 2: return Color(red: 0.62, green: 0.66, blue: 0.72)
+        case 3: return Color(red: 0.72, green: 0.42, blue: 0.20)
+        default: return .green
         }
-        
-        let position = max(rating, 100) % 300
-        let division: String
-        switch position {
-        case 0..<100: division = "III"
-        case 100..<200: division = "II"
-        default: division = "I"
-        }
-        
-        return "\(league) \(division)"
     }
 }
 
@@ -10804,6 +11053,36 @@ struct StatRow: View {
             Text(value)
                 .fontWeight(.semibold)
         }
+    }
+}
+
+struct CompactStatTile: View {
+    let title: String
+    let value: String
+    let subtitle: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(value)
+                .font(.subheadline.monospacedDigit().weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .padding(9)
+        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
