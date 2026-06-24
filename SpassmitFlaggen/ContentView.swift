@@ -21,7 +21,7 @@ struct Country: Identifiable, Equatable, Codable {
     let code: String
     let name: String
     let continent: String
-    
+
     var id: String { code }
     var flagImageURL: URL? {
         customFlagImageURLByCode[code] ?? URL(string: "https://flagcdn.com/w1280/\(code.lowercased()).png")
@@ -374,9 +374,9 @@ let countryEnglishNameByCode: [String: String] = [
 enum AppLanguage: String, CaseIterable, Identifiable {
     case german = "de"
     case english = "en"
-    
+
     var id: String { rawValue }
-    
+
     var title: String {
         switch self {
         case .german: return "Deutsch"
@@ -389,9 +389,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case system
     case light
     case dark
-    
+
     var id: String { rawValue }
-    
+
     var colorScheme: ColorScheme? {
         switch self {
         case .system: return nil
@@ -399,7 +399,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .dark: return .dark
         }
     }
-    
+
     func title(language: AppLanguage) -> String {
         switch self {
         case .system: return localized("System", "System", language: language)
@@ -416,9 +416,9 @@ enum AppAccent: String, CaseIterable, Identifiable {
     case pink
     case orange
     case green
-    
+
     var id: String { rawValue }
-    
+
     func title(language: AppLanguage) -> String {
         switch self {
         case .teal: return localized("Türkis", "Teal", language: language)
@@ -429,7 +429,7 @@ enum AppAccent: String, CaseIterable, Identifiable {
         case .green: return localized("Grün", "Green", language: language)
         }
     }
-    
+
     var lightUIColor: UIColor {
         switch self {
         case .teal: return UIColor(red: 0.0, green: 0.62, blue: 0.58, alpha: 1)
@@ -440,7 +440,7 @@ enum AppAccent: String, CaseIterable, Identifiable {
         case .green: return UIColor(red: 0.13, green: 0.55, blue: 0.25, alpha: 1)
         }
     }
-    
+
     var darkUIColor: UIColor {
         switch self {
         case .teal: return UIColor(red: 0.23, green: 0.88, blue: 0.86, alpha: 1)
@@ -469,14 +469,14 @@ enum Haptics {
     private static var isEnabled: Bool {
         UserDefaults.standard.object(forKey: "hapticsEnabled") as? Bool ?? true
     }
-    
+
     static func tap(style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
         guard isEnabled else { return }
         let generator = UIImpactFeedbackGenerator(style: style)
         generator.prepare()
         generator.impactOccurred()
     }
-    
+
     static func notify(_ type: UINotificationFeedbackGenerator.FeedbackType) {
         guard isEnabled else { return }
         let generator = UINotificationFeedbackGenerator()
@@ -488,23 +488,23 @@ enum Haptics {
 enum LearningSubject: String, CaseIterable, Identifiable {
     case countries
     case capitals
-    
+
     var id: String { rawValue }
-    
+
     func title(language: AppLanguage) -> String {
         switch self {
         case .countries: return localized("Länder", "Countries", language: language)
         case .capitals: return localized("Hauptstädte", "Capitals", language: language)
         }
     }
-    
+
     func displayTitle(language: AppLanguage) -> String {
         switch self {
         case .countries: return localized("Länderflaggen", "Country flags", language: language)
         case .capitals: return localized("Hauptstädte", "Capitals", language: language)
         }
     }
-    
+
     func statsKey(for country: Country) -> String {
         switch self {
         case .countries: return country.code
@@ -520,9 +520,9 @@ enum MasteryTier: String, CaseIterable, Identifiable, Codable {
     case c = "C"
     case d = "D"
     case f = "F"
-    
+
     var id: String { rawValue }
-    
+
     var title: String {
         switch self {
         case .s: return "Stufe S"
@@ -533,7 +533,7 @@ enum MasteryTier: String, CaseIterable, Identifiable, Codable {
         case .f: return "Stufe F"
         }
     }
-    
+
     var description: String {
         switch self {
         case .s: return "Perfekt"
@@ -544,7 +544,7 @@ enum MasteryTier: String, CaseIterable, Identifiable, Codable {
         case .f: return "Noch nie gekonnt"
         }
     }
-    
+
     var color: Color {
         switch self {
         case .s: return .blue
@@ -555,7 +555,7 @@ enum MasteryTier: String, CaseIterable, Identifiable, Codable {
         case .f: return .red
         }
     }
-    
+
     var promoted: MasteryTier {
         switch self {
         case .s: return .s
@@ -566,7 +566,7 @@ enum MasteryTier: String, CaseIterable, Identifiable, Codable {
         case .f: return .d
         }
     }
-    
+
     var demoted: MasteryTier {
         switch self {
         case .s: return .a
@@ -584,7 +584,7 @@ struct TierDecayChange: Identifiable {
     let from: MasteryTier
     let to: MasteryTier
     let daysSinceLastPractice: Int
-    
+
     var id: String {
         "\(statsKey)-\(from.rawValue)-\(to.rawValue)-\(daysSinceLastPractice)"
     }
@@ -593,11 +593,11 @@ struct TierDecayChange: Identifiable {
 struct TierDecayPopup: Identifiable {
     let id = UUID()
     let changes: [TierDecayChange]
-    
+
     var maxDaysSinceLastPractice: Int {
         changes.map(\.daysSinceLastPractice).max() ?? 0
     }
-    
+
     var groupedChanges: [(from: MasteryTier, to: MasteryTier, count: Int)] {
         let grouped = Dictionary(grouping: changes) { "\($0.from.rawValue)-\($0.to.rawValue)" }
         return grouped.compactMap { _, changes in
@@ -616,7 +616,7 @@ struct TierDecayPopup: Identifiable {
 struct TierHistoryEntry: Codable, Identifiable {
     let date: Date
     let tier: MasteryTier
-    
+
     var id: String { "\(date.timeIntervalSince1970)-\(tier.rawValue)" }
 }
 
@@ -644,15 +644,15 @@ struct LeagueMatchResult: Identifiable, Codable {
     let ratingBefore: Int?
     let ratingAfter: Int?
     let ratingDelta: Int?
-    
+
     var totalAnswers: Int {
         correct + wrong
     }
-    
+
     var accuracy: Double {
         totalAnswers == 0 ? 0 : Double(correct) / Double(totalAnswers)
     }
-    
+
     var didWin: Bool {
         ownScore >= opponentScore
     }
@@ -671,14 +671,14 @@ struct LeagueStats: Codable {
     var currentWinStreak: Int = 0
     var bestWinStreak: Int = 0
     var recentMatches: [LeagueMatchResult] = []
-    
+
     var averageScore: Double { 0 }
-    
+
     var accuracy: Double {
         let total = totalCorrect + totalWrong
         return total == 0 ? 0 : Double(totalCorrect) / Double(total)
     }
-    
+
     var leagueName: String {
         switch rating {
         case ..<800: return "Bronze"
@@ -689,7 +689,7 @@ struct LeagueStats: Codable {
         default: return "Legende"
         }
     }
-    
+
     var division: String {
         let clampedRating = max(rating, 100)
         let positionInLeague = clampedRating % 300
@@ -699,16 +699,16 @@ struct LeagueStats: Codable {
         default: return "I"
         }
     }
-    
+
     var leagueTitle: String {
         "\(leagueName) \(division)"
     }
-    
+
     var nextDivisionRating: Int {
         let clampedRating = max(rating, 100)
         return ((clampedRating / 100) + 1) * 100
     }
-    
+
     mutating func recordMatch(_ result: LeagueMatchResult, opponentRating: Int) {
         played += 1
         bestScore = max(bestScore, result.ownScore)
@@ -716,7 +716,7 @@ struct LeagueStats: Codable {
         totalWrong += result.wrong
         currentWinStreak = result.ownScore > 0 ? currentWinStreak + 1 : 0
         bestWinStreak = max(bestWinStreak, currentWinStreak)
-        
+
         recentMatches.insert(result, at: 0)
         recentMatches = Array(recentMatches.prefix(12))
     }
@@ -729,13 +729,13 @@ struct LeagueAnswerMatch {
     let normalizedMatchedName: String
     let confidence: Double
     let runnerUpConfidence: Double
-    
+
     var isCertain: Bool {
         normalizedAnswer.count >= 3
             && confidence >= 0.84
             && confidence - runnerUpConfidence >= 0.07
     }
-    
+
     var isAcceptable: Bool {
         normalizedAnswer.count >= 3
             && confidence >= 0.72
@@ -751,6 +751,8 @@ enum LeagueMatchPhase {
 }
 
 struct CountryStats: Codable {
+    private static let tierDecayIntervalDays = 3
+
     var attempts: Int = 0
     var correct: Int = 0
     var wrong: Int = 0
@@ -766,41 +768,41 @@ struct CountryStats: Codable {
     var lastKnownAt: Date?
     var lastTierDecayAt: Date?
     var tierHistory: [TierHistoryEntry]?
-    
+
     var accuracy: Double {
         attempts == 0 ? 0 : Double(correct) / Double(attempts)
     }
-    
+
     var cardAccuracy: Double {
         cardReviews == 0 ? 0 : Double(cardKnown) / Double(cardReviews)
     }
-    
+
     var averageResponseTime: Double? {
         attempts == 0 ? nil : totalResponseTime / Double(attempts)
     }
-    
+
     var tier: MasteryTier {
         storedTier
     }
-    
+
     mutating func recordQuizAnswer(isCorrect: Bool, responseTime: Double) {
         attempts += 1
         totalResponseTime += responseTime
         fastestResponseTime = minOptional(fastestResponseTime, responseTime)
         slowestResponseTime = maxOptional(slowestResponseTime, responseTime)
-        
+
         if isCorrect {
             correct += 1
         } else {
             wrong += 1
         }
     }
-    
+
     mutating func recordCardReview(isKnown: Bool, now: Date = Date()) {
         cardReviews += 1
         lastPracticedAt = now
         lastTierDecayAt = nil
-        
+
         if isKnown {
             cardKnown += 1
             lastKnownAt = now
@@ -811,32 +813,38 @@ struct CountryStats: Codable {
         }
         appendTierHistory(tier: storedTier, date: now)
     }
-    
+
     mutating func recordShowmasterCard() {
         showmasterPlayed += 1
     }
-    
+
     mutating func applyWeeklyDecay(now: Date = Date(), calendar: Calendar = .current) -> TierDecayChange? {
         guard storedTier != .f else { return nil }
         let knownReferenceDate = lastKnownAt ?? lastPracticedAt
         guard let knownReferenceDate else { return nil }
         let decayReferenceDate = lastTierDecayAt ?? knownReferenceDate
-        guard let daysSinceReference = calendar.dateComponents([.day], from: decayReferenceDate, to: now).day, daysSinceReference >= 3 else { return nil }
-        
-        let decaySteps = min(daysSinceReference / 3, decayDistanceToF)
+        guard let daysSinceReference = daysSinceDecayReference(now: now, calendar: calendar),
+              daysSinceReference >= Self.tierDecayIntervalDays else { return nil }
+
+        let decaySteps = min(daysSinceReference / Self.tierDecayIntervalDays, decayDistanceToF)
         guard decaySteps > 0 else { return nil }
-        
+
         let tierBeforeDecay = storedTier
         for _ in 0..<decaySteps {
             storedTier = storedTier.demoted
         }
-        lastTierDecayAt = calendar.date(byAdding: .day, value: decaySteps * 3, to: decayReferenceDate) ?? now
+        lastTierDecayAt = calendar.date(byAdding: .day, value: decaySteps * Self.tierDecayIntervalDays, to: decayReferenceDate) ?? now
         appendTierHistory(tier: storedTier, date: lastTierDecayAt ?? now)
-        
+
         let daysSinceLastKnown = calendar.dateComponents([.day], from: knownReferenceDate, to: now).day ?? daysSinceReference
         return TierDecayChange(from: tierBeforeDecay, to: storedTier, daysSinceLastPractice: daysSinceLastKnown)
     }
-    
+
+    func daysUntilNextTierDecay(now: Date = Date(), calendar: Calendar = .current) -> Int? {
+        guard storedTier != .f, let daysSinceReference = daysSinceDecayReference(now: now, calendar: calendar) else { return nil }
+        return max(Self.tierDecayIntervalDays - daysSinceReference, 0)
+    }
+
     private var decayDistanceToF: Int {
         switch storedTier {
         case .s: return 5
@@ -847,7 +855,14 @@ struct CountryStats: Codable {
         case .f: return 0
         }
     }
-    
+
+    private func daysSinceDecayReference(now: Date, calendar: Calendar) -> Int? {
+        let knownReferenceDate = lastKnownAt ?? lastPracticedAt
+        guard let knownReferenceDate else { return nil }
+        let decayReferenceDate = lastTierDecayAt ?? knownReferenceDate
+        return calendar.dateComponents([.day], from: decayReferenceDate, to: now).day
+    }
+
     mutating func appendTierHistory(tier: MasteryTier, date: Date) {
         var history = tierHistory ?? []
         if let last = history.last, Calendar.current.isDate(last.date, inSameDayAs: date), last.tier == tier {
@@ -856,12 +871,12 @@ struct CountryStats: Codable {
         history.append(TierHistoryEntry(date: date, tier: tier))
         tierHistory = Array(history.suffix(21))
     }
-    
+
     private func minOptional(_ current: Double?, _ newValue: Double) -> Double {
         guard let current else { return newValue }
         return min(current, newValue)
     }
-    
+
     private func maxOptional(_ current: Double?, _ newValue: Double) -> Double {
         guard let current else { return newValue }
         return max(current, newValue)
@@ -886,25 +901,28 @@ struct UserProfile: Identifiable, Codable {
     var bestLearningStreak: Int?
     var lastLearningStreakDate: Date?
     var practiceCardsByDay: [String: Int]?
+    var practiceKnownCardsByDay: [String: Int]?
+    var practiceUnknownCardsByDay: [String: Int]?
     var perfectFullPracticeSessionSubjects: [String]?
     var announcedAchievementIDs: [String]?
     var achievedAchievementDates: [String: Date]?
     var leagueStats: LeagueStats?
-    
+    var partyRoundsPlayed: Int?
+
     var accuracy: Double {
         totalAnswers == 0 ? 0 : Double(correctAnswers) / Double(totalAnswers)
     }
-    
+
     var averageResponseTime: Double? {
         totalAnswers == 0 ? nil : totalResponseTime / Double(totalAnswers)
     }
-    
+
     mutating func recordQuizAnswer(country: Country, isCorrect: Bool, responseTime: Double) {
         totalAnswers += 1
         totalResponseTime += responseTime
         fastestResponseTime = minOptional(fastestResponseTime, responseTime)
         slowestResponseTime = maxOptional(slowestResponseTime, responseTime)
-        
+
         if isCorrect {
             correctAnswers += 1
             currentStreak += 1
@@ -913,24 +931,34 @@ struct UserProfile: Identifiable, Codable {
             wrongAnswers += 1
             currentStreak = 0
         }
-        
+
         var countryStats = byCountry[country.code] ?? CountryStats()
         countryStats.recordQuizAnswer(isCorrect: isCorrect, responseTime: responseTime)
         byCountry[country.code] = countryStats
     }
-    
+
     mutating func recordCardReview(country: Country, subject: LearningSubject = .countries, isKnown: Bool, now: Date = Date(), calendar: Calendar = .current) {
         let key = subject.statsKey(for: country)
         var countryStats = byCountry[key] ?? CountryStats()
         countryStats.recordCardReview(isKnown: isKnown, now: now)
         byCountry[key] = countryStats
-        
+
         let dayKey = Self.practiceDayKey(for: now, subject: subject, calendar: calendar)
         var cardsByDay = practiceCardsByDay ?? [:]
         cardsByDay[dayKey, default: 0] += 1
         practiceCardsByDay = cardsByDay
+
+        if isKnown {
+            var knownCardsByDay = practiceKnownCardsByDay ?? [:]
+            knownCardsByDay[dayKey, default: 0] += 1
+            practiceKnownCardsByDay = knownCardsByDay
+        } else {
+            var unknownCardsByDay = practiceUnknownCardsByDay ?? [:]
+            unknownCardsByDay[dayKey, default: 0] += 1
+            practiceUnknownCardsByDay = unknownCardsByDay
+        }
     }
-    
+
     func maxPracticeCardsInOneDay(subject: LearningSubject) -> Int {
         let prefix = "\(subject.rawValue)|"
         return practiceCardsByDay?
@@ -938,7 +966,7 @@ struct UserProfile: Identifiable, Codable {
             .map(\.value)
             .max() ?? 0
     }
-    
+
     func practiceCardsInLastSevenDays(subject: LearningSubject, now: Date = Date(), calendar: Calendar = .current) -> Int {
         let prefix = "\(subject.rawValue)|"
         let validDayKeys = Set((0..<7).compactMap { offset in
@@ -946,27 +974,27 @@ struct UserProfile: Identifiable, Codable {
                 "\(prefix)\(Self.dayKey(for: $0, calendar: calendar))"
             }
         })
-        
+
         return practiceCardsByDay?
             .filter { validDayKeys.contains($0.key) }
             .map(\.value)
             .reduce(0, +) ?? 0
     }
-    
+
     mutating func recordPerfectFullPracticeSession(subject: LearningSubject) {
         var subjects = Set(perfectFullPracticeSessionSubjects ?? [])
         subjects.insert(subject.rawValue)
         perfectFullPracticeSessionSubjects = Array(subjects).sorted()
     }
-    
+
     func hasPerfectFullPracticeSession(subject: LearningSubject) -> Bool {
         Set(perfectFullPracticeSessionSubjects ?? []).contains(subject.rawValue)
     }
-    
+
     static func practiceDayKey(for date: Date, subject: LearningSubject, calendar: Calendar = .current) -> String {
         "\(subject.rawValue)|\(dayKey(for: date, calendar: calendar))"
     }
-    
+
     static func dayKey(for date: Date, calendar: Calendar = .current) -> String {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         let year = components.year ?? 0
@@ -974,12 +1002,12 @@ struct UserProfile: Identifiable, Codable {
         let day = components.day ?? 0
         return String(format: "%04d-%02d-%02d", year, month, day)
     }
-    
+
     mutating func recordCompletedTenBlock(on date: Date = Date(), calendar: Calendar = .current) {
         if let lastLearningStreakDate, calendar.isDate(lastLearningStreakDate, inSameDayAs: date) {
             return
         }
-        
+
         if
             let lastLearningStreakDate,
             let yesterday = calendar.date(byAdding: .day, value: -1, to: date),
@@ -989,11 +1017,11 @@ struct UserProfile: Identifiable, Codable {
         } else {
             learningStreak = 1
         }
-        
+
         bestLearningStreak = max(bestLearningStreak ?? 0, learningStreak ?? 0)
         lastLearningStreakDate = date
     }
-    
+
     mutating func applyWeeklyTierDecay(now: Date = Date()) -> [TierDecayChange] {
         var changes: [TierDecayChange] = []
         for key in Array(byCountry.keys) {
@@ -1006,7 +1034,7 @@ struct UserProfile: Identifiable, Codable {
         }
         return changes
     }
-    
+
     mutating func recordShowmasterCard(country: Country, subject: LearningSubject = .countries) {
         showmasterCards += 1
         let key = subject.statsKey(for: country)
@@ -1014,36 +1042,40 @@ struct UserProfile: Identifiable, Codable {
         countryStats.recordShowmasterCard()
         byCountry[key] = countryStats
     }
-    
+
     mutating func recordLeagueMatch(_ result: LeagueMatchResult, opponentRating: Int = 1000) {
         var stats = leagueStats ?? LeagueStats()
         stats.recordMatch(result, opponentRating: opponentRating)
         leagueStats = stats
     }
-    
+
+    mutating func recordPartyRound() {
+        partyRoundsPlayed = (partyRoundsPlayed ?? 0) + 1
+    }
+
     func stats(for country: Country, subject: LearningSubject = .countries) -> CountryStats {
         byCountry[subject.statsKey(for: country)] ?? CountryStats()
     }
-    
+
     func tier(for country: Country, subject: LearningSubject = .countries) -> MasteryTier {
         stats(for: country, subject: subject).tier
     }
-    
+
     func countries(in tier: MasteryTier, from countries: [Country] = allCountries) -> [Country] {
         countries.filter { self.tier(for: $0) == tier }.sorted { $0.name < $1.name }
     }
-    
+
     func tierCounts(in countries: [Country] = allCountries) -> [MasteryTier: Int] {
         Dictionary(uniqueKeysWithValues: MasteryTier.allCases.map { tier in
             (tier, self.countries(in: tier, from: countries).count)
         })
     }
-    
+
     private func minOptional(_ current: Double?, _ newValue: Double) -> Double {
         guard let current else { return newValue }
         return min(current, newValue)
     }
-    
+
     private func maxOptional(_ current: Double?, _ newValue: Double) -> Double {
         guard let current else { return newValue }
         return max(current, newValue)
@@ -1053,7 +1085,7 @@ struct UserProfile: Identifiable, Codable {
 struct AppData: Codable {
     var profiles: [UserProfile] = []
     var activeProfileID: UUID?
-    
+
     var activeProfile: UserProfile? {
         guard let activeProfileID else { return nil }
         return profiles.first { $0.id == activeProfileID }
@@ -1063,22 +1095,22 @@ struct AppData: Codable {
 enum AppStorageService {
     static let key = "flagTrainerAppDataV2"
     static let legacyStatsKey = "flagQuizStatsV1"
-    
+
     static func load() -> AppData {
         guard let data = UserDefaults.standard.data(forKey: key),
               let appData = try? JSONDecoder().decode(AppData.self, from: data) else {
             return AppData()
         }
-        
+
         return appData
     }
-    
+
     static func save(_ data: AppData) {
         if let encoded = try? JSONEncoder().encode(data) {
             UserDefaults.standard.set(encoded, forKey: key)
         }
     }
-    
+
     static func reset() {
         UserDefaults.standard.removeObject(forKey: key)
         UserDefaults.standard.removeObject(forKey: legacyStatsKey)
@@ -1112,16 +1144,17 @@ struct OnlinePlayerStats: Identifiable {
     let leagueAverageScore: Double
     let leagueAccuracy: Double
     let bestLearningStreak: Int
+    let profileSnapshot: UserProfile?
     let updatedAt: Date
-    
+
     var accuracy: Double {
         totalPracticed == 0 ? 0 : Double(known) / Double(totalPracticed)
     }
-    
+
     var displayName: String {
         playerName.isEmpty ? gameCenterAlias : playerName
     }
-    
+
     var friendCode: String {
         String(id.suffix(6)).uppercased()
     }
@@ -1136,13 +1169,13 @@ enum OnlineStatsService {
     static let containerIdentifier = "iCloud.de.phil.SpassmitFlaggen"
     static let container = CKContainer(identifier: containerIdentifier)
     static let database = container.publicCloudDatabase
-    
+
     enum OnlineStatsError: LocalizedError {
         case iCloudAccountUnavailable(CKAccountStatus)
         case timeout
         case profileSnapshotEncodingFailed
         case nicknameAlreadyTaken
-        
+
         var errorDescription: String? {
             switch self {
             case .iCloudAccountUnavailable(.noAccount):
@@ -1164,23 +1197,23 @@ enum OnlineStatsService {
             }
         }
     }
-    
+
     static func playerID(gameCenterPlayerID: String?) -> String {
         if let gameCenterPlayerID, !gameCenterPlayerID.isEmpty {
             return "gc_" + gameCenterPlayerID.map { character in
                 character.isLetter || character.isNumber ? String(character) : "_"
             }.joined()
         }
-        
+
         if let existingID = UserDefaults.standard.string(forKey: playerIDKey) {
             return existingID
         }
-        
+
         let newID = UUID().uuidString
         UserDefaults.standard.set(newID, forKey: playerIDKey)
         return newID
     }
-    
+
     static func upload(
         name: String,
         gameCenterPlayerID: String?,
@@ -1202,7 +1235,7 @@ enum OnlineStatsService {
         if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             try await claimNickname(displayName, ownerRecordName: playerRecordName)
         }
-        
+
         record["playerName"] = displayName as CKRecordValue
         record["gameCenterPlayerID"] = (gameCenterPlayerID ?? "") as CKRecordValue
         record["gameCenterAlias"] = gameCenterAlias as CKRecordValue
@@ -1233,41 +1266,41 @@ enum OnlineStatsService {
         record["appDataSnapshot"] = try appDataSnapshotData(appData)
         record["appDataSnapshotVersion"] = 1 as CKRecordValue
         record["updatedAt"] = Date() as CKRecordValue
-        
+
         try await save(record: record)
         try? await deleteLegacyAnonymousRecordIfNeeded(currentRecordName: playerRecordName, gameCenterPlayerID: gameCenterPlayerID)
     }
-    
+
     static func fetchAppDataSnapshot(gameCenterPlayerID: String?) async throws -> AppData? {
         try await ensureAccountAvailable()
         let playerRecordName = playerID(gameCenterPlayerID: gameCenterPlayerID)
         guard let record = try await fetchRecord(recordID: CKRecord.ID(recordName: playerRecordName)) else {
             return nil
         }
-        
+
         if let snapshotData = record["appDataSnapshot"] as? Data,
            let snapshot = try? JSONDecoder().decode(AppData.self, from: snapshotData) {
             return snapshot
         }
-        
+
         if let snapshotData = record["appDataSnapshot"] as? NSData,
            let snapshot = try? JSONDecoder().decode(AppData.self, from: snapshotData as Data) {
             return snapshot
         }
-        
+
         if let profileData = record["profileSnapshot"] as? Data,
            let profile = try? JSONDecoder().decode(UserProfile.self, from: profileData) {
             return AppData(profiles: [profile], activeProfileID: profile.id)
         }
-        
+
         if let profileData = record["profileSnapshot"] as? NSData,
            let profile = try? JSONDecoder().decode(UserProfile.self, from: profileData as Data) {
             return AppData(profiles: [profile], activeProfileID: profile.id)
         }
-        
+
         return nil
     }
-    
+
     static func fetchLeaderboard() async throws -> [OnlinePlayerStats] {
         try await ensureAccountAvailable()
         let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
@@ -1281,7 +1314,7 @@ enum OnlineStatsService {
                 return $0.totalPracticed > $1.totalPracticed
             }
     }
-    
+
     static func createTestFriend(countries: [Country]) async throws {
         try await ensureAccountAvailable()
         let record = CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: testFriendRecordName))
@@ -1298,7 +1331,7 @@ enum OnlineStatsService {
             return (country.code, tier)
         }
         let tierCounts = Dictionary(grouping: tiers.map(\.1), by: { $0 }).mapValues(\.count)
-        
+
         record["playerName"] = testFriendName as CKRecordValue
         record["gameCenterPlayerID"] = "test.friend.flaggenbande" as CKRecordValue
         record["gameCenterAlias"] = testFriendName as CKRecordValue
@@ -1338,7 +1371,7 @@ enum OnlineStatsService {
         record["updatedAt"] = Date() as CKRecordValue
         try await save(record: record)
     }
-    
+
     static func fetchRecord(recordID: CKRecord.ID) async throws -> CKRecord? {
         try await withTimeout {
             try await withCheckedThrowingContinuation { continuation in
@@ -1354,7 +1387,7 @@ enum OnlineStatsService {
             }
         }
     }
-    
+
     static func save(record: CKRecord) async throws {
         try await withTimeout {
             try await withCheckedThrowingContinuation { continuation in
@@ -1373,7 +1406,7 @@ enum OnlineStatsService {
             }
         }
     }
-    
+
     static func delete(recordID: CKRecord.ID) async throws {
         try await withTimeout {
             try await withCheckedThrowingContinuation { continuation in
@@ -1395,30 +1428,30 @@ enum OnlineStatsService {
             }
         }
     }
-    
+
     static func deleteLegacyAnonymousRecordIfNeeded(currentRecordName: String, gameCenterPlayerID: String?) async throws {
         guard let gameCenterPlayerID, !gameCenterPlayerID.isEmpty else { return }
         guard let legacyRecordName = UserDefaults.standard.string(forKey: playerIDKey) else { return }
         guard legacyRecordName != currentRecordName else { return }
-        
+
         try await delete(recordID: CKRecord.ID(recordName: legacyRecordName))
     }
-    
+
     static func queryRecords(_ query: CKQuery) async throws -> [CKRecord] {
         try await withTimeout {
             var allRecords: [CKRecord] = []
             var cursor: CKQueryOperation.Cursor?
-            
+
             repeat {
                 let page = try await queryRecordPage(query: query, cursor: cursor)
                 allRecords.append(contentsOf: page.records)
                 cursor = page.cursor
             } while cursor != nil
-            
+
             return allRecords
         }
     }
-    
+
     static func queryRecordPage(query: CKQuery, cursor: CKQueryOperation.Cursor?) async throws -> (records: [CKRecord], cursor: CKQueryOperation.Cursor?) {
         try await withCheckedThrowingContinuation { continuation in
             var records: [CKRecord] = []
@@ -1444,17 +1477,17 @@ enum OnlineStatsService {
             database.add(operation)
         }
     }
-    
+
     static func normalizedName(_ name: String, fallback: String = "Spieler") -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackName = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? (fallbackName.isEmpty ? "Spieler" : fallbackName) : trimmed
     }
-    
+
     static func claimNickname(_ nickname: String, ownerRecordName: String) async throws {
         let key = nicknameKey(for: nickname)
         guard !key.isEmpty else { return }
-        
+
         let recordID = CKRecord.ID(recordName: "nickname_\(key)")
         if let existingRecord = try await fetchRecord(recordID: recordID) {
             let owner = existingRecord["ownerRecordName"] as? String ?? ""
@@ -1463,14 +1496,14 @@ enum OnlineStatsService {
             }
             return
         }
-        
+
         let record = CKRecord(recordType: nicknameRecordType, recordID: recordID)
         record["nickname"] = nickname as CKRecordValue
         record["ownerRecordName"] = ownerRecordName as CKRecordValue
         record["updatedAt"] = Date() as CKRecordValue
         try await save(record: record)
     }
-    
+
     static func nicknameKey(for nickname: String) -> String {
         nickname
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1481,16 +1514,16 @@ enum OnlineStatsService {
             }
             .joined()
     }
-    
+
     static func userFacingMessage(for error: Error) -> String {
         if let onlineError = error as? OnlineStatsError {
             return onlineError.localizedDescription
         }
-        
+
         guard let cloudError = error as? CKError else {
             return error.localizedDescription
         }
-        
+
         let detail = cloudError.errorUserInfo[NSLocalizedDescriptionKey] as? String ?? cloudError.localizedDescription
         switch cloudError.code {
         case .notAuthenticated:
@@ -1511,13 +1544,13 @@ enum OnlineStatsService {
             return "CloudKit-Fehler \(cloudError.code.rawValue): \(detail)"
         }
     }
-    
+
     static func tierSnapshot(profile: UserProfile, countries: [Country], subject: LearningSubject) -> String {
         countries
             .map { "\($0.code):\(profile.tier(for: $0, subject: subject).rawValue)" }
             .joined(separator: "|")
     }
-    
+
     static func sTierHistorySnapshot(profile: UserProfile, countries: [Country], subject: LearningSubject, days: Int = 14) -> String {
         let calendar = Calendar.current
         let now = Date()
@@ -1536,21 +1569,21 @@ enum OnlineStatsService {
         }
         return values.map(String.init).joined(separator: "|")
     }
-    
+
     static func profileSnapshotData(profile: UserProfile) throws -> CKRecordValue {
         guard let data = try? JSONEncoder().encode(profile) else {
             throw OnlineStatsError.profileSnapshotEncodingFailed
         }
         return data as NSData
     }
-    
+
     static func appDataSnapshotData(_ appData: AppData) throws -> CKRecordValue {
         guard let data = try? JSONEncoder().encode(appData) else {
             throw OnlineStatsError.profileSnapshotEncodingFailed
         }
         return data as NSData
     }
-    
+
     static func ensureAccountAvailable() async throws {
         let status: CKAccountStatus = try await withTimeout(seconds: 8) {
             try await withCheckedThrowingContinuation { continuation in
@@ -1563,12 +1596,12 @@ enum OnlineStatsService {
                 }
             }
         }
-        
+
         guard status == .available else {
             throw OnlineStatsError.iCloudAccountUnavailable(status)
         }
     }
-    
+
     static func withTimeout<T>(seconds: Double = 15, operation: @escaping () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask {
@@ -1578,7 +1611,7 @@ enum OnlineStatsService {
                 try await Task.sleep(for: .seconds(seconds))
                 throw OnlineStatsError.timeout
             }
-            
+
             guard let result = try await group.next() else {
                 throw OnlineStatsError.timeout
             }
@@ -1617,9 +1650,16 @@ extension OnlinePlayerStats {
         leagueAverageScore = (record["leagueAverageScore"] as? NSNumber)?.doubleValue ?? 0
         leagueAccuracy = (record["leagueAccuracy"] as? NSNumber)?.doubleValue ?? 0
         bestLearningStreak = (record["bestLearningStreak"] as? NSNumber)?.intValue ?? 0
+        if let profileData = record["profileSnapshot"] as? Data {
+            profileSnapshot = try? JSONDecoder().decode(UserProfile.self, from: profileData)
+        } else if let profileData = record["profileSnapshot"] as? NSData {
+            profileSnapshot = try? JSONDecoder().decode(UserProfile.self, from: profileData as Data)
+        } else {
+            profileSnapshot = nil
+        }
         updatedAt = (record["updatedAt"] as? Date) ?? .distantPast
     }
-    
+
     private static func parseTierSnapshot(_ snapshot: String?) -> [String: MasteryTier] {
         guard let snapshot else { return [:] }
         return Dictionary(uniqueKeysWithValues: snapshot.split(separator: "|").compactMap { entry in
@@ -1628,7 +1668,7 @@ extension OnlinePlayerStats {
             return (String(parts[0]), tier)
         })
     }
-    
+
     private static func parseIntSnapshot(_ snapshot: String?, fallback: Int) -> [Int] {
         let values = snapshot?.split(separator: "|").compactMap { Int($0) } ?? []
         return values.isEmpty ? [fallback] : values
@@ -1650,7 +1690,7 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
     case achievements = "achievements"
     case friends = "friends"
     case options = "options"
-    
+
     func title(language: AppLanguage) -> String {
         switch self {
         case .games: return localized("Spielen", "Play", language: language)
@@ -1665,7 +1705,7 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
         case .options: return localized("Optionen", "Options", language: language)
         }
     }
-    
+
     var iconName: String {
         switch self {
         case .games: return "play.rectangle.fill"
@@ -1680,9 +1720,9 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
         case .options: return "gearshape.fill"
         }
     }
-    
+
     var id: String { rawValue }
-    
+
     func infoText(language: AppLanguage) -> String {
         switch self {
         case .games:
@@ -1717,11 +1757,11 @@ struct AchievementItem: Identifiable {
     let currentValue: Int
     let targetValue: Int
     let tint: Color
-    
+
     var isUnlocked: Bool {
         currentValue >= targetValue
     }
-    
+
     var progress: Double {
         guard targetValue > 0 else { return 0 }
         return min(Double(currentValue) / Double(targetValue), 1)
@@ -1740,9 +1780,9 @@ struct PracticeHistoryPreview: Identifiable, Equatable {
     let change: PracticeSessionChange
     let index: Int
     let total: Int
-    
+
     var id: UUID { change.id }
-    
+
     static func == (lhs: PracticeHistoryPreview, rhs: PracticeHistoryPreview) -> Bool {
         lhs.id == rhs.id && lhs.index == rhs.index && lhs.total == rhs.total
     }
@@ -1755,11 +1795,11 @@ struct GameCenterAuthPresentation: Identifiable {
 
 struct GameCenterAuthView: UIViewControllerRepresentable {
     let viewController: UIViewController
-    
+
     func makeUIViewController(context: Context) -> UIViewController {
         viewController
     }
-    
+
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
     }
 }
@@ -1771,10 +1811,58 @@ enum OnlineLeaderboardMetric {
     case learningStreak
 }
 
+enum ScoreHistoryGranularity: String, CaseIterable, Identifiable {
+    case days
+    case weeks
+    case months
+
+    var id: String { rawValue }
+
+    func title(language: AppLanguage) -> String {
+        switch self {
+        case .days: return localized("Tage", "Days", language: language)
+        case .weeks: return localized("Wochen", "Weeks", language: language)
+        case .months: return localized("Monate", "Months", language: language)
+        }
+    }
+
+    var visiblePointCount: Int {
+        switch self {
+        case .days: return 7
+        case .weeks: return 8
+        case .months: return 6
+        }
+    }
+}
+
+enum PracticeBalanceRange: String, CaseIterable, Identifiable {
+    case lastWeek
+    case lastMonth
+    case lastYear
+
+    var id: String { rawValue }
+
+    func title(language: AppLanguage) -> String {
+        switch self {
+        case .lastWeek: return localized("Letzte 7 Tage", "Last 7 days", language: language)
+        case .lastMonth: return localized("Letzte 30 Tage", "Last 30 days", language: language)
+        case .lastYear: return localized("Letzte 365 Tage", "Last 365 days", language: language)
+        }
+    }
+
+    var days: Int {
+        switch self {
+        case .lastWeek: return 7
+        case .lastMonth: return 30
+        case .lastYear: return 365
+        }
+    }
+}
+
 enum OnlineLeaderboardScope: String, CaseIterable, Identifiable {
     case friends
     case global
-    
+
     var id: String { rawValue }
 }
 
@@ -1782,9 +1870,9 @@ enum AchievementSortMode: String, CaseIterable, Identifiable {
     case category
     case date
     case worldwide
-    
+
     var id: String { rawValue }
-    
+
     func title(language: AppLanguage) -> String {
         switch self {
         case .category: return localized("Kategorie", "Category", language: language)
@@ -1803,9 +1891,9 @@ struct ShowHistoryPreview: Identifiable, Equatable {
     let entry: ShowSessionEntry
     let index: Int
     let total: Int
-    
+
     var id: UUID { entry.id }
-    
+
     static func == (lhs: ShowHistoryPreview, rhs: ShowHistoryPreview) -> Bool {
         lhs.id == rhs.id && lhs.index == rhs.index && lhs.total == rhs.total
     }
@@ -1838,11 +1926,12 @@ struct MiniWorldCupRoundResult: Identifiable, Equatable {
 struct MiniWorldCupBracketRow: Identifiable {
     let place: Int
     let elimination: MiniWorldCupElimination
-    
+
     var id: UUID { elimination.id }
 }
 
 struct MiniWorldCupUndoSnapshot {
+    let appData: AppData
     let activePlayers: [MiniWorldCupPlayer]
     let eliminations: [MiniWorldCupElimination]
     let roundResults: [MiniWorldCupRoundResult]
@@ -1888,11 +1977,11 @@ enum StoreProductID: String, CaseIterable {
     case donationSmall = "de.phil.SpassmitFlaggen.donation.small"
     case donationMedium = "de.phil.SpassmitFlaggen.donation.medium"
     case donationLarge = "de.phil.SpassmitFlaggen.donation.large"
-    
+
     static var allIDs: [String] {
         allCases.map(\.rawValue)
     }
-    
+
     static var donationIDs: Set<String> {
         [donationSmall.rawValue, donationMedium.rawValue, donationLarge.rawValue]
     }
@@ -1904,25 +1993,25 @@ final class StoreKitManager: ObservableObject {
     @Published private(set) var purchasedFullVersion: Bool = false
     @Published private(set) var isLoading: Bool = false
     @Published var statusText: String?
-    
+
     private var updatesTask: Task<Void, Never>?
-    
+
     init() {}
-    
+
     deinit {
         updatesTask?.cancel()
     }
-    
+
     var fullVersionProduct: Product? {
         products.first { $0.id == StoreProductID.fullVersion.rawValue }
     }
-    
+
     var donationProducts: [Product] {
         products
             .filter { StoreProductID.donationIDs.contains($0.id) }
             .sorted { $0.displayPrice < $1.displayPrice }
     }
-    
+
     private func startObservingTransactionsIfNeeded() {
         guard updatesTask == nil else { return }
         updatesTask = Task { [weak self] in
@@ -1931,12 +2020,12 @@ final class StoreKitManager: ObservableObject {
             }
         }
     }
-    
+
     func loadProducts() async {
         startObservingTransactionsIfNeeded()
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
             products = try await Product.products(for: StoreProductID.allIDs)
             await refreshEntitlements()
@@ -1945,7 +2034,7 @@ final class StoreKitManager: ObservableObject {
             statusText = "Store konnte nicht geladen werden."
         }
     }
-    
+
     func purchase(_ product: Product) async {
         startObservingTransactionsIfNeeded()
         do {
@@ -1964,7 +2053,7 @@ final class StoreKitManager: ObservableObject {
             statusText = "Kauf fehlgeschlagen."
         }
     }
-    
+
     func restorePurchases() async {
         startObservingTransactionsIfNeeded()
         do {
@@ -1975,7 +2064,7 @@ final class StoreKitManager: ObservableObject {
             statusText = "Wiederherstellen fehlgeschlagen."
         }
     }
-    
+
     func refreshEntitlements() async {
         var hasFullVersion = false
         for await result in StoreKit.Transaction.currentEntitlements {
@@ -1986,7 +2075,7 @@ final class StoreKitManager: ObservableObject {
         }
         purchasedFullVersion = hasFullVersion
     }
-    
+
     private func handleTransactionResult(_ result: VerificationResult<StoreKit.Transaction>) async {
         switch result {
         case .verified(let transaction):
@@ -2046,6 +2135,11 @@ struct ContentView: View {
     @State private var isTierExplanationExpanded: Bool = false
     @State private var isMasteryScoreInfoExpanded: Bool = false
     @State private var isDisputedTerritoriesInfoExpanded: Bool = false
+    @State private var scoreHistoryPageOffset: Int = 0
+    @State private var selectedScoreHistoryPoint: ScoreHistoryPoint?
+    @State private var selectedPracticeBalanceRange: PracticeBalanceRange = .lastWeek
+    @State private var practiceBalancePageOffset: Int = 0
+    @State private var selectedPracticeBalancePoint: PracticeBalanceHistoryPoint?
     @State private var expandedStatisticsCountryCodes: Set<String> = []
     @State private var statisticsSearchText: String = ""
     @FocusState private var isStatisticsSearchFocused: Bool
@@ -2159,7 +2253,7 @@ struct ContentView: View {
     @State private var selectedMenuInfoScreen: AppScreen?
     @State private var isShowingResetConfirmation: Bool = false
     @State private var isShowingShowCancelConfirmation: Bool = false
-    
+
     var body: some View {
         ZStack {
             NavigationStack {
@@ -2193,13 +2287,13 @@ struct ContentView: View {
             .opacity(isShowingStartupScreen ? 0.72 : 1)
             .blur(radius: isShowingStartupScreen ? 10 : 0)
             .animation(.spring(response: 0.58, dampingFraction: 0.86), value: isShowingStartupScreen)
-            
+
             if isShowingStartupScreen {
                 StartupScreen(language: appLanguage)
                     .transition(.asymmetric(insertion: .opacity, removal: .move(edge: .top).combined(with: .opacity)))
                     .zIndex(1)
             }
-            
+
             if let tierDecayPopup {
                 tierDecayPopupView(tierDecayPopup)
                     .padding(.horizontal, 18)
@@ -2209,7 +2303,7 @@ struct ContentView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     .zIndex(2)
             }
-            
+
             if let achievementPopupItem {
                 AchievementPopup(item: achievementPopupItem, language: appLanguage)
                     .padding(.horizontal, 18)
@@ -2306,32 +2400,32 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var activeProfile: UserProfile {
         appData.activeProfile ?? UserProfile(id: UUID(), name: "Training", pin: "")
     }
-    
+
     var appLanguage: AppLanguage {
         AppLanguage(rawValue: appLanguageRawValue) ?? .german
     }
-    
+
     var appTheme: AppTheme {
         AppTheme(rawValue: appThemeRawValue) ?? .system
     }
-    
+
     var appAccent: AppAccent {
         AppAccent(rawValue: appAccentRawValue) ?? .teal
     }
-    
+
     func L(_ german: String, _ english: String) -> String {
         localized(german, english, language: appLanguage)
     }
-    
+
     func localizedScope(_ scope: String) -> String {
         if scope == CountryScope.worldwide {
             return L("Alle Länder", "All countries")
         }
-        
+
         switch scope {
         case "Afrika": return L("Afrika", "Africa")
         case "Asien": return L("Asien", "Asia")
@@ -2343,19 +2437,19 @@ struct ContentView: View {
         default: return scope
         }
     }
-    
+
     func scopeTitleWithCount(_ scope: String) -> String {
         "\(localizedScope(scope)) (\(countries(inContinent: scope).count))"
     }
-    
+
     var continents: [String] {
         Array(Set(allCountries.map { $0.continent })).sorted()
     }
-    
+
     var continentOptions: [String] {
         [CountryScope.worldwide] + continents
     }
-    
+
     var appBackgroundColor: Color {
         if selectedSubject == .capitals {
             return Color(UIColor { traitCollection in
@@ -2366,7 +2460,7 @@ struct ContentView: View {
         }
         return Color(.systemGroupedBackground)
     }
-    
+
     var appBackgroundGradient: LinearGradient {
         let colors: [Color]
         if selectedSubject == .capitals {
@@ -2382,16 +2476,16 @@ struct ContentView: View {
                 adaptiveColor(light: UIColor(red: 0.48, green: 0.91, blue: 0.70, alpha: 1), dark: UIColor(red: 0.02, green: 0.20, blue: 0.16, alpha: 1))
             ]
         }
-        
+
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
-    
+
     func adaptiveColor(light: UIColor, dark: UIColor) -> Color {
         Color(UIColor { traitCollection in
             traitCollection.userInterfaceStyle == .dark ? dark : light
         })
     }
-    
+
     var panelBackgroundColor: Color {
         if selectedSubject == .capitals {
             return Color(UIColor { traitCollection in
@@ -2406,7 +2500,7 @@ struct ContentView: View {
                 : UIColor(red: 1.0, green: 0.98, blue: 0.93, alpha: 0.94)
         })
     }
-    
+
     var tealAccentColor: Color {
         let accent = appAccent
         return Color(UIColor { traitCollection in
@@ -2415,52 +2509,48 @@ struct ContentView: View {
                 : accent.lightUIColor
         })
     }
-    
-    var cardLimitOptions: [Int] {
-        [0, 10, 20, 50, 100]
-    }
-    
+
     var practiceLimitReached: Bool {
         selectedPracticeCardLimit > 0 && practiceSessionCount >= selectedPracticeCardLimit
     }
-    
+
     var showLimitReached: Bool {
         selectedShowCardLimit > 0 && showSessionCount >= selectedShowCardLimit
     }
-    
+
     var statisticsCountries: [Country] {
         countries(inContinents: selectedStatisticsContinents)
     }
-    
+
     var isAllCountriesStatisticsScope: Bool {
         selectedStatisticsContinents.isEmpty || selectedStatisticsContinents.contains(CountryScope.worldwide)
     }
-    
+
     var duePracticeCountries: [Country] {
         countries(inContinents: selectedPracticeContinents)
     }
-    
+
     func countryName(for country: Country) -> String {
         localizedCountryName(country, language: appLanguage)
     }
-    
+
     func capitalName(for country: Country) -> String {
         capitalByCountryCode[country.code] ?? countryName(for: country)
     }
-    
+
     func stats(for country: Country) -> CountryStats {
         activeProfile.stats(for: country, subject: selectedSubject)
     }
-    
+
     func tier(for country: Country) -> MasteryTier {
         activeProfile.tier(for: country, subject: selectedSubject)
     }
-    
+
     var filteredStatisticsCountries: [Country] {
         let scopedCountries = countries(inContinents: selectedStatisticsContinents)
         let trimmedSearch = statisticsSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedSearch.isEmpty else { return scopedCountries }
-        
+
         return scopedCountries.filter {
             countryName(for: $0).localizedCaseInsensitiveContains(trimmedSearch) ||
             $0.name.localizedCaseInsensitiveContains(trimmedSearch) ||
@@ -2470,11 +2560,11 @@ struct ContentView: View {
             capitalName(for: $0).localizedCaseInsensitiveContains(trimmedSearch)
         }
     }
-    
+
     var hasStatisticsSearch: Bool {
         !statisticsSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    
+
     func masteryScore(in countries: [Country]) -> Double {
         guard !countries.isEmpty else { return 0 }
         let total = countries.reduce(0) { partialResult, country in
@@ -2482,7 +2572,7 @@ struct ContentView: View {
         }
         return total / Double(countries.count)
     }
-    
+
     func tierScoreValue(for tier: MasteryTier) -> Double {
         switch tier {
         case .f: return 0.0
@@ -2493,14 +2583,14 @@ struct ContentView: View {
         case .s: return 1.0
         }
     }
-    
+
     func tierScoreRows(in countries: [Country]) -> [TierScoreRow] {
         MasteryTier.allCases.map { tier in
             let count = countries.filter { stats(for: $0).tier == tier }.count
             return TierScoreRow(tier: tier, count: count, value: tierScoreValue(for: tier))
         }
     }
-    
+
     func scopeScoreRows(in countries: [Country]) -> [ScopeScoreRow] {
         let visibleContinents = continents.filter { continent in
             countries.contains { $0.continent == continent }
@@ -2516,40 +2606,121 @@ struct ContentView: View {
         }
         .sorted { $0.score > $1.score }
     }
-    
-    func practiceBalanceRows(in countries: [Country]) -> [PracticeBalanceRow] {
-        [
-            PracticeBalanceRow(title: L("Gewusst", "Known"), count: totalCardKnown(in: countries), color: .green),
-            PracticeBalanceRow(title: L("Nicht gewusst", "Not known"), count: totalCardUnknown(in: countries), color: .red),
-            PracticeBalanceRow(title: L("Showmaster", "Showmaster"), count: totalShowmasterPlayed(in: countries), color: tealAccentColor)
+
+    func practiceBalanceRows(in countries: [Country], range: PracticeBalanceRange) -> [PracticeBalanceRow] {
+        let knownCount = practiceCountByDay(profile: activeProfile.practiceKnownCardsByDay, subject: selectedSubject, days: range.days)
+        let unknownCount = practiceCountByDay(profile: activeProfile.practiceUnknownCardsByDay, subject: selectedSubject, days: range.days)
+        return [
+            PracticeBalanceRow(title: L("Gewusst", "Known"), count: knownCount, color: .green),
+            PracticeBalanceRow(title: L("Nicht gewusst", "Not known"), count: unknownCount, color: .red)
         ]
     }
-    
-    func flaggenbossPoints(in countries: [Country], days: Int = 30) -> [ScoreHistoryPoint] {
-        guard !countries.isEmpty else { return [] }
+
+    func practiceBalancePoints(profile: UserProfile? = nil, range: PracticeBalanceRange, pageOffset: Int) -> [PracticeBalanceHistoryPoint] {
+        let sourceProfile = profile ?? activeProfile
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        let dailyPoints = (0..<days).reversed().compactMap { offset -> ScoreHistoryPoint? in
-            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { return nil }
-            let endOfDay = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: day) ?? day
-            let total = countries.reduce(0.0) { partialResult, country in
-                let countryStats = stats(for: country)
-                return partialResult + tierScoreValue(for: tier(for: countryStats, at: endOfDay))
-            }
-            return ScoreHistoryPoint(date: day, score: total / Double(countries.count))
+        return analysisPeriodStarts(range: range, pageOffset: pageOffset, today: today, calendar: calendar).map { day in
+            PracticeBalanceHistoryPoint(
+                date: day,
+                known: practiceCount(on: day, countsByDay: sourceProfile.practiceKnownCardsByDay, subject: selectedSubject, calendar: calendar),
+                unknown: practiceCount(on: day, countsByDay: sourceProfile.practiceUnknownCardsByDay, subject: selectedSubject, calendar: calendar)
+            )
         }
-        
-        var changePoints: [ScoreHistoryPoint] = []
-        var previousScore: Double?
-        for point in dailyPoints {
-            if previousScore == nil || abs((previousScore ?? 0) - point.score) > 0.0001 {
-                changePoints.append(point)
-                previousScore = point.score
-            }
-        }
-        return changePoints.filter { $0.score > 0 || changePoints.count == 1 }
     }
-    
+
+    func practiceCountByDay(profile countsByDay: [String: Int]?, subject: LearningSubject, days: Int, now: Date = Date(), calendar: Calendar = .current) -> Int {
+        let prefix = "\(subject.rawValue)|"
+        let today = calendar.startOfDay(for: now)
+        let validDayKeys = Set((0..<days).compactMap { offset in
+            calendar.date(byAdding: .day, value: -offset, to: today).map {
+                "\(prefix)\(UserProfile.dayKey(for: $0, calendar: calendar))"
+            }
+        })
+        return countsByDay?
+            .filter { validDayKeys.contains($0.key) }
+            .map(\.value)
+            .reduce(0, +) ?? 0
+    }
+
+    func practiceCount(on day: Date, countsByDay: [String: Int]?, subject: LearningSubject, calendar: Calendar = .current) -> Int {
+        countsByDay?["\(subject.rawValue)|\(UserProfile.dayKey(for: day, calendar: calendar))"] ?? 0
+    }
+
+    func maxKnownCardsInOneDay(subject: LearningSubject) -> Int {
+        let prefix = "\(subject.rawValue)|"
+        return activeProfile.practiceKnownCardsByDay?
+            .filter { $0.key.hasPrefix(prefix) }
+            .map(\.value)
+            .max() ?? 0
+    }
+
+    func firstLearnedCountry(in countries: [Country]) -> (country: Country, date: Date)? {
+        countries.compactMap { country -> (Country, Date)? in
+            guard let date = stats(for: country).lastKnownAt else { return nil }
+            return (country, date)
+        }
+        .sorted { $0.1 < $1.1 }
+        .first
+    }
+
+    func compactDateText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: appLanguage == .german ? "de_DE" : "en_US")
+        formatter.dateStyle = .short
+        formatter.timeStyle = .none
+        return formatter.string(from: date)
+    }
+
+    func flaggenbossPoints(profile: UserProfile? = nil, in countries: [Country], range: PracticeBalanceRange, pageOffset: Int) -> [ScoreHistoryPoint] {
+        guard !countries.isEmpty else { return [] }
+        let sourceProfile = profile ?? activeProfile
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let pageOffset = min(pageOffset, 0)
+        let periodStarts = analysisPeriodStarts(range: range, pageOffset: pageOffset, today: today, calendar: calendar)
+
+        return periodStarts.map { periodStart in
+            let periodEnd = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: periodStart) ?? periodStart
+            let total = countries.reduce(0.0) { partialResult, country in
+                let countryStats = sourceProfile.stats(for: country, subject: selectedSubject)
+                return partialResult + tierScoreValue(for: tier(for: countryStats, at: periodEnd))
+            }
+            return ScoreHistoryPoint(date: periodStart, score: total / Double(countries.count))
+        }
+    }
+
+    func analysisPeriodStarts(range: PracticeBalanceRange, pageOffset: Int, today: Date, calendar: Calendar) -> [Date] {
+        let count = range.days
+        let pageOffset = min(pageOffset, 0)
+        return (0..<count).compactMap { index in
+            calendar.date(byAdding: .day, value: pageOffset * count - (count - 1 - index), to: today)
+        }
+    }
+
+    func periodStart(for granularity: ScoreHistoryGranularity, index: Int, count: Int, pageOffset: Int, today: Date, calendar: Calendar) -> Date? {
+        switch granularity {
+        case .days:
+            return calendar.date(byAdding: .day, value: pageOffset * count - (count - 1 - index), to: today)
+        case .weeks:
+            let currentWeek = calendar.dateInterval(of: .weekOfYear, for: today)?.start ?? today
+            return calendar.date(byAdding: .weekOfYear, value: pageOffset * count - (count - 1 - index), to: currentWeek)
+        case .months:
+            let currentMonth = calendar.dateInterval(of: .month, for: today)?.start ?? today
+            return calendar.date(byAdding: .month, value: pageOffset * count - (count - 1 - index), to: currentMonth)
+        }
+    }
+
+    func periodEnd(for granularity: ScoreHistoryGranularity, periodStart: Date, calendar: Calendar) -> Date {
+        let component: Calendar.Component
+        switch granularity {
+        case .days: component = .day
+        case .weeks: component = .weekOfYear
+        case .months: component = .month
+        }
+        return calendar.date(byAdding: DateComponents(calendar: calendar, timeZone: calendar.timeZone, second: -1), to: calendar.date(byAdding: component, value: 1, to: periodStart) ?? periodStart) ?? periodStart
+    }
+
     func tier(for stats: CountryStats, at date: Date) -> MasteryTier {
         guard let history = stats.tierHistory, !history.isEmpty else {
             return (stats.lastPracticedAt ?? .distantPast) <= date ? stats.tier : .f
@@ -2560,22 +2731,22 @@ struct ContentView: View {
             .last?
             .tier ?? .f
     }
-    
+
     var friendNames: [String] {
         friendNamesRawValue
             .split(separator: "|")
             .map { String($0) }
             .filter { !$0.isEmpty }
     }
-    
+
     var onlineDisplayName: String {
         OnlineStatsService.normalizedName(onlinePlayerName, fallback: gameCenterAlias.isEmpty ? L("Nicht gesetzt", "Not set") : gameCenterAlias)
     }
-    
+
     var deduplicatedOnlineLeaderboard: [OnlinePlayerStats] {
         var playersByKey: [String: OnlinePlayerStats] = [:]
         let newestFirst = onlineLeaderboard.sorted { $0.updatedAt > $1.updatedAt }
-        
+
         for player in newestFirst {
             let key = onlineDeduplicationKey(for: player)
             if let existingPlayer = playersByKey[key] {
@@ -2584,7 +2755,7 @@ struct ContentView: View {
                 playersByKey[key] = player
             }
         }
-        
+
         return playersByKey.values.sorted {
             if $0.totalPracticed == $1.totalPracticed {
                 return $0.accuracy > $1.accuracy
@@ -2592,7 +2763,7 @@ struct ContentView: View {
             return $0.totalPracticed > $1.totalPracticed
         }
     }
-    
+
     var friendLeaderboard: [OnlinePlayerStats] {
         let normalizedFriends = Set(friendNames.map { normalizedFriendToken($0) })
         return deduplicatedOnlineLeaderboard.filter { player in
@@ -2602,14 +2773,14 @@ struct ContentView: View {
             normalizedFriends.contains(normalizedFriendToken(player.friendCode))
         }
     }
-    
+
     var gameCenterFriendPlayers: [OnlinePlayerStats] {
         let manualFriendIDs = Set(friendNames.compactMap { onlinePlayer(forFriend: $0)?.id })
         return friendLeaderboard
             .filter { gameCenterFriendIDs.contains($0.gameCenterPlayerID) && !manualFriendIDs.contains($0.id) }
             .sorted { $0.displayName < $1.displayName }
     }
-    
+
     func onlinePlayer(forFriend friend: String) -> OnlinePlayerStats? {
         let token = normalizedFriendToken(friend)
         return deduplicatedOnlineLeaderboard.first { player in
@@ -2619,18 +2790,18 @@ struct ContentView: View {
             normalizedFriendToken(player.displayName) == token
         }
     }
-    
+
     func openFriendStatsFromFriendList(_ player: OnlinePlayerStats) {
         isShowingFriendList = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             selectedOnlineGlobePlayer = player
         }
     }
-    
+
     var scopedOnlineLeaderboard: [OnlinePlayerStats] {
         selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
     }
-    
+
     var scopedFlaggenrunLeaderboard: [OnlinePlayerStats] {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
@@ -2640,7 +2811,7 @@ struct ContentView: View {
             return $0.leagueBestScore > $1.leagueBestScore
         }
     }
-    
+
     var scopedBestLearningStreakLeaderboard: [OnlinePlayerStats] {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
@@ -2650,7 +2821,7 @@ struct ContentView: View {
             return $0.bestLearningStreak > $1.bestLearningStreak
         }
     }
-    
+
     var friendFlaggenscoreLeaderboard: [OnlinePlayerStats] {
         friendLeaderboard.sorted {
             let firstScore = onlineFlaggenbossScore(for: $0)
@@ -2661,7 +2832,7 @@ struct ContentView: View {
             return firstScore > secondScore
         }
     }
-    
+
     var scopedLearnedThisWeekLeaderboard: [OnlinePlayerStats] {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
@@ -2671,7 +2842,7 @@ struct ContentView: View {
             return $0.learnedThisWeek > $1.learnedThisWeek
         }
     }
-    
+
     var scopedAchievementLeaderboard: [OnlinePlayerStats] {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
@@ -2681,7 +2852,7 @@ struct ContentView: View {
             return $0.achievementCount > $1.achievementCount
         }
     }
-    
+
     var learnedThisWeekLeaderboard: [OnlinePlayerStats] {
         deduplicatedOnlineLeaderboard.sorted {
             if $0.learnedThisWeek == $1.learnedThisWeek {
@@ -2690,7 +2861,7 @@ struct ContentView: View {
             return $0.learnedThisWeek > $1.learnedThisWeek
         }
     }
-    
+
     var achievementLeaderboard: [OnlinePlayerStats] {
         deduplicatedOnlineLeaderboard.sorted {
             if $0.achievementCount == $1.achievementCount {
@@ -2699,40 +2870,40 @@ struct ContentView: View {
             return $0.achievementCount > $1.achievementCount
         }
     }
-    
+
     func onlineDeduplicationKey(for player: OnlinePlayerStats) -> String {
         if isCurrentOnlinePlayer(player) {
             return "current"
         }
-        
+
         if !player.gameCenterPlayerID.isEmpty {
             return "gc:\(player.gameCenterPlayerID)"
         }
-        
+
         let displayNameToken = normalizedFriendToken(player.displayName)
         if !displayNameToken.isEmpty && displayNameToken != "spieler" && displayNameToken != "player" {
             return "name:\(displayNameToken)"
         }
-        
+
         return "id:\(player.id)"
     }
-    
+
     func preferredOnlinePlayer(_ first: OnlinePlayerStats, _ second: OnlinePlayerStats) -> OnlinePlayerStats {
         if isCurrentOnlinePlayer(first) != isCurrentOnlinePlayer(second) {
             return isCurrentOnlinePlayer(first) ? first : second
         }
-        
+
         if first.gameCenterPlayerID.isEmpty != second.gameCenterPlayerID.isEmpty {
             return first.gameCenterPlayerID.isEmpty ? second : first
         }
-        
+
         if first.updatedAt != second.updatedAt {
             return first.updatedAt > second.updatedAt ? first : second
         }
-        
+
         return first.totalPracticed >= second.totalPracticed ? first : second
     }
-    
+
     var currentLearningStreak: Int {
         guard let lastDate = activeProfile.lastLearningStreakDate else { return 0 }
         let calendar = Calendar.current
@@ -2744,11 +2915,11 @@ struct ContentView: View {
         }
         return 0
     }
-    
+
     var subjectName: String {
         selectedSubject == .capitals ? L("Hauptstädte", "capitals") : L("Flaggen", "flags")
     }
-    
+
     var practiceAchievementItems: [AchievementItem] {
         let countries = availableCountries
         let total = max(countries.count, 1)
@@ -2759,7 +2930,7 @@ struct ContentView: View {
         let aOrBetterCount = countries.filter { [.s, .a].contains(stats(for: $0).tier) }.count
         let bestLearningStreak = max(activeProfile.bestLearningStreak ?? 0, currentLearningStreak)
         let allSHeldDays = allSTierHeldDays(in: countries)
-        
+
         return [
             AchievementItem(
                 id: "first-card",
@@ -2936,18 +3107,18 @@ struct ContentView: View {
             )
         ]
     }
-    
+
     var regionAchievementItems: [AchievementItem] {
         let continentItems = continents.flatMap { continent in
             continentAchievementItems(for: continent, countries: allCountries.filter { $0.continent == continent })
         }
         return continentItems + worldCupAchievementItems + partiallyRecognizedAchievementItems
     }
-    
+
     var worldCupAchievementItems: [AchievementItem] {
         let countries = allCountries.filter { worldCupWinnerCountryCodes.contains($0.code) }
         let total = max(countries.count, 1)
-        
+
         return [
             AchievementItem(
                 id: "world-cup-heroes-known",
@@ -2960,12 +3131,12 @@ struct ContentView: View {
             )
         ]
     }
-    
+
     var partiallyRecognizedAchievementItems: [AchievementItem] {
         let countries = partiallyRecognizedCountries
         let total = max(countries.count, 1)
         let groupTitle = L("umkämpfte Gebiete", "contested territories")
-        
+
         return [
             AchievementItem(
                 id: "contested-seen",
@@ -3005,7 +3176,7 @@ struct ContentView: View {
             )
         ]
     }
-    
+
     func continentAchievementItems(for continent: String, countries: [Country]) -> [AchievementItem] {
         let total = max(countries.count, 1)
         let name = localizedScope(continent)
@@ -3013,7 +3184,7 @@ struct ContentView: View {
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             .lowercased()
             .replacingOccurrences(of: " ", with: "-")
-        
+
         return [
             AchievementItem(
                 id: "\(idPrefix)-seen",
@@ -3044,12 +3215,12 @@ struct ContentView: View {
             )
         ]
     }
-    
+
     var showmasterAchievementItems: [AchievementItem] {
         let countries = availableCountries
         let showmasterPlayed = totalShowmasterPlayed(in: countries)
         let showmasterCountries = countries.filter { stats(for: $0).showmasterPlayed > 0 }.count
-        
+
         return [
             AchievementItem(
                 id: "showmaster-ten",
@@ -3080,39 +3251,39 @@ struct ContentView: View {
             )
         ]
     }
-    
+
     var achievementItems: [AchievementItem] {
         practiceAchievementItems + regionAchievementItems + showmasterAchievementItems
     }
-    
+
     var unlockedAchievementCount: Int {
         achievementItems.filter(\.isUnlocked).count
     }
-    
+
     var bossScoreTitle: String {
         selectedSubject == .capitals ? L("Städteboss-Score", "City boss score") : L("Flaggenboss-Score", "Flaggenboss score")
     }
-    
+
     var bossTitle: String {
         selectedSubject == .capitals ? L("Städteboss", "City boss") : L("Flaggenboss", "Flaggenboss")
     }
-    
+
     var runTitle: String {
         selectedSubject == .capitals ? L("Städterun", "City Run") : L("Flaggenrun", "Flag Run")
     }
-    
+
     var runTitleWithBeta: String {
         "\(runTitle) Beta"
     }
-    
+
     var runHighscoreTitle: String {
         selectedSubject == .capitals ? L("Städterun Highscore", "City Run high score") : L("Flaggenrun Highscore", "Flag Run high score")
     }
-    
+
     func screenTitle(_ screen: AppScreen) -> String {
         screen == .league ? runTitleWithBeta : screen.title(language: appLanguage)
     }
-    
+
     func screenInfoText(_ screen: AppScreen) -> String {
         if screen == .games, selectedSubject == .capitals {
             return L("Hier liegen alle aktiven Spielmodi. Üben ist für deinen Lernfortschritt, Showmaster für schnelles Abfragen, Partymodus für mehrere Personen an einem Handy und Städterun für Punkte auf Zeit.", "All active game modes are here. Practice is for learning progress, Showmaster is for quick self-check rounds, Party Mode is for several people on one phone, and City Run is for timed scoring.")
@@ -3122,11 +3293,11 @@ struct ContentView: View {
         }
         return screen.infoText(language: appLanguage)
     }
-    
+
     func achievementSectionTitle(_ title: String, items: [AchievementItem]) -> String {
         "\(title) \(items.filter(\.isUnlocked).count)/\(items.count)"
     }
-    
+
     func achievementsSortedInsideCategory(_ items: [AchievementItem]) -> [AchievementItem] {
         items.sorted { first, second in
             if first.isUnlocked != second.isUnlocked {
@@ -3138,15 +3309,15 @@ struct ContentView: View {
             return first.title.localizedStandardCompare(second.title) == .orderedAscending
         }
     }
-    
+
     var activeAchievementIDs: Set<String> {
         Set(achievementItems.filter(\.isUnlocked).map(\.id))
     }
-    
+
     var globalAchievementPlayerCount: Int {
         max(deduplicatedOnlineLeaderboard.count, activeAchievementIDs.isEmpty ? 0 : 1)
     }
-    
+
     func globalUnlockCount(for achievementID: String) -> Int {
         var count = deduplicatedOnlineLeaderboard.filter { $0.achievementIDs.contains(achievementID) }.count
         if activeAchievementIDs.contains(achievementID) && !deduplicatedOnlineLeaderboard.contains(where: { isCurrentOnlinePlayer($0) }) {
@@ -3154,7 +3325,7 @@ struct ContentView: View {
         }
         return count
     }
-    
+
     func achievementsSortedByGlobalUnlocks(_ items: [AchievementItem]) -> [AchievementItem] {
         items.sorted {
             let firstCount = globalUnlockCount(for: $0.id)
@@ -3168,7 +3339,7 @@ struct ContentView: View {
             return firstCount < secondCount
         }
     }
-    
+
     func achievementsSortedByDate(_ items: [AchievementItem]) -> [AchievementItem] {
         items.sorted {
             let firstDate = achievedDate(for: $0)
@@ -3189,11 +3360,11 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func achievedDate(for item: AchievementItem) -> Date? {
         activeProfile.achievedAchievementDates?[achievementAnnouncementID(for: item)]
     }
-    
+
     func achievementDateText(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: appLanguage == .german ? "de_DE" : "en_US")
@@ -3201,7 +3372,7 @@ struct ContentView: View {
         formatter.timeStyle = .none
         return formatter.string(from: date)
     }
-    
+
     var decayPopupIsPresented: Binding<Bool> {
         Binding(
             get: { tierDecayPopup != nil },
@@ -3212,11 +3383,11 @@ struct ContentView: View {
             }
         )
     }
-    
+
     var decayPopupTitle: String {
         L("Stufen angepasst", "Levels adjusted")
     }
-    
+
     var decayPopupMessage: String {
         guard let tierDecayPopup else { return "" }
         let dayText = tierDecayPopup.maxDaysSinceLastPractice == 1 ? L("Tag", "day") : L("Tagen", "days")
@@ -3225,44 +3396,44 @@ struct ContentView: View {
             L("\(group.count) von \(group.from.rawValue) auf \(group.to.rawValue)", "\(group.count) from \(group.from.rawValue) to \(group.to.rawValue)")
         }
         .joined(separator: "\n")
-        
+
         return "\(intro)\n\(lines)"
     }
-    
+
     var startView: some View {
         ZStack {
             appBackgroundGradient
                 .ignoresSafeArea()
-            
+
             ScrollView {
                 VStack(spacing: 22) {
                     Spacer(minLength: 18)
-                    
+
                     VStack(spacing: 12) {
                         Image(systemName: "map.fill")
                             .font(.system(size: 76, weight: .regular))
                             .foregroundStyle(tealAccentColor.opacity(0.42))
                             .padding(.bottom, 2)
-                        
+
                         Text("Flaggenbande")
                             .font(.largeTitle.bold())
                             .multilineTextAlignment(.center)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
-                        
+
                         Label(L("Streak: \(currentLearningStreak) Tage", "Streak: \(currentLearningStreak) days"), systemImage: "flame.fill")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(currentLearningStreak > 0 ? .orange : .secondary)
                     }
-                    
+
                     subjectModePickerCard()
-                    
+
                     VStack(spacing: 12) {
                         ForEach(mainMenuScreens, id: \.self) { screen in
                             menuScreenRow(screen)
                         }
                     }
-                    
+
                     NavigationLink(value: AppScreen.options) {
                         Label(
                             fullVersionUnlocked ? L("Du hast die Vollversion, Dankeschön!", "You have the full version, thank you!") : L("Vollversion freischalten", "Unlock full version"),
@@ -3277,14 +3448,14 @@ struct ContentView: View {
                     }
                     .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                     .buttonStyle(.plain)
-                    
+
                     Spacer(minLength: 18)
                 }
                 .padding()
                 .frame(maxWidth: 520)
                 .frame(maxWidth: .infinity)
             }
-            
+
             if let leagueSummaryResult {
                 leagueSummaryOverlay(leagueSummaryResult)
                     .padding(.horizontal, 18)
@@ -3298,15 +3469,15 @@ struct ContentView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
     }
-    
+
     var mainMenuScreens: [AppScreen] {
         [.games, .statistics, .globe, .achievements, .friends, .options]
     }
-    
+
     var gameModeScreens: [AppScreen] {
         [.practice, .showmaster, .miniWorldCup, .league]
     }
-    
+
     func menuScreenRow(_ screen: AppScreen) -> some View {
         HStack(spacing: 10) {
             NavigationLink(value: screen) {
@@ -3331,7 +3502,7 @@ struct ContentView: View {
             }
             .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
             .buttonStyle(.plain)
-            
+
             Button {
                 Haptics.tap()
                 selectedMenuInfoScreen = screen
@@ -3350,7 +3521,7 @@ struct ContentView: View {
         .background(panelBackgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
-    
+
     var gameModesView: some View {
         ZStack {
             appBackgroundGradient
@@ -3373,7 +3544,7 @@ struct ContentView: View {
         .navigationTitle(L("Spielen", "Play"))
         .navigationBarTitleDisplayMode(.inline)
     }
-    
+
     func menuInfoSheet(for screen: AppScreen) -> some View {
         NavigationStack {
             ScrollView {
@@ -3383,13 +3554,13 @@ struct ContentView: View {
                         .foregroundStyle(tealAccentColor)
                         .frame(width: 54, height: 54)
                         .background(tealAccentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                    
+
                     Text(screenTitle(screen))
                         .font(.headline.weight(.bold))
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
                         .minimumScaleFactor(0.82)
-                    
+
                     Text(screenInfoText(screen))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -3414,7 +3585,7 @@ struct ContentView: View {
         }
         .presentationDetents([.height(310), .medium])
     }
-    
+
     var practiceView: some View {
         ZStack {
             appBackgroundGradient
@@ -3428,7 +3599,7 @@ struct ContentView: View {
                 if practiceSessionActive {
                     Spacer(minLength: 42)
                 }
-                
+
                 if practiceSessionActive {
                     PracticeHistoryBar(
                         results: practiceSessionResults,
@@ -3443,7 +3614,7 @@ struct ContentView: View {
                             Color.clear.preference(key: PracticeHistoryBarMinYKey.self, value: proxy.frame(in: .named("practicePreviewSpace")).minY)
                         }
                     )
-                    
+
                     VStack(spacing: 8) {
                         practiceSwipeCard
                         Text(L("Wischen!", "Swipe!"))
@@ -3462,7 +3633,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(ActionButtonStyle(color: tealAccentColor))
                         .disabled(practiceUndoSnapshot == nil)
-                        
+
                         Button {
                             Haptics.tap()
                             finishPracticeSession(showSummary: practiceSessionCount > 0)
@@ -3473,7 +3644,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(ActionButtonStyle(color: tealAccentColor))
                     }
-                    
+
                     hintControl
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
@@ -3481,7 +3652,7 @@ struct ContentView: View {
                             .font(.headline)
                         continentButtonGrid(selection: $selectedPracticeContinents)
                     }
-                    
+
                     if showRecap {
                         PracticeRecapView(
                             startCounts: recapStartCounts,
@@ -3505,10 +3676,10 @@ struct ContentView: View {
                         )
                         .transition(.opacity.combined(with: .scale(scale: 0.96)))
                     }
-                    
+
                     if !showRecap {
                         Spacer(minLength: 18)
-                        
+
                         Button {
                             Haptics.tap()
                             startPracticeSession()
@@ -3521,7 +3692,7 @@ struct ContentView: View {
                         .buttonStyle(ActionButtonStyle(color: tealAccentColor))
                         .padding(.top, 12)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
-                        
+
                         practiceInfoTile
                     }
                 }
@@ -3536,7 +3707,7 @@ struct ContentView: View {
                         dismissPracticeHistoryPreview()
                     }
                     .zIndex(1)
-                
+
                 practiceHistoryPreviewBubble(for: practiceHistoryPreview)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.top, practiceHistoryBarMinY + 38)
@@ -3560,7 +3731,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func practiceHistoryPreviewBubble(for preview: PracticeHistoryPreview) -> some View {
         GeometryReader { geometry in
             let screenWidth = geometry.size.width
@@ -3578,7 +3749,7 @@ struct ContentView: View {
             let selectedCenterX = entriesStart + CGFloat(preview.index) * (pillWidth + pillSpacing) + pillWidth / 2
             let bubbleLeft = min(max(selectedCenterX - bubbleWidth / 2, horizontalMargin), screenWidth - bubbleWidth - horizontalMargin)
             let arrowX = min(max(selectedCenterX - bubbleLeft, 24), bubbleWidth - 24)
-            
+
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Spacer()
@@ -3593,7 +3764,7 @@ struct ContentView: View {
                     Spacer(minLength: 0)
                 }
                 .frame(width: bubbleWidth)
-                
+
                 practiceHistoryPreview(for: preview.change)
             }
             .frame(width: bubbleWidth)
@@ -3604,7 +3775,7 @@ struct ContentView: View {
             dismissPracticeHistoryPreview()
         }
     }
-    
+
     func practiceHistoryPreview(for change: PracticeSessionChange) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
@@ -3614,10 +3785,10 @@ struct ContentView: View {
                         RoundedRectangle(cornerRadius: 7)
                             .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
                     )
-                
+
                 MiniLocationGlobe(country: change.country, accentColor: tealAccentColor)
                     .frame(width: 50, height: 50)
-                
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text(countryName(for: change.country))
                         .font(.headline.weight(.bold))
@@ -3634,10 +3805,10 @@ struct ContentView: View {
                             .minimumScaleFactor(0.78)
                     }
                 }
-                
+
                 Spacer(minLength: 0)
             }
-            
+
             HStack(spacing: 8) {
                 Label(change.wasKnown ? L("Gewusst", "Known") : L("Nicht gewusst", "Not known"), systemImage: change.wasKnown ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .font(.caption.weight(.semibold))
@@ -3645,9 +3816,9 @@ struct ContentView: View {
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .background((change.wasKnown ? Color.green : Color.red).opacity(0.12), in: Capsule())
-                
+
                 Spacer(minLength: 0)
-                
+
                 HStack(spacing: 5) {
                     tierMiniBadge(change.fromTier)
                     Image(systemName: change.wasKnown ? "arrow.up.right" : "arrow.down.right")
@@ -3670,7 +3841,7 @@ struct ContentView: View {
             dismissPracticeHistoryPreview()
         }
     }
-    
+
     func tierMiniBadge(_ tier: MasteryTier) -> some View {
         Text(tier.rawValue)
             .font(.caption.weight(.bold))
@@ -3678,20 +3849,20 @@ struct ContentView: View {
             .frame(width: 24, height: 24)
             .background(tier.color, in: RoundedRectangle(cornerRadius: 6))
     }
-    
+
     func showPracticeHistoryPreview(_ preview: PracticeHistoryPreview) {
         Haptics.tap()
         withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
             practiceHistoryPreview = preview
         }
     }
-    
+
     func dismissPracticeHistoryPreview() {
         withAnimation(.easeOut(duration: 0.16)) {
             practiceHistoryPreview = nil
         }
     }
-    
+
     func showHistoryPreviewBubble(for preview: ShowHistoryPreview) -> some View {
         GeometryReader { geometry in
             let screenWidth = geometry.size.width
@@ -3709,7 +3880,7 @@ struct ContentView: View {
             let selectedCenterX = entriesStart + CGFloat(preview.index) * (pillWidth + pillSpacing) + pillWidth / 2
             let bubbleLeft = min(max(selectedCenterX - bubbleWidth / 2, horizontalMargin), screenWidth - bubbleWidth - horizontalMargin)
             let arrowX = min(max(selectedCenterX - bubbleLeft, 24), bubbleWidth - 24)
-            
+
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Spacer()
@@ -3724,7 +3895,7 @@ struct ContentView: View {
                     Spacer(minLength: 0)
                 }
                 .frame(width: bubbleWidth)
-                
+
                 showHistoryPreviewContent(for: preview.entry.country)
             }
             .frame(width: bubbleWidth)
@@ -3735,7 +3906,7 @@ struct ContentView: View {
             dismissShowmasterHistoryPreview()
         }
     }
-    
+
     func showHistoryPreviewContent(for country: Country) -> some View {
         HStack(alignment: .top, spacing: 12) {
             FlagImage(country: country, width: 74, height: 50)
@@ -3744,10 +3915,10 @@ struct ContentView: View {
                     RoundedRectangle(cornerRadius: 7)
                         .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
                 )
-            
+
             MiniLocationGlobe(country: country, accentColor: tealAccentColor)
                 .frame(width: 50, height: 50)
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(countryName(for: country))
                     .font(.headline.weight(.bold))
@@ -3767,7 +3938,7 @@ struct ContentView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(tealAccentColor)
             }
-            
+
             Spacer(minLength: 0)
         }
         .padding(12)
@@ -3783,20 +3954,20 @@ struct ContentView: View {
             dismissShowmasterHistoryPreview()
         }
     }
-    
+
     func showShowmasterHistoryPreview(_ preview: ShowHistoryPreview) {
         Haptics.tap()
         withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
             showHistoryPreview = preview
         }
     }
-    
+
     func dismissShowmasterHistoryPreview() {
         withAnimation(.easeOut(duration: 0.16)) {
             showHistoryPreview = nil
         }
     }
-    
+
     var practiceInfoTile: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "info.circle.fill")
@@ -3812,7 +3983,7 @@ struct ContentView: View {
         .background(panelBackgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
-    
+
     var practiceSwipeCard: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12)
@@ -3825,7 +3996,7 @@ struct ContentView: View {
                         .opacity(practiceSwipeOpacity)
                         .padding(.horizontal, 26)
                 }
-            
+
             FlipCard(country: currentCountry, isFlipped: cardIsFlipped, hasGoldAura: tier(for: currentCountry) == .s, language: appLanguage, subject: selectedSubject, capital: capitalName(for: currentCountry))
                 .id(currentCountry.id)
                 .offset(x: practiceCardDragOffset, y: practiceCardEntryOffset)
@@ -3846,7 +4017,7 @@ struct ContentView: View {
                             finishPracticeSwipe(translation: value.translation, predictedTranslation: value.predictedEndTranslation)
                         }
                 )
-            
+
             if hintBlockFeedbackIsVisible {
                 Label(L("Mit Tipp nur als nicht gewusst möglich", "With a hint, only not known is possible"), systemImage: "lock.fill")
                     .font(.subheadline.weight(.semibold))
@@ -3869,7 +4040,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var hintControl: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
@@ -3887,7 +4058,7 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 10)
                     .stroke(cardHintIsVisible ? Color.orange.opacity(0.34) : Color.secondary.opacity(0.12), lineWidth: 1)
             )
-            
+
             if cardHintIsVisible {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(hintText(for: currentCountry))
@@ -3911,7 +4082,7 @@ struct ContentView: View {
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: cardHintIsVisible)
     }
-    
+
     var showRandomnessControl: some View {
         Toggle(isOn: $showAvoidsRecentRepeats) {
             VStack(alignment: .leading, spacing: 3) {
@@ -3927,15 +4098,15 @@ struct ContentView: View {
         .background(panelBackgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
-    
+
     var practiceSwipeColor: Color {
         practiceCardDragOffset >= 0 ? .green : .red
     }
-    
+
     var practiceSwipeOpacity: Double {
         min(abs(Double(practiceCardDragOffset)) / 140, 0.35)
     }
-    
+
     var showView: some View {
         ZStack {
             appBackgroundGradient
@@ -3944,12 +4115,12 @@ struct ContentView: View {
                 VStack(spacing: 18) {
                 modeHeader(title: "Showmaster", subtitle: "")
                 subjectModePickerCard()
-                
+
                 if showSessionActive {
                     Text(showSessionProgressText())
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    
+
                     ShowHistoryBar(
                         entries: showSessionEntries,
                         limit: selectedShowCardLimit,
@@ -3962,7 +4133,7 @@ struct ContentView: View {
                             Color.clear.preference(key: ShowHistoryBarMinYKey.self, value: proxy.frame(in: .named("showPreviewSpace")).minY)
                         }
                     )
-                    
+
                     FlipCard(country: currentCountry, isFlipped: cardIsFlipped, hasGoldAura: tier(for: currentCountry) == .s, language: appLanguage, subject: selectedSubject, capital: capitalName(for: currentCountry))
                         .id(currentCountry.id)
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -3984,7 +4155,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(ActionButtonStyle(color: tealAccentColor))
                     .disabled(showLimitReached)
-                    
+
                     Button {
                         Haptics.tap()
                         isShowingShowCancelConfirmation = true
@@ -3994,7 +4165,7 @@ struct ContentView: View {
                             .contentShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(ActionButtonStyle(color: tealAccentColor))
-                    
+
                     hintControl
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
@@ -4002,17 +4173,17 @@ struct ContentView: View {
                             .font(.headline)
                         continentButtonGrid(selection: $selectedShowContinents)
                     }
-                    
+
                     VStack(alignment: .leading, spacing: 8) {
                         Text(L("Karten", "Cards"))
                             .font(.headline)
                         cardLimitSelector(selection: $selectedShowCardLimit)
                     }
-                    
+
                     showRandomnessControl
-                    
+
                     Spacer(minLength: 18)
-                    
+
                     Button {
                         Haptics.tap()
                         startShowSession()
@@ -4036,7 +4207,7 @@ struct ContentView: View {
                         dismissShowmasterHistoryPreview()
                     }
                     .zIndex(1)
-                
+
                 showHistoryPreviewBubble(for: showHistoryPreview)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.top, showHistoryBarMinY + 38)
@@ -4053,22 +4224,22 @@ struct ContentView: View {
         }
         .onAppear { resetShowSession() }
         .onChange(of: selectedShowContinents) { _, _ in
-            resetShowSession()
+            resetShowSession(clearDeck: true)
         }
         .onChange(of: selectedShowCardLimit) { _, _ in
             resetShowSession()
         }
     }
-    
+
     var miniWorldCupView: some View {
         ZStack {
             appBackgroundGradient
                 .ignoresSafeArea()
-            
+
             ScrollView {
                 VStack(spacing: 18) {
                     modeHeader(title: L("Partymodus Beta", "Party Mode Beta"), subtitle: L("Handy weitergeben, Flagge wischen, bis nur noch eine Person übrig ist.", "Pass the phone, swipe the flag, until one person remains."))
-                    
+
                     switch miniWorldCupPhase {
                     case .setup:
                         miniWorldCupSetupView
@@ -4088,14 +4259,14 @@ struct ContentView: View {
                 .frame(maxWidth: 620)
                 .frame(maxWidth: .infinity)
             }
-            
+
             if miniWorldCupSuddenDeathAnnouncementVisible {
                 miniWorldCupToast(icon: "bolt.fill", title: "Sudden Death", tint: .orange)
                     .padding(.horizontal, 22)
                     .transition(.scale(scale: 0.88).combined(with: .opacity))
                     .zIndex(2)
             }
-            
+
         }
         .navigationTitle(L("Partymodus Beta", "Party Mode Beta"))
         .navigationBarTitleDisplayMode(.inline)
@@ -4109,7 +4280,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var miniWorldCupCurrentPlayerBottomBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "person.fill")
@@ -4139,7 +4310,7 @@ struct ContentView: View {
                 .stroke(miniWorldCupHandoffTint.opacity(0.28), lineWidth: 1)
         )
     }
-    
+
     func miniWorldCupToast(icon: String, title: String, tint: Color) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
@@ -4160,13 +4331,13 @@ struct ContentView: View {
         )
         .shadow(color: tint.opacity(0.18), radius: 18, y: 8)
     }
-    
+
     var miniWorldCupSetupView: some View {
         VStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 10) {
                 Label(L("Spieler im Uhrzeigersinn", "Players clockwise"), systemImage: "arrow.clockwise.circle.fill")
                     .font(.headline)
-                
+
                 HStack(spacing: 10) {
                     TextField(L("Name", "Name"), text: $miniWorldCupNewPlayerName)
                         .textInputAutocapitalization(.words)
@@ -4177,7 +4348,7 @@ struct ContentView: View {
                         .padding(.vertical, 11)
                         .background(tealAccentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
                         .onSubmit { addMiniWorldCupPlayer() }
-                    
+
                     Button {
                         Haptics.tap()
                         addMiniWorldCupPlayer()
@@ -4189,7 +4360,7 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(tealAccentColor)
                 }
-                
+
                 if miniWorldCupPlayers.isEmpty {
                     Text(L("Füge mindestens zwei Personen in Sitzreihenfolge hinzu.", "Add at least two people in seating order."))
                         .font(.caption)
@@ -4223,9 +4394,9 @@ struct ContentView: View {
             }
             .padding(14)
             .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
-            
+
             miniWorldCupRulesView
-            
+
             Button {
                 Haptics.tap()
                 startMiniWorldCup()
@@ -4238,12 +4409,12 @@ struct ContentView: View {
             .disabled(miniWorldCupPlayers.count < 2)
         }
     }
-    
+
     var miniWorldCupRulesView: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(L("Rundenregeln", "Round rules"), systemImage: "slider.horizontal.3")
                 .font(.headline)
-            
+
             Stepper(value: $miniWorldCupFlagsPerPlayer, in: 1...5) {
                 HStack {
                     Text(L("Flaggen pro Person", "Flags per person"))
@@ -4256,7 +4427,7 @@ struct ContentView: View {
             .onChange(of: miniWorldCupFlagsPerPlayer) { _, newValue in
                 miniWorldCupRequiredCorrect = min(miniWorldCupRequiredCorrect, newValue)
             }
-            
+
             Stepper(value: $miniWorldCupRequiredCorrect, in: 1...miniWorldCupFlagsPerPlayer) {
                 HStack {
                     Text(L("Muss richtig sein", "Needed correct"))
@@ -4266,12 +4437,12 @@ struct ContentView: View {
                         .foregroundStyle(tealAccentColor)
                 }
             }
-            
+
             Toggle(isOn: $miniWorldCupSuddenDeathEnabled) {
                 Text("Sudden Death")
             }
             .toggleStyle(.switch)
-            
+
             if miniWorldCupSuddenDeathEnabled {
                 Stepper(value: $miniWorldCupSuddenDeathThreshold, in: 2...12) {
                     HStack {
@@ -4288,7 +4459,7 @@ struct ContentView: View {
         .padding(14)
         .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
     }
-    
+
     var miniWorldCupTurnStatusView: some View {
         HStack(spacing: 10) {
             Image(systemName: miniWorldCupMustKnowNextFlag ? "exclamationmark.triangle.fill" : "scope")
@@ -4321,7 +4492,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var miniWorldCupAttemptReviewView: some View {
         HStack(spacing: 7) {
             ForEach(0..<miniWorldCupEffectiveFlagCount, id: \.self) { index in
@@ -4343,7 +4514,7 @@ struct ContentView: View {
         )
         .animation(.spring(response: 0.3, dampingFraction: 0.72), value: miniWorldCupCurrentAttemptResults)
     }
-    
+
     var miniWorldCupIntermediateResultsView: some View {
         Group {
             if !miniWorldCupRoundResults.isEmpty {
@@ -4351,7 +4522,7 @@ struct ContentView: View {
                     Label(L("Zwischenergebnis", "Interim result"), systemImage: "list.bullet.rectangle.fill")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(.secondary)
-                    
+
                     ForEach(miniWorldCupRoundResults.suffix(4)) { result in
                         HStack(spacing: 8) {
                             Image(systemName: result.didAdvance ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -4371,7 +4542,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var miniWorldCupControlsView: some View {
         HStack(spacing: 10) {
             Button {
@@ -4382,7 +4553,7 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, minHeight: 42)
             }
             .buttonStyle(ActionButtonStyle(color: .secondary))
-            
+
             Button {
                 Haptics.tap()
                 undoMiniWorldCupTurn()
@@ -4394,27 +4565,27 @@ struct ContentView: View {
             .disabled(miniWorldCupUndoSnapshot == nil)
         }
     }
-    
+
     var miniWorldCupHandoffView: some View {
         VStack(spacing: 16) {
             Image(systemName: "hand.raised.fill")
                 .font(.system(size: 54, weight: .bold))
                 .foregroundStyle(tealAccentColor)
                 .padding(.top, 4)
-            
+
             Text(miniWorldCupHandoffTitle)
                 .font(.title.bold())
                 .foregroundStyle(miniWorldCupHandoffTint)
-            
+
             Text(miniWorldCupHandoffSubtitle)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
-            
+
             Text(miniWorldCupCurrentPlayer?.name ?? "-")
                 .font(.largeTitle.weight(.black))
                 .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.7)
-            
+
             VStack(spacing: 4) {
                 Text(L("Die Flagge wird erst nach OK angezeigt.", "The flag appears only after OK."))
                     .font(.caption.weight(.semibold))
@@ -4423,7 +4594,7 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(tealAccentColor)
             }
-            
+
             Button {
                 Haptics.tap()
                 presentMiniWorldCupQuestion()
@@ -4442,7 +4613,7 @@ struct ContentView: View {
         )
         .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
-    
+
     var miniWorldCupQuestionView: some View {
         VStack(spacing: 14) {
             HStack {
@@ -4457,9 +4628,9 @@ struct ContentView: View {
                     .frame(width: 38, height: 38)
                     .background(tealAccentColor, in: Circle())
             }
-            
+
             miniWorldCupAttemptReviewView
-            
+
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(miniWorldCupSwipeColor.opacity(min(abs(miniWorldCupCardDragOffset.width) / 130, 0.24)))
@@ -4471,7 +4642,7 @@ struct ContentView: View {
                             .opacity(min(abs(miniWorldCupCardDragOffset.width) / 130, 1))
                             .padding(.horizontal, 26)
                     }
-                
+
                 FlipCard(
                     country: miniWorldCupCurrentCountry,
                     isFlipped: miniWorldCupCardIsFlipped,
@@ -4512,11 +4683,11 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(miniWorldCupSwipeColor.opacity(0.42), lineWidth: abs(miniWorldCupCardDragOffset.width) > 8 ? 3 : 1)
             )
-            
+
             Text(L("Wischen!", "Swipe!"))
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(.secondary)
-            
+
         }
         .transition(.opacity.combined(with: .scale(scale: 0.98)))
         .onChange(of: miniWorldCupMustKnowNextFlag) { _, mustKnow in
@@ -4536,7 +4707,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var miniWorldCupResultView: some View {
         VStack(spacing: 14) {
             VStack(spacing: 8) {
@@ -4553,9 +4724,9 @@ struct ContentView: View {
             .padding(18)
             .frame(maxWidth: .infinity)
             .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
-            
+
             miniWorldCupBracketView
-            
+
             Button {
                 Haptics.tap()
                 resetMiniWorldCupToSetup(keepPlayers: true)
@@ -4566,17 +4737,17 @@ struct ContentView: View {
             .buttonStyle(ActionButtonStyle(color: tealAccentColor))
         }
     }
-    
+
     var miniWorldCupBracketView: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(L("Turnierbaum", "Tournament bracket"), systemImage: "list.bullet.rectangle.fill")
                 .font(.headline)
-            
+
             ForEach(miniWorldCupResultRoundKeys, id: \.self) { round in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(L("Runde \(round)", "Round \(round)"))
                         .font(.subheadline.weight(.bold))
-                    
+
                     ForEach(miniWorldCupResults(forRound: round)) { result in
                         miniWorldCupResultRow(result)
                     }
@@ -4584,7 +4755,7 @@ struct ContentView: View {
                 .padding(10)
                 .background(tealAccentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
             }
-            
+
             if let winner = miniWorldCupActivePlayers.first {
                 HStack(spacing: 10) {
                     Image(systemName: "crown.fill")
@@ -4605,7 +4776,7 @@ struct ContentView: View {
         .padding(14)
         .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
     }
-    
+
     func miniWorldCupResultRow(_ result: MiniWorldCupRoundResult) -> some View {
         let tint: Color = result.didAdvance ? .green : .red
         return HStack(spacing: 10) {
@@ -4628,15 +4799,15 @@ struct ContentView: View {
         .padding(10)
         .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
     }
-    
+
     var miniWorldCupResultRoundKeys: [Int] {
         Array(Set(miniWorldCupRoundResults.map(\.round))).sorted()
     }
-    
+
     func miniWorldCupResults(forRound round: Int) -> [MiniWorldCupRoundResult] {
         miniWorldCupRoundResults.filter { $0.round == round }
     }
-    
+
     var achievementsView: some View {
         List {
             Section {
@@ -4646,7 +4817,7 @@ struct ContentView: View {
                         .foregroundStyle(tealAccentColor)
                         .frame(width: 38, height: 38)
                         .background(tealAccentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
-                    
+
                     VStack(alignment: .leading, spacing: 3) {
                         Text("\(unlockedAchievementCount)/\(achievementItems.count)")
                             .font(.headline)
@@ -4657,7 +4828,7 @@ struct ContentView: View {
                 }
                 .padding(.vertical, 4)
             }
-            
+
             Section(L("Sortieren", "Sort")) {
                 Picker(L("Sortieren", "Sort"), selection: $achievementSortMode) {
                     ForEach(AchievementSortMode.allCases) { mode in
@@ -4666,7 +4837,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
             }
-            
+
             switch achievementSortMode {
             case .category:
                 Section(achievementSectionTitle(L("Üben", "Practice"), items: practiceAchievementItems)) {
@@ -4680,7 +4851,7 @@ struct ContentView: View {
                         )
                     }
                 }
-                
+
                 Section(achievementSectionTitle(L("Regionen & Spezialsets", "Regions & special sets"), items: regionAchievementItems)) {
                     ForEach(achievementsSortedInsideCategory(regionAchievementItems)) { item in
                         AchievementRow(
@@ -4692,7 +4863,7 @@ struct ContentView: View {
                         )
                     }
                 }
-                
+
                 Section(achievementSectionTitle("Showmaster", items: showmasterAchievementItems)) {
                     ForEach(achievementsSortedInsideCategory(showmasterAchievementItems)) { item in
                         AchievementRow(
@@ -4743,7 +4914,7 @@ struct ContentView: View {
                 .padding(.bottom, 8)
         }
     }
-    
+
     var statisticsView: some View {
         List {
             if fullVersionUnlocked {
@@ -4752,7 +4923,7 @@ struct ContentView: View {
                 }
                 .onTapGesture { dismissStatisticsSearchKeyboard() }
             }
-            
+
             if isAllCountriesStatisticsScope {
                 Section(bossTitle) {
                     MasteryScoreCard(
@@ -4767,24 +4938,28 @@ struct ContentView: View {
                 }
                 .onTapGesture { dismissStatisticsSearchKeyboard() }
             }
-            
+
             Section(L("Allgemein", "General")) {
                 let seenFlags = totalSeenFlags(in: filteredStatisticsCountries)
                 let knownOnceFlags = totalKnownAtLeastOnceFlags(in: filteredStatisticsCountries)
                 let knownAnswers = totalCardKnown(in: filteredStatisticsCountries)
                 let totalFlags = filteredStatisticsCountries.count
-                
+                let firstLearned = firstLearnedCountry(in: filteredStatisticsCountries)
+
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
                     CompactStatTile(title: selectedSubject == .capitals ? L("Gesehen", "Seen") : L("Gesehen", "Seen"), value: "\(seenFlags)/\(totalFlags)", subtitle: percent(seenFlags, of: totalFlags))
                     CompactStatTile(title: L("Mind. 1x gewusst", "Known once"), value: "\(knownOnceFlags)/\(totalFlags)", subtitle: percent(knownOnceFlags, of: totalFlags))
+                    CompactStatTile(title: selectedSubject == .capitals ? L("Erste Stadt gelernt", "First city learned") : L("Erste Flagge gelernt", "First flag learned"), value: firstLearned.map { countryName(for: $0.country) } ?? "-", subtitle: firstLearned.map { compactDateText($0.date) } ?? L("noch offen", "open"))
+                    CompactStatTile(title: selectedSubject == .capitals ? L("Meiste Städte/Tag", "Most cities/day") : L("Meiste Flaggen/Tag", "Most flags/day"), value: "\(maxKnownCardsInOneDay(subject: selectedSubject))", subtitle: L("gelernt", "learned"))
                     CompactStatTile(title: L("Gewusst", "Known"), value: "\(knownAnswers)", subtitle: L("gesamt", "total"))
                     CompactStatTile(title: L("Geübt", "Practiced"), value: "\(totalCardReviews(in: filteredStatisticsCountries))", subtitle: selectedSubject == .capitals ? L("Länder", "countries") : L("Flaggen", "flags"))
                     CompactStatTile(title: L("Nicht gewusst", "Not known"), value: "\(totalCardUnknown(in: filteredStatisticsCountries))", subtitle: "")
                     CompactStatTile(title: "Showmaster", value: "\(activeProfile.showmasterCards)", subtitle: L("Karten", "cards"))
-                    CompactStatTile(title: L("Streak", "Streak"), value: "\(currentLearningStreak)", subtitle: L("Tage", "days"))
+                    CompactStatTile(title: runTitle, value: "\((activeProfile.leagueStats?.played ?? 0))", subtitle: L("Runs", "runs"))
+                    CompactStatTile(title: L("Party-Runden", "Party rounds"), value: "\((activeProfile.partyRoundsPlayed ?? 0))", subtitle: L("Runden", "rounds"))
                     CompactStatTile(title: L("Beste Streak", "Best streak"), value: "\((activeProfile.bestLearningStreak ?? 0))", subtitle: L("Tage", "days"))
                 }
-                
+
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
                         dismissStatisticsSearchKeyboard()
@@ -4804,7 +4979,7 @@ struct ContentView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    
+
                     if isTierExplanationExpanded {
                         Text(selectedSubject == .capitals ? L("Die Stufen gehen von F bis S. F bedeutet neu oder unsicher, S bedeutet sehr sicher. Wenn du eine Hauptstadt nach rechts wischst, steigt sie eine Stufe. Nach links fällt sie eine Stufe. Hohe Stufen kommen seltener, werden aber weiterhin abgefragt. Wenn du die Hauptstadt eines Landes 3 Tage lang nicht als gewusst loggst, fällt sie wegen Inaktivität eine Stufe ab.", "Levels go from F to S. F means new or unsure, S means very confident. Swiping a capital to the right moves it up one level. Swiping left moves it down one level. Higher levels appear less often, but still come up. If you do not log a country's capital as known for 3 days, it drops one level due to inactivity.") : L("Die Stufen gehen von F bis S. F bedeutet neu oder unsicher, S bedeutet sehr sicher. Wenn du eine Flagge nach rechts wischst, steigt sie eine Stufe. Nach links fällt sie eine Stufe. Hohe Stufen kommen seltener, werden aber weiterhin abgefragt. Wenn du eine Flagge 3 Tage lang nicht als gewusst loggst, fällt sie wegen Inaktivität eine Stufe ab.", "Levels go from F to S. F means new or unsure, S means very confident. Swiping a flag to the right moves it up one level. Swiping left moves it down one level. Higher levels appear less often, but still come up. If you do not log a flag as known for 3 days, it drops one level due to inactivity."))
                             .font(.caption)
@@ -4814,7 +4989,7 @@ struct ContentView: View {
                 }
             }
             .onTapGesture { dismissStatisticsSearchKeyboard() }
-            
+
             if !fullVersionUnlocked {
                 Section(selectedSubject == .capitals ? L("Städteboss-Stufen", "City boss levels") : L("Flaggenboss-Stufen", "Flaggenboss levels")) {
                     TierSummaryGrid(profile: activeProfile, countries: availableCountries, subject: selectedSubject, selectedTier: selectedStatisticsTier) { tier in
@@ -4824,7 +4999,7 @@ struct ContentView: View {
                     }
                 }
                 .onTapGesture { dismissStatisticsSearchKeyboard() }
-                
+
                 if let selectedStatisticsTier {
                     Section("\(bossTitle)-Stufe \(selectedStatisticsTier.rawValue)") {
                         ForEach(statisticsCountries(in: selectedStatisticsTier, from: availableCountries)) { country in
@@ -4840,7 +5015,7 @@ struct ContentView: View {
                     }
                 }
             }
-            
+
             if isAllCountriesStatisticsScope {
                 Section(L("Auswertung", "Analysis")) {
                 if fullVersionUnlocked {
@@ -4849,15 +5024,38 @@ struct ContentView: View {
                         language: appLanguage,
                         accentColor: tealAccentColor
                     )
-                    
+
+                    Picker(L("Zeitraum", "Range"), selection: $selectedPracticeBalanceRange) {
+                        ForEach(PracticeBalanceRange.allCases) { range in
+                            Text(range.title(language: appLanguage)).tag(range)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedPracticeBalanceRange) { _, _ in
+                        scoreHistoryPageOffset = 0
+                        practiceBalancePageOffset = 0
+                        selectedScoreHistoryPoint = nil
+                        selectedPracticeBalancePoint = nil
+                    }
+
                     PracticeBalanceChart(
-                        rows: practiceBalanceRows(in: availableCountries),
+                        previousPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: min(practiceBalancePageOffset + 1, 0)),
+                        points: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                        nextPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - 1),
+                        range: selectedPracticeBalanceRange,
+                        pageOffset: $practiceBalancePageOffset,
+                        selectedPoint: $selectedPracticeBalancePoint,
                         language: appLanguage
                     )
-                    
+
                     FlaggenbossScoreChart(
                         title: bossTitle,
-                        points: flaggenbossPoints(in: availableCountries),
+                        previousPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: min(scoreHistoryPageOffset + 1, 0)),
+                        points: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
+                        nextPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - 1),
+                        range: selectedPracticeBalanceRange,
+                        pageOffset: $scoreHistoryPageOffset,
+                        selectedPoint: $selectedScoreHistoryPoint,
                         language: appLanguage,
                         accentColor: tealAccentColor
                     )
@@ -4870,13 +5068,29 @@ struct ContentView: View {
                                 language: appLanguage,
                                 accentColor: tealAccentColor
                             )
+                            Picker(L("Zeitraum", "Range"), selection: $selectedPracticeBalanceRange) {
+                                ForEach(PracticeBalanceRange.allCases) { range in
+                                    Text(range.title(language: appLanguage)).tag(range)
+                                }
+                            }
+                            .pickerStyle(.segmented)
                             PracticeBalanceChart(
-                                rows: practiceBalanceRows(in: availableCountries),
+                                previousPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: min(practiceBalancePageOffset + 1, 0)),
+                                points: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                                nextPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - 1),
+                                range: selectedPracticeBalanceRange,
+                                pageOffset: $practiceBalancePageOffset,
+                                selectedPoint: $selectedPracticeBalancePoint,
                                 language: appLanguage
                             )
                             FlaggenbossScoreChart(
                                 title: bossTitle,
-                                points: flaggenbossPoints(in: availableCountries),
+                                previousPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: min(scoreHistoryPageOffset + 1, 0)),
+                                points: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
+                                nextPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - 1),
+                                range: selectedPracticeBalanceRange,
+                                pageOffset: $scoreHistoryPageOffset,
+                                selectedPoint: $selectedScoreHistoryPoint,
                                 language: appLanguage,
                                 accentColor: tealAccentColor
                             )
@@ -4885,7 +5099,7 @@ struct ContentView: View {
                         .saturation(0.72)
                         .opacity(0.48)
                         .allowsHitTesting(false)
-                        
+
                         Image(systemName: "lock.fill")
                             .font(.title3.weight(.bold))
                             .foregroundStyle(tealAccentColor)
@@ -4896,7 +5110,7 @@ struct ContentView: View {
             }
             .onTapGesture { dismissStatisticsSearchKeyboard() }
             }
-            
+
             if fullVersionUnlocked {
                 Section(selectedSubject == .capitals ? L("Länder", "Countries") : L("Flaggen", "Flags")) {
                     TextField(selectedSubject == .capitals ? L("Land, Hauptstadt, Kontinent oder Code suchen", "Search country, capital, continent, or code") : L("Land, Kontinent oder Code suchen", "Search country, continent, or code"), text: $statisticsSearchText)
@@ -4904,7 +5118,7 @@ struct ContentView: View {
                         .textInputAutocapitalization(.never)
                         .disableAutocorrection(true)
                         .font(.subheadline)
-                    
+
                     if !hasStatisticsSearch {
                         TierSummaryGrid(profile: activeProfile, countries: filteredStatisticsCountries, subject: selectedSubject, selectedTier: selectedStatisticsTier) { tier in
                             dismissStatisticsSearchKeyboard()
@@ -4914,7 +5128,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                
+
                 if hasStatisticsSearch {
                     Section(L("Suchergebnisse", "Search results")) {
                         if filteredStatisticsCountries.isEmpty {
@@ -4952,7 +5166,7 @@ struct ContentView: View {
                                             .contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
-                                    
+
                                     if isExpanded {
                                         CountryStatsRow(country: country, stats: stats(for: country), language: appLanguage, subject: selectedSubject, capital: capitalName(for: country), showsHeader: false)
                                             .transition(.opacity.combined(with: .move(edge: .top)))
@@ -4989,53 +5203,53 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func dismissStatisticsSearchKeyboard() {
         isStatisticsSearchFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
-    
+
     var globeCountries: [Country] {
         availableCountries
     }
-    
+
     var globeTierByCountryCode: [String: MasteryTier] {
         Dictionary(uniqueKeysWithValues: globeCountries.map { country in
             (country.code, activeProfile.tier(for: country, subject: selectedSubject))
         })
     }
-    
+
     func focusGlobeSearchResult() {
         guard let country = bestGlobeSearchMatch(for: globeSearchText) else { return }
         Haptics.tap()
         focusGlobe(on: country)
     }
-    
+
     func focusGlobe(on country: Country) {
         withAnimation(.easeInOut(duration: 0.2)) {
             globeFocusCountryCode = country.code
         }
     }
-    
+
     func bestGlobeSearchMatch(for query: String) -> Country? {
         globeSearchMatches(for: query, minimumScore: 0.62).first?.country
     }
-    
+
     func globeSearchSuggestions(for query: String) -> [Country] {
         globeSearchMatches(for: query, minimumScore: 0.38).prefix(5).map { $0.country }
     }
-    
+
     func globeSearchMatches(for query: String, minimumScore: Double) -> [(country: Country, score: Double)] {
         let normalizedQuery = normalizedLeagueAnswer(query)
         guard !normalizedQuery.isEmpty else { return [] }
-        
+
         let ranked = globeCountries.compactMap { country -> (country: Country, score: Double)? in
             let names = [
                 country.name,
                 countryEnglishNameByCode[country.code] ?? country.name,
                 country.code
             ].map { normalizedLeagueAnswer($0) }
-            
+
             let score = names.map { name -> Double in
                 if name == normalizedQuery { return 1 }
                 if name.hasPrefix(normalizedQuery) { return 0.92 }
@@ -5044,10 +5258,10 @@ struct ContentView: View {
                 let length = max(normalizedQuery.count, name.count, 1)
                 return max(0, 1 - Double(distance) / Double(length))
             }.max() ?? 0
-            
+
             return score >= minimumScore ? (country, score) : nil
         }
-        
+
         return ranked.sorted { first, second in
             if first.score != second.score {
                 return first.score > second.score
@@ -5055,16 +5269,16 @@ struct ContentView: View {
             return countryName(for: first.country).localizedStandardCompare(countryName(for: second.country)) == .orderedAscending
         }
     }
-    
+
     var globeView: some View {
         ZStack {
             appBackgroundGradient
                 .ignoresSafeArea()
-            
+
             ScrollView {
                 VStack(spacing: 16) {
                     modeHeader(title: L("Globus", "Globe"), subtitle: "")
-                    
+
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 10) {
                             Image(systemName: "magnifyingglass")
@@ -5085,7 +5299,7 @@ struct ContentView: View {
                                 .buttonStyle(.plain)
                             }
                         }
-                        
+
                         let suggestions = globeSearchSuggestions(for: globeSearchText)
                         if !suggestions.isEmpty {
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -5117,7 +5331,7 @@ struct ContentView: View {
                         RoundedRectangle(cornerRadius: 10)
                             .stroke(.secondary.opacity(0.14), lineWidth: 1)
                     )
-                    
+
                     GlobeSceneView(
                         countries: globeCountries,
                         tiersByCountryCode: globeTierByCountryCode,
@@ -5149,12 +5363,12 @@ struct ContentView: View {
                         .buttonStyle(.plain)
                         .padding(12)
                     }
-                    
+
                     TierSummaryGrid(profile: activeProfile, countries: globeCountries, subject: selectedSubject)
                         .padding(12)
                         .background(panelBackgroundColor)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
-                    
+
                 }
                 .padding()
             }
@@ -5180,14 +5394,14 @@ struct ContentView: View {
             .presentationDetents([.medium])
         }
     }
-    
+
     var friendsView: some View {
         List {
             if onlineFeaturesEnabled {
                 Section {
                     subjectModePickerCard()
                 }
-                
+
                 Section(L("Profil", "Profile")) {
                     HStack(spacing: 10) {
                         Image(systemName: isGameCenterAuthenticated ? "gamecontroller.fill" : "gamecontroller")
@@ -5235,7 +5449,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                
+
                 onlineComparisonSection
                     .id(onlineLeaderboardRefreshID)
             } else {
@@ -5282,7 +5496,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var friendsComparisonSection: some View {
         Section(L("Online-Freunde", "Online friends")) {
             if friendNames.isEmpty && gameCenterFriendIDs.isEmpty {
@@ -5300,7 +5514,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var friendListSheet: some View {
         NavigationStack {
             List {
@@ -5318,11 +5532,11 @@ struct ContentView: View {
                         .buttonStyle(.plain)
                         .disabled(newFriendName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    
+
                     Text(L("Freunde finden dich über ihren eindeutigen Spitznamen oder den Code aus der Rangliste.", "Friends can be found by their unique nickname or the code from the leaderboard."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    
+
                     Button {
                         Haptics.tap()
                         Task { await createTestFriend() }
@@ -5331,14 +5545,14 @@ struct ContentView: View {
                     }
                     .disabled(isSyncingOnlineStats)
                 }
-                
+
                 Section(L("Meine Freunde", "My friends")) {
                     if friendNames.isEmpty && gameCenterFriendIDs.isEmpty {
                         Text(L("Noch keine Freunde hinzugefügt.", "No friends added yet."))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    
+
                     ForEach(friendNames, id: \.self) { friend in
                         HStack {
                             if let player = onlinePlayer(forFriend: friend) {
@@ -5372,7 +5586,7 @@ struct ContentView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    
+
                     ForEach(gameCenterFriendPlayers) { player in
                         Button {
                             Haptics.tap()
@@ -5393,7 +5607,7 @@ struct ContentView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    
+
                     if !gameCenterFriendIDs.isEmpty {
                         Label(L("\(gameCenterFriendIDs.count) Game-Center-Freunde erkannt", "\(gameCenterFriendIDs.count) Game Center friends found"), systemImage: "gamecontroller.fill")
                             .font(.caption)
@@ -5432,7 +5646,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     var onlineComparisonSection: some View {
         if selectedOnlineScope == .global && !fullVersionUnlocked {
@@ -5440,7 +5654,7 @@ struct ContentView: View {
                 premiumFeatureNotice(feature: L("Globale Bestenlisten", "Global leaderboards"))
             }
         }
-        
+
         if selectedOnlineScope == .friends {
             Section(bossScoreTitle) {
                 if friendFlaggenscoreLeaderboard.isEmpty {
@@ -5454,7 +5668,7 @@ struct ContentView: View {
                 }
             }
         }
-        
+
         if selectedOnlineScope == .global && !fullVersionUnlocked {
             EmptyView()
         } else {
@@ -5463,13 +5677,13 @@ struct ContentView: View {
                     onlinePlayerRow(rank: index + 1, player: player, metric: .week)
                 }
             }
-            
+
             Section(L("Längste Lernstreak", "Longest learning streak")) {
                 ForEach(Array(scopedBestLearningStreakLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
                     onlinePlayerRow(rank: index + 1, player: player, metric: .learningStreak)
                 }
             }
-            
+
             Section(runHighscoreTitle) {
                 ForEach(Array(scopedFlaggenrunLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
                     onlinePlayerRow(rank: index + 1, player: player, metric: .flaggenrun)
@@ -5477,7 +5691,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func onlinePlayerRow(rank: Int, player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> some View {
         Button {
             Haptics.tap()
@@ -5486,7 +5700,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .center, spacing: 10) {
                     rankBadge(rank)
-                    
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text(player.displayName)
                             .font(.subheadline.weight(.semibold))
@@ -5507,7 +5721,7 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    
+
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(onlineMetricValue(for: player, metric: metric))
                             .font(.subheadline.monospacedDigit().weight(.bold))
@@ -5518,7 +5732,7 @@ struct ContentView: View {
                     }
                     .fixedSize(horizontal: true, vertical: false)
                 }
-                
+
                 if metric == .flaggenscore {
                     SLevelBar(value: player.tierS, total: max(availableCountries.count, 1), accentColor: tealAccentColor)
                         .frame(height: 10)
@@ -5536,7 +5750,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     func rankBadge(_ rank: Int) -> some View {
         Text(rank <= 3 ? "\(rank)" : "#\(rank)")
             .font(.caption.monospacedDigit().weight(.black))
@@ -5544,7 +5758,7 @@ struct ContentView: View {
             .frame(width: 32, height: 28)
             .background(rank <= 3 ? rankAccentColor(rank) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
     }
-    
+
     func onlineMetricSubtitle(for player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> String {
         switch metric {
         case .week:
@@ -5557,7 +5771,7 @@ struct ContentView: View {
             return L("10 Karten pro Tag", "10 cards per day")
         }
     }
-    
+
     func onlineMetricValue(for player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> String {
         switch metric {
         case .week: return "\(player.learnedThisWeek)"
@@ -5566,7 +5780,7 @@ struct ContentView: View {
         case .learningStreak: return "\(player.bestLearningStreak)"
         }
     }
-    
+
     func onlineMetricTitle(_ metric: OnlineLeaderboardMetric) -> String {
         switch metric {
         case .week: return selectedSubject == .capitals ? L("gewusst", "known") : L("gewusst", "known")
@@ -5575,17 +5789,17 @@ struct ContentView: View {
         case .learningStreak: return L("Tage", "days")
         }
     }
-    
+
     var onlineStatusIconName: String {
         if isSyncingOnlineStats { return "icloud.and.arrow.up" }
         return onlineLeaderboard.isEmpty ? "icloud.slash" : "icloud.fill"
     }
-    
+
     var onlineStatusColor: Color {
         if isSyncingOnlineStats { return .orange }
         return onlineLeaderboard.isEmpty ? .secondary : tealAccentColor
     }
-    
+
     func rankAccentColor(_ rank: Int) -> Color {
         switch rank {
         case 1: return Color(red: 0.95, green: 0.66, blue: 0.12)
@@ -5594,11 +5808,11 @@ struct ContentView: View {
         default: return tealAccentColor
         }
     }
-    
+
     func rankBackground(_ rank: Int) -> Color {
         rank <= 3 ? rankAccentColor(rank).opacity(0.12) : Color.clear
     }
-    
+
     func onlineFlaggenbossScore(for player: OnlinePlayerStats) -> Double {
         let weightedTotal =
             Double(player.tierS) * tierScoreValue(for: .s) +
@@ -5609,15 +5823,15 @@ struct ContentView: View {
             Double(player.tierF) * tierScoreValue(for: .f)
         return weightedTotal / Double(max(availableCountries.count, 1))
     }
-    
+
     func percentText(_ value: Double) -> String {
         String(format: "%.1f %%", value * 100)
     }
-    
+
     var activeProfileTotalPracticed: Int {
         activeProfile.byCountry.values.reduce(0) { $0 + $1.cardReviews }
     }
-    
+
     var activeProfileCardAccuracy: Double {
         let subjectStats = availableCountries.map { activeProfile.stats(for: $0, subject: selectedSubject) }
         let known = subjectStats.reduce(0) { $0 + $1.cardKnown }
@@ -5625,11 +5839,11 @@ struct ContentView: View {
         guard total > 0 else { return 0 }
         return Double(known) / Double(total)
     }
-    
+
     func activeProfileTierCount(_ tier: MasteryTier) -> Int {
         availableCountries.filter { activeProfile.tier(for: $0, subject: selectedSubject) == tier }.count
     }
-    
+
     func achievementItems(for player: OnlinePlayerStats) -> [AchievementItem] {
         achievementItems.map { item in
             AchievementItem(
@@ -5643,19 +5857,19 @@ struct ContentView: View {
             )
         }
     }
-    
+
     func isCurrentOnlinePlayer(_ player: OnlinePlayerStats) -> Bool {
         if isGameCenterAuthenticated, !gameCenterPlayerID.isEmpty, player.gameCenterPlayerID == gameCenterPlayerID {
             return true
         }
-        
+
         if let localPlayerID = UserDefaults.standard.string(forKey: OnlineStatsService.playerIDKey), player.id == localPlayerID {
             return true
         }
-        
+
         return false
     }
-    
+
     func onlineGlobeSheet(for player: OnlinePlayerStats) -> some View {
         NavigationStack {
             List {
@@ -5673,7 +5887,7 @@ struct ContentView: View {
                     }
                     .padding(.vertical, 4)
                 }
-                
+
                 Section(L("Direkter Vergleich", "Direct comparison")) {
                     ComparisonStatRow(title: L("Gelernt", "Learned"), ownValue: "\(activeProfileTotalPracticed)", otherValue: "\(player.totalPracticed)", otherName: player.displayName, language: appLanguage)
                     ComparisonStatRow(title: L("Letzte 7 Tage", "Last 7 days"), ownValue: "\(activeProfile.practiceCardsInLastSevenDays(subject: selectedSubject))", otherValue: "\(player.learnedThisWeek)", otherName: player.displayName, language: appLanguage)
@@ -5682,7 +5896,7 @@ struct ContentView: View {
                     ComparisonStatRow(title: "S", ownValue: "\(activeProfileTierCount(.s)) (\(percent(activeProfileTierCount(.s), of: availableCountries.count)))", otherValue: "\(player.tierS) (\(percent(player.tierS, of: availableCountries.count)))", otherName: player.displayName, language: appLanguage)
                     ComparisonStatRow(title: "A", ownValue: "\(activeProfileTierCount(.a))", otherValue: "\(player.tierA)", otherName: player.displayName, language: appLanguage)
                 }
-                
+
                 Section(L("S-Stufe Verlauf", "S level history")) {
                     STierHistorySparkline(values: player.sTierHistory, maxValue: max(availableCountries.count, 1), accentColor: tealAccentColor)
                         .frame(height: 72)
@@ -5690,7 +5904,46 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                
+
+                if let onlineProfile = player.profileSnapshot {
+                    Section(L("Online-Verlauf", "Online history")) {
+                        Picker(L("Zeitraum", "Range"), selection: $selectedPracticeBalanceRange) {
+                            ForEach(PracticeBalanceRange.allCases) { range in
+                                Text(range.title(language: appLanguage)).tag(range)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: selectedPracticeBalanceRange) { _, _ in
+                            scoreHistoryPageOffset = 0
+                            practiceBalancePageOffset = 0
+                            selectedScoreHistoryPoint = nil
+                            selectedPracticeBalancePoint = nil
+                        }
+
+                        PracticeBalanceChart(
+                            previousPoints: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: min(practiceBalancePageOffset + 1, 0)),
+                            points: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                            nextPoints: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - 1),
+                            range: selectedPracticeBalanceRange,
+                            pageOffset: $practiceBalancePageOffset,
+                            selectedPoint: $selectedPracticeBalancePoint,
+                            language: appLanguage
+                        )
+
+                        FlaggenbossScoreChart(
+                            title: player.displayName,
+                            previousPoints: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: min(scoreHistoryPageOffset + 1, 0)),
+                            points: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
+                            nextPoints: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - 1),
+                            range: selectedPracticeBalanceRange,
+                            pageOffset: $scoreHistoryPageOffset,
+                            selectedPoint: $selectedScoreHistoryPoint,
+                            language: appLanguage,
+                            accentColor: tealAccentColor
+                        )
+                    }
+                }
+
                 if fullVersionUnlocked {
                     Section(L("Globus", "Globe")) {
                         GlobeSceneView(
@@ -5709,7 +5962,7 @@ struct ContentView: View {
                         lockedGlobePreview(tiersByCountryCode: player.tiersByCountryCode)
                     }
                 }
-                
+
                 Section(L("Stufen", "Levels")) {
                     TierSummaryGrid(
                         profile: virtualProfile(for: player),
@@ -5718,7 +5971,7 @@ struct ContentView: View {
                     )
                     .padding(.vertical, 6)
                 }
-                
+
                 Section(L("Achievements", "Achievements")) {
                     ForEach(achievementsSortedByGlobalUnlocks(achievementItems(for: player))) { item in
                         AchievementRow(
@@ -5743,7 +5996,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func virtualProfile(for player: OnlinePlayerStats) -> UserProfile {
         var profile = UserProfile(id: UUID(), name: player.displayName, pin: "")
         for country in availableCountries {
@@ -5753,7 +6006,7 @@ struct ContentView: View {
         }
         return profile
     }
-    
+
     func fullVersionLockedView(feature: String) -> some View {
         ZStack {
             appBackgroundGradient
@@ -5761,7 +6014,7 @@ struct ContentView: View {
             VStack(spacing: 14) {
                 lockedGlobePreview(tiersByCountryCode: globeTierByCountryCode)
                     .frame(height: 280)
-                
+
                 Text(feature)
                     .font(.title2.bold())
 
@@ -5778,7 +6031,7 @@ struct ContentView: View {
         .navigationTitle(feature)
         .navigationBarTitleDisplayMode(.inline)
     }
-    
+
     func lockedGlobePreview(tiersByCountryCode: [String: MasteryTier]) -> some View {
         ZStack {
             GlobeSceneView(
@@ -5791,7 +6044,7 @@ struct ContentView: View {
             .blur(radius: 6)
             .saturation(0.72)
             .opacity(0.72)
-            
+
             Image(systemName: "lock.fill")
                 .font(.title2.weight(.bold))
                 .foregroundStyle(tealAccentColor)
@@ -5806,14 +6059,14 @@ struct ContentView: View {
                 .stroke(tealAccentColor.opacity(0.22), lineWidth: 1)
         )
     }
-    
+
     func premiumFeatureNotice(feature: String) -> some View {
         Label(L("\(feature) ist Teil der Vollversion.", "\(feature) is part of the full version."), systemImage: "lock.fill")
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .padding(.vertical, 4)
     }
-    
+
     func infoButton<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
         Button {
             Haptics.tap()
@@ -5838,7 +6091,7 @@ struct ContentView: View {
                 .presentationCompactAdaptation(.popover)
         }
     }
-    
+
     func tierDecayPopupView(_ popup: TierDecayPopup) -> some View {
         let selectedChange = popup.changes.first { $0.id == selectedTierDecayChangeID } ?? popup.changes.first
         let visibleChanges = tierDecayShowsAllChanges ? popup.changes : Array(popup.changes.prefix(4))
@@ -5850,7 +6103,7 @@ struct ContentView: View {
                     .foregroundStyle(tealAccentColor)
                     .frame(width: 42, height: 42)
                     .background(tealAccentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
-                
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L("Stufen angepasst", "Levels adjusted"))
                         .font(.title3.bold())
@@ -5878,13 +6131,13 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
             }
-            
+
             ScrollView {
                 VStack(spacing: 8) {
                     ForEach(visibleChanges) { change in
                         tierDecayChangeButton(change)
                     }
-                    
+
                     if hiddenChangeCount > 0 {
                         Button {
                             Haptics.tap()
@@ -5902,7 +6155,7 @@ struct ContentView: View {
                 .padding(.vertical, 2)
             }
             .frame(maxHeight: tierDecayShowsAllChanges ? 260 : 190)
-            
+
             if let selectedChange {
                 tierDecayDetailView(selectedChange)
             }
@@ -5915,7 +6168,7 @@ struct ContentView: View {
         )
         .shadow(color: .black.opacity(0.18), radius: 24, y: 12)
     }
-    
+
     func tierDecayChangeButton(_ change: TierDecayChange) -> some View {
         let isSelected = selectedTierDecayChangeID == change.id
         return Button {
@@ -5954,7 +6207,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     func tierDecayDetailView(_ change: TierDecayChange) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(tierDecayCountryTitle(for: change))
@@ -5974,49 +6227,49 @@ struct ContentView: View {
         .padding(12)
         .background(tealAccentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
     }
-    
+
     func tierDecayCountryTitle(for change: TierDecayChange) -> String {
         let code = normalizedCountryCode(fromStatsKey: change.statsKey)
         guard let country = allCountries.first(where: { $0.code == code }) else { return change.statsKey }
         return localizedCountryName(country, language: appLanguage)
     }
-    
+
     func normalizedCountryCode(fromStatsKey statsKey: String) -> String {
         var key = statsKey
             .replacingOccurrences(of: "capital_", with: "")
             .replacingOccurrences(of: "country_", with: "")
             .replacingOccurrences(of: "flag_", with: "")
-        
+
         if let lastUnderscore = key.split(separator: "_").last {
             key = String(lastUnderscore)
         }
         if let lastColon = key.split(separator: ":").last {
             key = String(lastColon)
         }
-        
+
         let uppercasedKey = key.uppercased()
         if allCountries.contains(where: { $0.code == uppercasedKey }) {
             return uppercasedKey
         }
-        
+
         return allCountries.first { country in
             uppercasedKey.hasSuffix(country.code)
         }?.code ?? uppercasedKey
     }
-    
+
     func tierDecaySubjectTitle(for change: TierDecayChange) -> String {
         change.statsKey.hasPrefix("capital_") ? L("Hauptstadt", "Capital") : L("Flagge", "Flag")
     }
-    
+
     var leagueView: some View {
         ZStack {
             appBackgroundGradient
                 .ignoresSafeArea()
-            
+
             ScrollView {
                 VStack(spacing: 16) {
                     modeHeader(title: runTitleWithBeta, subtitle: L("Highscore auf Zeit", "Timed high score"))
-                    
+
                     if leagueMatchActive {
                         leagueMatchCard
                     } else if leagueShowsStartMenu {
@@ -6053,7 +6306,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     var leagueStartMenuView: some View {
         VStack(spacing: 14) {
             Button {
@@ -6067,15 +6320,15 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, minHeight: 56)
             }
             .buttonStyle(ActionButtonStyle(color: tealAccentColor))
-            
+
             leagueStatsCard
-            
+
             flaggenrunLeaderboardCard
-            
+
             leagueMatchHistoryCard
         }
     }
-    
+
     func leagueSummaryOverlay(_ result: LeagueMatchResult) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -6096,16 +6349,16 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
             }
-            
+
             HStack(spacing: 10) {
                 leagueMetricTile(title: L("Score", "Score"), value: "\(result.ownScore)")
                 leagueMetricTile(title: L("Bestscore", "Best score"), value: "\(activeProfile.leagueStats?.bestScore ?? result.ownScore)")
             }
-            
+
             Text(selectedSubject == .capitals ? L("\(result.correct) richtig · \(result.wrong) falsch · \(result.answerDetails?.count ?? result.totalAnswers) Hauptstädte", "\(result.correct) correct · \(result.wrong) wrong · \(result.answerDetails?.count ?? result.totalAnswers) capitals") : L("\(result.correct) richtig · \(result.wrong) falsch · \(result.answerDetails?.count ?? result.totalAnswers) Flaggen", "\(result.correct) correct · \(result.wrong) wrong · \(result.answerDetails?.count ?? result.totalAnswers) flags"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            
+
             Button {
                 Haptics.tap()
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
@@ -6121,7 +6374,7 @@ struct ContentView: View {
         .padding(16)
         .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
     }
-    
+
     var leagueSetupView: some View {
         VStack(spacing: 14) {
             leagueStartMatchButton
@@ -6129,7 +6382,7 @@ struct ContentView: View {
             leagueMatchHistoryCard
         }
     }
-    
+
     var leagueStartMatchButton: some View {
         Button {
             Haptics.tap()
@@ -6141,7 +6394,7 @@ struct ContentView: View {
         }
         .buttonStyle(ActionButtonStyle(color: tealAccentColor))
     }
-    
+
     var leagueUnknownButton: some View {
         let isEnabled = leagueTimerIsRunning && !leagueInputIsLocked
         return Button {
@@ -6156,7 +6409,7 @@ struct ContentView: View {
         .buttonStyle(ActionButtonStyle(color: .orange, isProminent: false))
         .disabled(!isEnabled)
     }
-    
+
     var leagueStatsCard: some View {
         let stats = activeProfile.leagueStats ?? LeagueStats()
         return VStack(alignment: .leading, spacing: 12) {
@@ -6173,7 +6426,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            
+
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 10)], spacing: 10) {
                 leagueMetricTile(title: L("Runden", "Rounds"), value: "\(stats.played)")
                 leagueMetricTile(title: L("Bestscore", "Best score"), value: "\(stats.bestScore)")
@@ -6183,7 +6436,7 @@ struct ContentView: View {
         .padding(14)
         .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
     }
-    
+
     func leagueMetricTile(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
@@ -6198,7 +6451,7 @@ struct ContentView: View {
         .padding(10)
         .background(tealAccentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
-    
+
     var leagueMatchHistoryCard: some View {
         let matches = activeProfile.leagueStats?.recentMatches ?? []
         return VStack(alignment: .leading, spacing: 10) {
@@ -6210,7 +6463,7 @@ struct ContentView: View {
                     .font(.caption.monospacedDigit().weight(.bold))
                     .foregroundStyle(.secondary)
             }
-            
+
             if matches.isEmpty {
                 Text(selectedSubject == .capitals ? L("Noch keine Städteruns gespielt.", "No City Runs played yet.") : L("Noch keine Flaggenruns gespielt.", "No Flag Runs played yet."))
                     .font(.caption)
@@ -6226,7 +6479,7 @@ struct ContentView: View {
         .padding(14)
         .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
     }
-    
+
     var flaggenrunLeaderboardCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -6243,7 +6496,7 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .disabled(!onlineFeaturesEnabled || isSyncingOnlineStats)
             }
-            
+
             if !onlineFeaturesEnabled {
                 Text(L("Onlinefunktionen sind ausgeschaltet.", "Online features are turned off."))
                     .font(.caption)
@@ -6267,13 +6520,13 @@ struct ContentView: View {
             await loadOnlineStats()
         }
     }
-    
+
     func leagueHistoryRow(_ match: LeagueMatchResult) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "bolt.circle.fill")
                 .foregroundStyle(tealAccentColor)
                 .frame(width: 22)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(L("Score \(match.ownScore)", "Score \(match.ownScore)"))
                     .font(.subheadline.weight(.semibold))
@@ -6282,13 +6535,13 @@ struct ContentView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
         }
         .padding(8)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
-    
+
     var leagueMatchCard: some View {
         VStack(spacing: 16) {
             if leagueMatchPhase == .loading || leagueMatchPhase == .countdown {
@@ -6306,13 +6559,13 @@ struct ContentView: View {
             leagueTimerStartTask?.cancel()
         }
     }
-    
+
     var leagueMatchPreparationView: some View {
         VStack(spacing: 18) {
             Text(L("Lädt", "Loading"))
                 .font(.headline)
                 .foregroundStyle(.secondary)
-            
+
             if leagueMatchPhase == .loading {
                 ProgressView()
                     .tint(tealAccentColor)
@@ -6331,7 +6584,7 @@ struct ContentView: View {
         .animation(.spring(response: 0.28, dampingFraction: 0.84), value: leagueMatchPhase)
         .animation(.spring(response: 0.28, dampingFraction: 0.84), value: leagueStartCountdown)
     }
-    
+
     var leaguePlayableView: some View {
         VStack(spacing: 16) {
             HStack {
@@ -6342,7 +6595,7 @@ struct ContentView: View {
                 Text("\(leagueScore)")
                     .font(.title2.monospacedDigit().weight(.bold))
             }
-            
+
             ZStack {
                 Group {
                     if let leaguePreloadedFlagImage {
@@ -6361,7 +6614,7 @@ struct ContentView: View {
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
             .animation(.spring(response: 0.22, dampingFraction: 0.82), value: leagueAnswerFeedback)
             .animation(.easeOut(duration: 0.16), value: leagueInputIsLocked)
-            
+
             TextField(selectedSubject == .capitals ? L("Name der Hauptstadt", "Capital name") : L("Name der Flagge", "Flag name"), text: $leagueAnswerText)
                 .focused($isLeagueAnswerFocused)
                 .textInputAutocapitalization(.words)
@@ -6387,16 +6640,16 @@ struct ContentView: View {
                 }
                 .allowsHitTesting(leagueTimerIsRunning && !leagueInputIsLocked)
                 .opacity(leagueInputIsLocked ? 0.82 : 1)
-            
+
             if let leagueAnswerFeedback {
                 leagueFeedbackField(isCorrect: leagueAnswerFeedback)
             }
-            
+
             HStack(spacing: 10) {
                 leagueMetricTile(title: L("Richtig", "Correct"), value: "\(leagueCorrect)")
                 leagueMetricTile(title: L("Falsch", "Wrong"), value: "\(leagueWrong)")
             }
-            
+
             Button(role: .destructive) {
                 Haptics.notify(.warning)
                 finishLeagueMatch()
@@ -6408,7 +6661,7 @@ struct ContentView: View {
         }
         .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
-    
+
     func leagueFeedbackField(isCorrect: Bool) -> some View {
         Label(
             isCorrect ? L("Richtig: \(leagueRevealedCountryName)", "Correct: \(leagueRevealedCountryName)") : L("Falsch: \(leagueRevealedCountryName)", "Wrong: \(leagueRevealedCountryName)"),
@@ -6420,7 +6673,7 @@ struct ContentView: View {
         .background((isCorrect ? Color.green : Color.red).opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
         .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
-    
+
     var leagueRecognitionView: some View {
         HStack(spacing: 10) {
             if let match = leagueAnswerMatch {
@@ -6450,13 +6703,13 @@ struct ContentView: View {
         .padding(.vertical, 8)
         .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
     }
-    
+
     func leagueAnswerDetailRow(_ answer: LeagueAnswerRecord) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: answer.wasCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .foregroundStyle(answer.wasCorrect ? .green : .red)
                 .frame(width: 20)
-            
+
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(answer.countryName)
@@ -6469,35 +6722,35 @@ struct ContentView: View {
                         .foregroundStyle(answer.wasCorrect ? .green : .red)
                         .background((answer.wasCorrect ? Color.green : Color.red).opacity(0.12), in: Capsule())
                 }
-                
+
                 Text(L("Eingabe: \(answer.submittedAnswer) · Erkannt: \(answer.detectedCountryName)", "Input: \(answer.submittedAnswer) · Detected: \(answer.detectedCountryName)"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.82)
-                
+
                 Text(L("\(leagueResponseTimeText(answer.responseTime)) · +\(answer.pointsAwarded) Punkte", "\(leagueResponseTimeText(answer.responseTime)) · +\(answer.pointsAwarded) points"))
                     .font(.caption2.monospacedDigit().weight(.semibold))
                     .foregroundStyle(answer.wasCorrect ? tealAccentColor : .secondary)
             }
-            
+
             Spacer(minLength: 0)
         }
         .padding(8)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
-    
+
     func leagueResponseTimeText(_ seconds: Double) -> String {
         String(format: "%.1f s", max(seconds, 0))
     }
-    
+
     func leaguePointsForAnswer(responseTime: Double) -> Int {
         let basePoints = 100
         let speedBonus = max(0, Int((8.0 - min(responseTime, 8.0)) * 16.0))
         let timePressureBonus = max(0, leagueSecondsRemaining / 10)
         return basePoints + speedBonus + timePressureBonus
     }
-    
+
     @MainActor
     func requestLeagueNotificationPermissionIfNeeded() async {
         guard !leagueNotificationsAuthorized else { return }
@@ -6514,11 +6767,11 @@ struct ContentView: View {
             leagueNotificationsAuthorized = false
         }
     }
-    
+
     func playLeagueSound(success: Bool) {
         AudioServicesPlaySystemSound(success ? 1057 : 1053)
     }
-    
+
     func scheduleLeagueNotification(title: String, body: String) {
         guard leagueNotificationsAuthorized else { return }
         let content = UNMutableNotificationContent()
@@ -6532,7 +6785,7 @@ struct ContentView: View {
         )
         UNUserNotificationCenter.current().add(request)
     }
-    
+
     var onlineLeagueLeaderboard: [OnlinePlayerStats] {
         deduplicatedOnlineLeaderboard.sorted {
             if $0.leagueBestScore == $1.leagueBestScore {
@@ -6541,7 +6794,7 @@ struct ContentView: View {
             return $0.leagueBestScore > $1.leagueBestScore
         }
     }
-    
+
     @MainActor
     func startLeagueMatch() async {
         leagueCorrect = 0
@@ -6576,7 +6829,7 @@ struct ContentView: View {
         leagueCurrentCountry = nextLeagueCountry()
         leagueMatchActive = true
     }
-    
+
     func prepareLeagueTimerAfterLayout() {
         leagueTimerStartTask?.cancel()
         leagueTimerStartTask = Task { @MainActor in
@@ -6585,14 +6838,14 @@ struct ContentView: View {
             await prepareFirstLeagueFlag()
             guard leagueMatchActive else { return }
             leagueFirstFlagIsReady = true
-            
+
             leagueMatchPhase = .countdown
             for value in stride(from: 3, through: 1, by: -1) {
                 leagueStartCountdown = value
                 try? await Task.sleep(for: .seconds(1))
                 guard leagueMatchActive else { return }
             }
-            
+
             leagueMatchPhase = .playing
             leagueCurrentQuestionStartedAt = Date()
             await Task.yield()
@@ -6603,7 +6856,7 @@ struct ContentView: View {
             startLeagueCountdown()
         }
     }
-    
+
     func prepareFirstLeagueFlag() async {
         for _ in 0..<8 {
             guard leagueMatchActive else { return }
@@ -6613,10 +6866,10 @@ struct ContentView: View {
             }
             leagueCurrentCountry = nextLeagueCountry()
         }
-        
+
         leaguePreloadedFlagImage = nil
     }
-    
+
     func preloadedLeagueFlagImage(for country: Country) async -> UIImage? {
         guard let url = country.flagImageURL else { return nil }
         do {
@@ -6628,7 +6881,7 @@ struct ContentView: View {
             return nil
         }
     }
-    
+
     func startLeagueCountdown() {
         leagueCountdownTask?.cancel()
         let endDate = Date().addingTimeInterval(Double(leagueSecondsRemaining))
@@ -6644,11 +6897,11 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func submitLeagueAnswer() {
         submitLeagueAnswer(forcedCorrectness: nil, keepsTypedAnswer: true)
     }
-    
+
     func submitLeagueAnswer(forcedCorrectness: Bool?, keepsTypedAnswer: Bool) {
         guard leagueMatchActive, leagueTimerIsRunning, !leagueInputIsLocked else { return }
         let answer = normalizedLeagueAnswer(leagueAnswerText)
@@ -6661,7 +6914,7 @@ struct ContentView: View {
         let detectedCountryName = match.map { leagueExpectedAnswerName(for: $0.country) } ?? L("Keine eindeutige Erkennung", "No clear detection")
         let responseTime = Date().timeIntervalSince(leagueCurrentQuestionStartedAt)
         let pointsAwarded = isCorrect ? leaguePointsForAnswer(responseTime: responseTime) : 0
-        
+
         leagueLockedAnswerText = keepsTypedAnswer ? leagueAnswerText : ""
         leagueInputIsLocked = true
         leagueTypingLockedUntil = .distantFuture
@@ -6680,7 +6933,7 @@ struct ContentView: View {
                 pointsAwarded: pointsAwarded
             )
         )
-        
+
         if isCorrect {
             leagueCorrect += 1
             leagueScore += pointsAwarded
@@ -6693,7 +6946,7 @@ struct ContentView: View {
             Haptics.tap(style: .light)
             playLeagueSound(success: false)
         }
-        
+
         leagueRecentCountryCodes.append(leagueCurrentCountry.code)
         leagueRecentCountryCodes = Array(leagueRecentCountryCodes.suffix(12))
         leagueAutoSubmitTask?.cancel()
@@ -6725,7 +6978,7 @@ struct ContentView: View {
             isLeagueAnswerFocused = true
         }
     }
-    
+
     func finishLeagueMatch() {
         guard leagueMatchActive else { return }
         leagueMatchActive = false
@@ -6747,7 +7000,7 @@ struct ContentView: View {
         leagueAnswerFeedback = nil
         leagueRevealedCountryName = ""
         leagueMatchPhase = .loading
-        
+
         let result = LeagueMatchResult(
             id: UUID(),
             date: Date(),
@@ -6762,7 +7015,7 @@ struct ContentView: View {
             ratingAfter: nil,
             ratingDelta: nil
         )
-        
+
         leagueSummaryResult = result
         leagueShowsStartMenu = true
         updateActiveProfile { profile in
@@ -6772,17 +7025,17 @@ struct ContentView: View {
         Haptics.notify(.success)
         playLeagueSound(success: true)
     }
-    
+
     func nextLeagueCountry() -> Country {
         let candidates = availableCountries.filter { !leagueRecentCountryCodes.contains($0.code) }
         return (candidates.isEmpty ? availableCountries : candidates).randomElement() ?? allCountries[0]
     }
-    
+
     func evaluateLeagueAnswer(_ value: String) {
         leagueAutoSubmitTask?.cancel()
         let match = bestLeagueAnswerMatch(for: value)
         leagueAnswerMatch = match
-        
+
         guard
             leagueMatchActive,
             let match,
@@ -6791,7 +7044,7 @@ struct ContentView: View {
         else {
             return
         }
-        
+
         let submittedText = value
         leagueAutoSubmitTask = Task { @MainActor in
             await Task.yield()
@@ -6799,11 +7052,11 @@ struct ContentView: View {
             submitLeagueAnswer()
         }
     }
-    
+
     func bestLeagueAnswerMatch(for rawAnswer: String) -> LeagueAnswerMatch? {
         let answer = normalizedLeagueAnswer(rawAnswer)
         guard answer.count >= 2 else { return nil }
-        
+
         let scoredMatches = availableCountries.compactMap { country -> LeagueAnswerMatch? in
             let aliases = leagueAnswerAliases(for: country)
             guard let bestAlias = aliases
@@ -6812,7 +7065,7 @@ struct ContentView: View {
             else {
                 return nil
             }
-            
+
             guard bestAlias.score >= 0.45 else { return nil }
             return LeagueAnswerMatch(
                 country: country,
@@ -6829,7 +7082,7 @@ struct ContentView: View {
             }
             return first.confidence > second.confidence
         }
-        
+
         guard let best = scoredMatches.first else { return nil }
         let runnerUp = scoredMatches.dropFirst().first?.confidence ?? 0
         return LeagueAnswerMatch(
@@ -6841,30 +7094,30 @@ struct ContentView: View {
             runnerUpConfidence: runnerUp
         )
     }
-    
+
     func leagueExpectedAnswerName(for country: Country) -> String {
         selectedSubject == .capitals ? capitalName(for: country) : localizedCountryName(country, language: appLanguage)
     }
-    
+
     func leagueAnswerAliases(for country: Country) -> [(displayName: String, normalizedName: String)] {
         if selectedSubject == .capitals {
             let rawAliases = [
                 capitalName(for: country),
                 capitalPronunciationByCountryCode[country.code]
             ].compactMap { $0 } + leagueCapitalExtraAliases(for: country)
-            
+
             return Set(rawAliases).map { alias in
                 (displayName: alias, normalizedName: normalizedLeagueAnswer(alias))
             }
             .filter { !$0.normalizedName.isEmpty }
         }
-        
+
         let rawAliases = [
             localizedCountryName(country, language: appLanguage),
             country.name,
             countryEnglishNameByCode[country.code]
         ].compactMap { $0 } + leagueExtraAliases(for: country)
-        
+
         let aliases = Set(rawAliases.flatMap { name -> [String] in
             let normalized = normalizedLeagueAnswer(name)
             var values = [name]
@@ -6879,13 +7132,13 @@ struct ContentView: View {
             }
             return values
         })
-        
+
         return aliases.map { alias in
             (displayName: alias, normalizedName: normalizedLeagueAnswer(alias))
         }
         .filter { !$0.normalizedName.isEmpty }
     }
-    
+
     func leagueCapitalExtraAliases(for country: Country) -> [String] {
         switch country.code {
         case "AT": return ["Vienna"]
@@ -6922,7 +7175,7 @@ struct ContentView: View {
         default: return []
         }
     }
-    
+
     func leagueExtraAliases(for country: Country) -> [String] {
         switch country.code {
         case "US": return ["USA", "U.S.A.", "America", "United States of America", "Vereinigte Staaten von Amerika"]
@@ -6959,23 +7212,23 @@ struct ContentView: View {
         default: return []
         }
     }
-    
+
     func leagueSimilarity(answer: String, candidate: String) -> Double {
         guard !answer.isEmpty, !candidate.isEmpty else { return 0 }
         if answer == candidate { return 1 }
         if let tokenScore = leagueTokenPrefixSimilarity(answer: answer, candidate: candidate) {
             return tokenScore
         }
-        
+
         let shorterCount = min(answer.count, candidate.count)
         let longerCount = max(answer.count, candidate.count)
         let prefixLength = commonPrefixLength(answer, candidate)
-        
+
         if candidate.hasPrefix(answer), answer.count >= 3 {
             let completeness = Double(answer.count) / Double(candidate.count)
             return min(0.97, 0.80 + completeness * 0.18)
         }
-        
+
         if answer.count < candidate.count, answer.count >= 3 {
             let candidatePrefix = String(candidate.prefix(answer.count))
             let prefixDistance = levenshteinDistance(answer, candidatePrefix, maxDistance: 2)
@@ -6987,12 +7240,12 @@ struct ContentView: View {
                 }
             }
         }
-        
+
         if answer.hasPrefix(candidate), candidate.count >= 3 {
             let extraPenalty = Double(answer.count - candidate.count) / Double(max(answer.count, 1))
             return max(0.72, 0.92 - extraPenalty * 0.35)
         }
-        
+
         let maxDistance: Int
         switch longerCount {
         case 0...4:
@@ -7002,53 +7255,53 @@ struct ContentView: View {
         default:
             maxDistance = 3
         }
-        
+
         let distance = levenshteinDistance(answer, candidate, maxDistance: maxDistance)
         guard distance <= maxDistance else { return 0 }
         let similarity = 1 - (Double(distance) / Double(longerCount))
         let prefixBonus = min(Double(prefixLength) / Double(max(shorterCount, 1)), 1) * 0.08
         return min(similarity + prefixBonus, 0.99)
     }
-    
+
     func leagueTokenPrefixSimilarity(answer: String, candidate: String) -> Double? {
         let answerTokens = answer.split(separator: " ").map(String.init)
         let candidateTokens = candidate.split(separator: " ").map(String.init)
         guard answerTokens.count > 1, candidateTokens.count >= answerTokens.count else { return nil }
-        
+
         guard answerTokens.first == candidateTokens.first else { return nil }
-        
+
         var tokenScores: [Double] = []
         for index in answerTokens.indices {
             let answerToken = answerTokens[index]
             let candidateToken = candidateTokens[index]
-            
+
             if candidateToken.hasPrefix(answerToken) {
                 tokenScores.append(1)
                 continue
             }
-            
+
             guard answerToken.count >= 3 else { return 0 }
             let candidatePrefix = String(candidateToken.prefix(answerToken.count))
             let allowedDistance = answerToken.count >= 4 ? 2 : 1
             let distance = levenshteinDistance(answerToken, candidatePrefix, maxDistance: allowedDistance)
             guard distance <= allowedDistance || hasSameLetters(answerToken, candidatePrefix) else { return 0 }
-            
+
             let score = hasSameLetters(answerToken, candidatePrefix)
                 ? 0.78
                 : 1 - (Double(distance) / Double(max(answerToken.count, candidatePrefix.count)))
             guard score >= 0.62 else { return 0 }
             tokenScores.append(score)
         }
-        
+
         let averageTokenScore = tokenScores.reduce(0, +) / Double(tokenScores.count)
         let completeness = Double(answer.count) / Double(candidate.count)
         return min(0.98, 0.84 + averageTokenScore * 0.08 + completeness * 0.08)
     }
-    
+
     func hasSameLetters(_ first: String, _ second: String) -> Bool {
         first.count == second.count && first.sorted() == second.sorted()
     }
-    
+
     func commonPrefixLength(_ first: String, _ second: String) -> Int {
         var count = 0
         for (left, right) in zip(first, second) {
@@ -7057,7 +7310,7 @@ struct ContentView: View {
         }
         return count
     }
-    
+
     func levenshteinDistance(_ first: String, _ second: String, maxDistance: Int) -> Int {
         let firstCharacters = Array(first)
         let secondCharacters = Array(second)
@@ -7066,14 +7319,14 @@ struct ContentView: View {
         if abs(firstCharacters.count - secondCharacters.count) > maxDistance {
             return maxDistance + 1
         }
-        
+
         var previous = Array(0...secondCharacters.count)
         var current = Array(repeating: 0, count: secondCharacters.count + 1)
-        
+
         for firstIndex in 1...firstCharacters.count {
             current[0] = firstIndex
             var rowMinimum = current[0]
-            
+
             for secondIndex in 1...secondCharacters.count {
                 let cost = firstCharacters[firstIndex - 1] == secondCharacters[secondIndex - 1] ? 0 : 1
                 current[secondIndex] = min(
@@ -7083,17 +7336,17 @@ struct ContentView: View {
                 )
                 rowMinimum = min(rowMinimum, current[secondIndex])
             }
-            
+
             if rowMinimum > maxDistance {
                 return maxDistance + 1
             }
-            
+
             swap(&previous, &current)
         }
-        
+
         return previous[secondCharacters.count]
     }
-    
+
     func normalizedLeagueAnswer(_ value: String) -> String {
         value
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -7109,7 +7362,7 @@ struct ContentView: View {
             .split(separator: " ")
             .joined(separator: " ")
     }
-    
+
     var optionsView: some View {
         List {
             Section(L("Vollversion", "Full version")) {
@@ -7137,7 +7390,7 @@ struct ContentView: View {
                     Label(L("Vollversion lädt", "Loading full version"), systemImage: "clock")
                         .foregroundStyle(.secondary)
                 }
-                
+
                 if !fullVersionUnlocked {
                     Button {
                         Haptics.tap()
@@ -7151,7 +7404,7 @@ struct ContentView: View {
                     .disabled(storeKit.isLoading)
                 }
             }
-            
+
             Section(L("Sprache", "Language")) {
                 Picker(L("Sprache", "Language"), selection: $appLanguageRawValue) {
                     ForEach(AppLanguage.allCases) { language in
@@ -7160,7 +7413,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
             }
-            
+
             Section(L("Theme", "Theme")) {
                 Picker(L("Theme", "Theme"), selection: $appThemeRawValue) {
                     ForEach(AppTheme.allCases) { theme in
@@ -7169,7 +7422,7 @@ struct ContentView: View {
                 }
                 .pickerStyle(.segmented)
             }
-            
+
             Section(L("Akzentfarbe", "Accent color")) {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 10)], spacing: 10) {
                     ForEach(AppAccent.allCases) { accent in
@@ -7178,25 +7431,25 @@ struct ContentView: View {
                 }
                 .padding(.vertical, 4)
             }
-            
+
             Section(L("Flaggen", "Flags")) {
                 HStack(spacing: 10) {
                     Toggle(isOn: $includePartiallyRecognizedFlags) {
                         Label(L("Teilweise anerkannte Gebiete", "Partly recognized territories"), systemImage: "checkmark.seal")
                     }
-                    
+
                     infoButton(isPresented: $isDisputedTerritoriesInfoExpanded) {
                         Text(L("Fügt unter anderem Kosovo, Taiwan, Palästina, Westsahara, Cookinseln, Niue, Abchasien, Südossetien, Nordzypern und Somaliland hinzu. Diese Auswahl ist als Lern-Erweiterung gemeint und trifft keine politische Einordnung.", "Adds Kosovo, Taiwan, Palestine, Western Sahara, Cook Islands, Niue, Abkhazia, South Ossetia, Northern Cyprus, and Somaliland. This option is intended as a learning extension and does not make a political classification."))
                     }
                 }
             }
-            
+
             Section(L("Bedienung", "Controls")) {
                 Toggle(isOn: $hapticsEnabled) {
                     Label(L("Vibration", "Haptics"), systemImage: "iphone.radiowaves.left.and.right")
                 }
             }
-            
+
             Section(L("Online", "Online")) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
@@ -7207,7 +7460,7 @@ struct ContentView: View {
                             Text(L("Optional und eindeutig. Freunde können dich darunter finden. Ohne Spitznamen wird dein Game-Center-Name angezeigt.", "Optional and unique. Friends can find you by it. Without a nickname, your Game Center name is shown."))
                         }
                     }
-                    
+
                     HStack(spacing: 10) {
                         Image(systemName: "at")
                             .font(.subheadline.weight(.semibold))
@@ -7227,7 +7480,7 @@ struct ContentView: View {
                     )
                 }
             }
-            
+
             Section(L("Spenden", "Tips")) {
                 if storeKit.donationProducts.isEmpty {
                     Label(L("Spenden laden", "Loading tips"), systemImage: "heart")
@@ -7252,7 +7505,7 @@ struct ContentView: View {
                     }
                 }
             }
-            
+
             if let statusText = storeKit.statusText {
                 Section {
                     Text(statusText)
@@ -7260,31 +7513,31 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            
+
             Section("Debug") {
                 Toggle(isOn: $debugToolsEnabled) {
                     Label(L("Debug-Werkzeuge", "Debug tools"), systemImage: "ladybug.fill")
                 }
-                
+
                 if debugToolsEnabled {
                     Toggle(isOn: $fullVersionUnlocked) {
                         Label(L("Vollversion freischalten", "Unlock full version"), systemImage: "lock.open.fill")
                     }
-                    
+
                     Stepper(value: Binding(
                         get: { activeProfile.leagueStats?.bestScore ?? 0 },
                         set: { debugSetFlaggenrunHighscore($0) }
                     ), in: 0...100000, step: 500) {
                         Label("\(runHighscoreTitle): \(activeProfile.leagueStats?.bestScore ?? 0)", systemImage: "chart.line.uptrend.xyaxis")
                     }
-                    
+
                     Button {
                         Haptics.tap()
                         debugResetLeagueStats()
                     } label: {
                         Label(L("\(runTitle)-Stats zurücksetzen", "Reset \(runTitle) stats"), systemImage: "arrow.counterclockwise")
                     }
-                    
+
                     Menu {
                         ForEach(MasteryTier.allCases) { tier in
                             Button(tier.rawValue) {
@@ -7295,20 +7548,20 @@ struct ContentView: View {
                     } label: {
                         Label(L("Alle Flaggen-Stufen setzen", "Set all flag tiers"), systemImage: "slider.horizontal.3")
                     }
-                    
+
                     Button {
                         Haptics.tap()
                         Task { await createTestFriend() }
                     } label: {
                         Label(L("Testfreund erstellen/aktualisieren", "Create/update test friend"), systemImage: "person.crop.circle.badge.plus")
                     }
-                    
+
                     Text(L("Diese Werkzeuge sind nur für Entwicklung und Balancing gedacht und können vor dem Release komplett entfernt werden.", "These tools are only for development and balancing and can be removed before release."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            
+
             Section(L("Daten", "Data")) {
                 Button(role: .destructive) {
                     Haptics.tap()
@@ -7329,12 +7582,12 @@ struct ContentView: View {
             fullVersionUnlocked = storeKit.purchasedFullVersion
         }
     }
-    
+
     func accentColorButton(for accent: AppAccent) -> some View {
         let isSelected = appAccent == accent
         let isLocked = !fullVersionUnlocked
         let color = adaptiveColor(light: accent.lightUIColor, dark: accent.darkUIColor)
-        
+
         return Button {
             guard !isLocked else {
                 Haptics.notify(.warning)
@@ -7366,7 +7619,7 @@ struct ContentView: View {
                 }
                 .blur(radius: isLocked ? 3 : 0)
                 .opacity(isLocked ? 0.58 : 1)
-                
+
                 if isLocked {
                     Image(systemName: "lock.fill")
                         .font(.caption.weight(.bold))
@@ -7387,16 +7640,16 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     func continentButtonGrid(selection: Binding<Set<String>>) -> some View {
         let columns = [
             GridItem(.flexible(), spacing: 10),
             GridItem(.flexible(), spacing: 10)
         ]
-        
+
         return VStack(spacing: 10) {
             categoryButton(for: CountryScope.worldwide, selection: selection, isWide: true)
-            
+
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(continents, id: \.self) { continent in
                     categoryButton(for: continent, selection: selection)
@@ -7404,11 +7657,11 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func categoryButton(for continent: String, selection: Binding<Set<String>>, isWide: Bool = false) -> some View {
         let isSelected = selection.wrappedValue.contains(continent)
         let isLocked = !fullVersionUnlocked && continent != CountryScope.worldwide
-        
+
         return Button {
             guard !isLocked else {
                 Haptics.notify(.warning)
@@ -7448,32 +7701,32 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .opacity(isLocked ? 0.58 : 1)
     }
-    
+
     func togglePracticeContinent(_ continent: String, selection: Binding<Set<String>>) {
         if continent == CountryScope.worldwide {
             selection.wrappedValue = [CountryScope.worldwide]
             return
         }
-        
+
         var selectedContinents = selection.wrappedValue
         selectedContinents.remove(CountryScope.worldwide)
-        
+
         if selectedContinents.contains(continent) {
             selectedContinents.remove(continent)
         } else {
             selectedContinents.insert(continent)
         }
-        
+
         selection.wrappedValue = selectedContinents.isEmpty ? [CountryScope.worldwide] : selectedContinents
     }
-    
+
     func addFriend() {
         let trimmedName = newFriendName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
         addFriend(named: trimmedName)
         newFriendName = ""
     }
-    
+
     func addFriend(named name: String) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else { return }
@@ -7484,12 +7737,12 @@ struct ContentView: View {
             friendNamesRawValue = names.joined(separator: "|")
         }
     }
-    
+
     func removeFriend(_ friend: String) {
         let names = friendNames.filter { $0 != friend }
         friendNamesRawValue = names.joined(separator: "|")
     }
-    
+
     @MainActor
     func createTestFriend() async {
         guard onlineFeaturesEnabled else { return }
@@ -7498,7 +7751,7 @@ struct ContentView: View {
         defer {
             isSyncingOnlineStats = false
         }
-        
+
         onlineStatusText = L("Erstelle Testfreund ...", "Creating test friend ...")
         do {
             try await OnlineStatsService.createTestFriend(countries: availableCountries)
@@ -7513,7 +7766,7 @@ struct ContentView: View {
             onlineStatusText = L("Testfreund nicht erstellt: \(OnlineStatsService.userFacingMessage(for: error))", "Test friend not created: \(OnlineStatsService.userFacingMessage(for: error))")
         }
     }
-    
+
     func debugSetFlaggenrunHighscore(_ highscore: Int) {
         updateActiveProfile { profile in
             var stats = profile.leagueStats ?? LeagueStats()
@@ -7521,14 +7774,14 @@ struct ContentView: View {
             profile.leagueStats = stats
         }
     }
-    
+
     func debugResetLeagueStats() {
         updateActiveProfile { profile in
             profile.leagueStats = LeagueStats()
         }
         leagueSummaryResult = nil
     }
-    
+
     func debugSetAllCountryTiers(_ tier: MasteryTier) {
         updateActiveProfile { profile in
             let now = Date()
@@ -7545,7 +7798,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func modeHeader(title: String, subtitle: String) -> some View {
         VStack(spacing: 6) {
             Text(title)
@@ -7559,7 +7812,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func subjectModePickerCard() -> some View {
         HStack(spacing: 10) {
             subjectModeButton(for: .countries)
@@ -7574,7 +7827,7 @@ struct ContentView: View {
                 .stroke(tealAccentColor.opacity(0.24), lineWidth: 1)
         )
     }
-    
+
     func subjectModeButton(for subject: LearningSubject) -> some View {
         let isSelected = selectedSubject == subject
         return Button {
@@ -7610,7 +7863,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     @ViewBuilder
     func subjectGlassSwitcher() -> some View {
         if #available(iOS 26.0, *) {
@@ -7628,21 +7881,21 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
         }
     }
-    
+
     func subjectGlassSwitcherContent() -> some View {
         GeometryReader { geometry in
             let segmentWidth = max((geometry.size.width - 8) / 2, 0)
-            
+
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.primary.opacity(0.06))
-                
+
                 Capsule()
                     .fill(tealAccentColor)
                     .frame(width: segmentWidth, height: 46)
                     .offset(x: selectedSubject == .countries ? 4 : segmentWidth + 4)
                     .shadow(color: tealAccentColor.opacity(0.28), radius: 10, y: 4)
-                
+
                 HStack(spacing: 0) {
                     subjectGlassSwitcherButton(for: .countries)
                     subjectGlassSwitcherButton(for: .capitals)
@@ -7654,7 +7907,7 @@ struct ContentView: View {
         .frame(height: 54)
         .frame(maxWidth: .infinity)
     }
-    
+
     func subjectGlassSwitcherButton(for subject: LearningSubject) -> some View {
         let isSelected = selectedSubject == subject
         return Button {
@@ -7679,7 +7932,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     @ViewBuilder
     func onlineScopeGlassSwitcher() -> some View {
         if #available(iOS 26.0, *) {
@@ -7697,21 +7950,21 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
         }
     }
-    
+
     func onlineScopeGlassSwitcherContent() -> some View {
         GeometryReader { geometry in
             let segmentWidth = max((geometry.size.width - 8) / 2, 0)
-            
+
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.primary.opacity(0.06))
-                
+
                 Capsule()
                     .fill(tealAccentColor)
                     .frame(width: segmentWidth, height: 46)
                     .offset(x: selectedOnlineScope == .friends ? 4 : segmentWidth + 4)
                     .shadow(color: tealAccentColor.opacity(0.28), radius: 10, y: 4)
-                
+
                 HStack(spacing: 0) {
                     onlineScopeButton(for: .friends)
                     onlineScopeButton(for: .global)
@@ -7723,7 +7976,7 @@ struct ContentView: View {
         .frame(height: 54)
         .frame(maxWidth: .infinity)
     }
-    
+
     func onlineScopeButton(for scope: OnlineLeaderboardScope) -> some View {
         let isSelected = selectedOnlineScope == scope
         return Button {
@@ -7747,7 +8000,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
     }
-    
+
     @MainActor
     func runStartupWorkAfterFirstRender() async {
         await Task.yield()
@@ -7761,7 +8014,7 @@ struct ContentView: View {
         await hideStartupScreenAfterDelay()
         applyWeeklyTierDecay(showPopup: true)
     }
-    
+
     func ensureTrainerProfile() {
         if appData.profiles.isEmpty {
             let profile = UserProfile(id: UUID(), name: "Training", pin: "")
@@ -7773,60 +8026,60 @@ struct ContentView: View {
             saveLocalCache()
         }
     }
-    
+
     func updateActiveProfile(_ update: (inout UserProfile) -> Void) {
         ensureTrainerProfile()
         guard let activeProfileID = appData.activeProfileID,
               let index = appData.profiles.firstIndex(where: { $0.id == activeProfileID }) else {
             return
         }
-        
+
         update(&appData.profiles[index])
         saveLocalCache()
     }
-    
+
     func checkForUnlockedAchievements() {
         ensureTrainerProfile()
         guard let activeProfileID = appData.activeProfileID,
               let index = appData.profiles.firstIndex(where: { $0.id == activeProfileID }) else {
             return
         }
-        
+
         let now = Date()
         var alreadyAnnounced = Set(appData.profiles[index].announcedAchievementIDs ?? [])
         var achievedDates = appData.profiles[index].achievedAchievementDates ?? [:]
         let unlockedItems = achievementItems.filter(\.isUnlocked)
-        
+
         for item in unlockedItems {
             let key = achievementAnnouncementID(for: item)
             if achievedDates[key] == nil {
                 achievedDates[key] = now
             }
         }
-        
+
         guard let unlockedItem = unlockedItems.first(where: { !alreadyAnnounced.contains(achievementAnnouncementID(for: $0)) }) else {
             appData.profiles[index].achievedAchievementDates = achievedDates
             saveLocalCache()
             return
         }
-        
+
         alreadyAnnounced.insert(achievementAnnouncementID(for: unlockedItem))
         appData.profiles[index].announcedAchievementIDs = Array(alreadyAnnounced).sorted()
         appData.profiles[index].achievedAchievementDates = achievedDates
         saveLocalCache()
         showAchievementPopup(unlockedItem)
     }
-    
+
     func achievementAnnouncementID(for item: AchievementItem) -> String {
         "\(selectedSubject.rawValue)|\(item.id)"
     }
-    
+
     func showAchievementPopup(_ item: AchievementItem) {
         Haptics.notify(.success)
         withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
             achievementPopupItem = item
         }
-        
+
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(5))
             guard achievementPopupItem?.id == item.id else { return }
@@ -7835,21 +8088,21 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func authenticateGameCenter(syncAfterAuthentication: Bool = false) {
         guard onlineFeaturesEnabled else {
             disableOnlineRuntimeState()
             return
         }
-        
+
         GKLocalPlayer.local.authenticateHandler = { viewController, error in
             guard onlineFeaturesEnabled else { return }
-            
+
             if let viewController {
                 gameCenterAuthPresentation = GameCenterAuthPresentation(viewController: viewController)
                 return
             }
-            
+
             if GKLocalPlayer.local.isAuthenticated {
                 isGameCenterAuthenticated = true
                 gameCenterPlayerID = GKLocalPlayer.local.gamePlayerID
@@ -7872,7 +8125,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     @MainActor
     func loadGameCenterFriends() async {
         guard onlineFeaturesEnabled else {
@@ -7887,7 +8140,7 @@ struct ContentView: View {
             gameCenterFriendIDs = []
         }
     }
-    
+
     func disableOnlineRuntimeState() {
         isSyncingOnlineStats = false
         isGameCenterAuthenticated = false
@@ -7900,20 +8153,20 @@ struct ContentView: View {
         gameCenterStatusText = L("Online-Funktionen sind ausgeschaltet", "Online features are turned off")
         onlineStatusText = L("Online-Funktionen sind ausgeschaltet", "Online features are turned off")
     }
-    
+
     func normalizedFriendToken(_ value: String) -> String {
         value
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             .lowercased()
     }
-    
+
     func applyWeeklyTierDecay(showPopup: Bool = false) {
         var decayChanges: [TierDecayChange] = []
         updateActiveProfile { profile in
             decayChanges = profile.applyWeeklyTierDecay()
         }
-        
+
         if showPopup, !decayChanges.isEmpty {
             let signature = tierDecayPopupSignature(for: decayChanges)
             guard tierDecayPopupLastShownSignature != signature else { return }
@@ -7925,31 +8178,31 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func tierDecayPopupSignature(for changes: [TierDecayChange]) -> String {
         changes
             .map(\.id)
             .sorted()
             .joined(separator: "|")
     }
-    
+
     func saveLocalCache() {
         AppStorageService.save(appData)
         scheduleOnlineStatsSync()
     }
-    
+
     @MainActor
     func restoreCloudBackupIfNeeded() async {
         guard onlineFeaturesEnabled, isGameCenterAuthenticated, !gameCenterPlayerID.isEmpty else { return }
         guard cloudBackupRestoreAttemptedPlayerID != gameCenterPlayerID else { return }
         cloudBackupRestoreAttemptedPlayerID = gameCenterPlayerID
-        
+
         do {
             guard let cloudData = try await OnlineStatsService.fetchAppDataSnapshot(gameCenterPlayerID: gameCenterPlayerID) else { return }
             let cloudProgress = backupProgressScore(for: cloudData)
             let localProgress = backupProgressScore(for: appData)
             guard cloudProgress > localProgress else { return }
-            
+
             isRestoringCloudBackup = true
             pendingOnlineSyncTask?.cancel()
             appData = cloudData
@@ -7964,7 +8217,7 @@ struct ContentView: View {
             isRestoringCloudBackup = false
         }
     }
-    
+
     func backupProgressScore(for data: AppData) -> Int {
         var total = 0
         for profile in data.profiles {
@@ -7982,13 +8235,13 @@ struct ContentView: View {
                 countryProgress += stats.showmasterPlayed
                 countryProgress += tierBonus
             }
-            
+
             let leaguePlayed = profile.leagueStats?.played ?? 0
             let leagueRating = profile.leagueStats?.rating ?? 1000
             let leagueProgress = leaguePlayed * 25 + max(leagueRating - 1000, 0)
             let practiceProgress = profile.practiceCardsByDay?.values.reduce(0, +) ?? 0
             let achievementProgress = (profile.achievedAchievementDates?.count ?? 0) * 40
-            
+
             total += profile.totalAnswers
             total += practiceProgress
             total += profile.showmasterCards
@@ -7998,7 +8251,7 @@ struct ContentView: View {
         }
         return total
     }
-    
+
     func scheduleOnlineStatsSync() {
         guard onlineFeaturesEnabled, isGameCenterAuthenticated, !isRestoringCloudBackup else { return }
         pendingOnlineSyncTask?.cancel()
@@ -8008,7 +8261,7 @@ struct ContentView: View {
             await syncOnlineStats(showFeedback: false)
         }
     }
-    
+
     @MainActor
     func hideStartupScreenAfterDelay() async {
         try? await Task.sleep(for: .seconds(1.45))
@@ -8017,7 +8270,7 @@ struct ContentView: View {
         }
         try? await Task.sleep(for: .milliseconds(360))
     }
-    
+
     @MainActor
     func syncOnlineStats(showFeedback: Bool = true) async {
         guard onlineFeaturesEnabled else {
@@ -8025,12 +8278,12 @@ struct ContentView: View {
             return
         }
         guard !isSyncingOnlineStats else { return }
-        
+
         isSyncingOnlineStats = true
         defer {
             isSyncingOnlineStats = false
         }
-        
+
         onlineStatusText = L("Synchronisiere ...", "Syncing ...")
         do {
             onlineStatusText = L("Lade Statistik hoch ...", "Uploading stats ...")
@@ -8045,7 +8298,7 @@ struct ContentView: View {
                 achievementIDs: achievementItems.filter(\.isUnlocked).map(\.id)
             )
             onlineStatusText = L("Statistik hochgeladen. Lade Rangliste ...", "Stats uploaded. Loading leaderboard ...")
-            
+
             do {
                 onlineLeaderboard = try await OnlineStatsService.fetchLeaderboard()
                 onlineLeaderboardRefreshID += 1
@@ -8053,7 +8306,7 @@ struct ContentView: View {
             } catch {
                 onlineStatusText = L("Statistik hochgeladen. Rangliste nicht geladen: \(OnlineStatsService.userFacingMessage(for: error))", "Stats uploaded. Leaderboard not loaded: \(OnlineStatsService.userFacingMessage(for: error))")
             }
-            
+
             Task { await loadGameCenterFriends() }
             if showFeedback {
                 Haptics.notify(.success)
@@ -8065,7 +8318,7 @@ struct ContentView: View {
             onlineStatusText = L("Upload fehlgeschlagen: \(OnlineStatsService.userFacingMessage(for: error))", "Upload failed: \(OnlineStatsService.userFacingMessage(for: error))")
         }
     }
-    
+
     @MainActor
     func loadOnlineStats(forceRefresh: Bool = false) async {
         guard onlineFeaturesEnabled else {
@@ -8077,7 +8330,7 @@ struct ContentView: View {
         defer {
             isSyncingOnlineStats = false
         }
-        
+
         do {
             onlineLeaderboard = try await OnlineStatsService.fetchLeaderboard()
             onlineLeaderboardRefreshID += 1
@@ -8086,7 +8339,7 @@ struct ContentView: View {
             onlineStatusText = L("Online-Rangliste nicht geladen: \(OnlineStatsService.userFacingMessage(for: error))", "Online leaderboard not loaded: \(OnlineStatsService.userFacingMessage(for: error))")
         }
     }
-    
+
     func resetAllLocalData() {
         appData = AppData()
         AppStorageService.reset()
@@ -8117,7 +8370,7 @@ struct ContentView: View {
         tierDecayPopupLastShownSignature = ""
         resetCurrentCardHint()
     }
-    
+
     func nextPracticeCard(entryDirection: CGFloat = 0) {
         let nextCountry = practiceForcedNextCountry ?? nextPracticeCountry()
         practiceForcedNextCountry = nil
@@ -8128,7 +8381,7 @@ struct ContentView: View {
             practiceCardEntryOffset = 0
             practiceCardEntryOpacity = 1
         }
-        
+
         withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
             currentCountry = nextCountry
             cardIsFlipped = false
@@ -8137,7 +8390,7 @@ struct ContentView: View {
             practiceCardDragOffset = 0
             isFinishingPracticeSwipe = false
         }
-        
+
         guard entryDirection != 0 else { return }
         DispatchQueue.main.async {
             withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
@@ -8146,7 +8399,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func startPracticeSession() {
         applyWeeklyTierDecay()
         showRecap = false
@@ -8171,12 +8424,12 @@ struct ContentView: View {
         practiceCardEntryOffset = 0
         practiceCardEntryOpacity = 1
         isFinishingPracticeSwipe = false
-        
+
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             practiceSessionActive = true
         }
     }
-    
+
     func finishPracticeSession(showSummary: Bool) {
         let availableCodes = Set(availableCountries.map(\.code))
         let completedPerfectFullSession = practiceSessionActive
@@ -8191,7 +8444,7 @@ struct ContentView: View {
             }
             checkForUnlockedAchievements()
         }
-        
+
         let completedTenBlock = practiceSessionActive && showSummary && selectedPracticeCardLimit == 10 && practiceSessionCount >= 10
         if completedTenBlock {
             updateActiveProfile { profile in
@@ -8199,7 +8452,7 @@ struct ContentView: View {
             }
             checkForUnlockedAchievements()
         }
-        
+
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             practiceSessionActive = false
             practiceCardDragOffset = 0
@@ -8211,13 +8464,13 @@ struct ContentView: View {
             practiceHistoryPreview = nil
         }
     }
-    
+
     func undoLastPracticeSwipe() {
         guard let snapshot = practiceUndoSnapshot else { return }
         let nextCountryAfterUndo = currentCountry
         appData = snapshot.appData
         saveLocalCache()
-        
+
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             currentCountry = snapshot.currentCountry
             practiceSessionCount = snapshot.practiceSessionCount
@@ -8243,92 +8496,92 @@ struct ContentView: View {
             practiceUndoSnapshot = nil
         }
     }
-    
-    func resetShowSession() {
+
+    func resetShowSession(clearDeck: Bool = false) {
         showSessionActive = false
         showSessionCount = 0
         showSessionEntries = []
         showHistoryPreview = nil
-        showRecentCountryCodes = []
-        showDeckCountryCodes = []
+        if clearDeck {
+            showRecentCountryCodes = []
+            showDeckCountryCodes = []
+        }
         cardIsFlipped = false
         resetCurrentCardHint()
     }
-    
+
     func startShowSession() {
         showSessionCount = 0
         showSessionEntries = []
         showHistoryPreview = nil
-        showRecentCountryCodes = []
-        showDeckCountryCodes = []
         resetCurrentCardHint()
         prepareShowCard()
         showSessionActive = true
     }
-    
+
     var miniWorldCupCurrentPlayer: MiniWorldCupPlayer? {
         guard !miniWorldCupActivePlayers.isEmpty else { return nil }
         let index = min(max(miniWorldCupCurrentPlayerIndex, 0), miniWorldCupActivePlayers.count - 1)
         return miniWorldCupActivePlayers[index]
     }
-    
+
     var miniWorldCupHasHandoffOutcome: Bool {
         miniWorldCupAdvancePopupText != nil || miniWorldCupEliminationPopupText != nil
     }
-    
+
     var miniWorldCupHandoffTint: Color {
         if miniWorldCupAdvancePopupText != nil { return .green }
         if miniWorldCupEliminationPopupText != nil { return .red }
         return tealAccentColor
     }
-    
+
     var miniWorldCupHandoffTitle: String {
         miniWorldCupAdvancePopupText ?? miniWorldCupEliminationPopupText ?? L("Handy weitergeben", "Pass the phone")
     }
-    
+
     var miniWorldCupHandoffSubtitle: String {
         miniWorldCupHasHandoffOutcome ? L("Handy weitergeben an", "Pass the phone to") : L("Gib das Handy an", "Give the phone to")
     }
-    
+
     var miniWorldCupIsInSuddenDeathRange: Bool {
         miniWorldCupSuddenDeathEnabled && miniWorldCupActivePlayers.count <= miniWorldCupSuddenDeathThreshold
     }
-    
+
     var miniWorldCupEffectiveFlagCount: Int {
         miniWorldCupIsInSuddenDeathRange ? 1 : miniWorldCupFlagsPerPlayer
     }
-    
+
     var miniWorldCupEffectiveRequiredCorrect: Int {
         min(miniWorldCupRequiredCorrect, miniWorldCupEffectiveFlagCount)
     }
-    
+
     var miniWorldCupTurnRuleText: String {
         let rule = L("\(miniWorldCupEffectiveFlagCount) Flagge(n), \(miniWorldCupEffectiveRequiredCorrect) richtig zum Weiterkommen", "\(miniWorldCupEffectiveFlagCount) flag(s), \(miniWorldCupEffectiveRequiredCorrect) correct to advance")
         return miniWorldCupIsInSuddenDeathRange ? "Sudden Death · \(rule)" : rule
     }
-    
+
     var miniWorldCupQuestionProgressText: String {
         L("Flagge \(miniWorldCupCurrentAttempt)/\(miniWorldCupEffectiveFlagCount) · \(miniWorldCupCurrentCorrect) richtig", "Flag \(miniWorldCupCurrentAttempt)/\(miniWorldCupEffectiveFlagCount) · \(miniWorldCupCurrentCorrect) correct")
     }
-    
+
     var miniWorldCupCorrectNeeded: Int {
         max(miniWorldCupEffectiveRequiredCorrect - miniWorldCupCurrentCorrect, 0)
     }
-    
+
     var miniWorldCupRemainingAttemptsIncludingCurrent: Int {
         max(miniWorldCupEffectiveFlagCount - miniWorldCupCurrentAttempt + 1, 0)
     }
-    
+
     var miniWorldCupMustKnowNextFlag: Bool {
         miniWorldCupCorrectNeeded > 0 && miniWorldCupCorrectNeeded == miniWorldCupRemainingAttemptsIncludingCurrent
     }
-    
+
     var miniWorldCupTurnStatusColor: Color {
         if miniWorldCupMustKnowNextFlag { return .orange }
         if miniWorldCupCorrectNeeded == 0 { return .green }
         return tealAccentColor
     }
-    
+
     var miniWorldCupTurnStatusTitle: String {
         if miniWorldCupCorrectNeeded == 0 {
             return L("Weiterkommen gesichert", "Advance secured")
@@ -8338,41 +8591,41 @@ struct ContentView: View {
         }
         return L("Noch alles drin", "Still possible")
     }
-    
+
     var miniWorldCupTurnStatusSubtitle: String {
         if miniWorldCupCorrectNeeded == 0 {
             return L("Du kannst diese Runde nicht mehr rausfliegen.", "You cannot be eliminated this turn anymore.")
         }
         return L("Noch \(miniWorldCupCorrectNeeded) richtige bei \(miniWorldCupRemainingAttemptsIncludingCurrent) Flagge(n).", "Need \(miniWorldCupCorrectNeeded) more correct with \(miniWorldCupRemainingAttemptsIncludingCurrent) flag(s).")
     }
-    
+
     var miniWorldCupCanStillAdvanceText: String {
         if miniWorldCupCorrectNeeded == 0 { return L("geschafft", "secured") }
         if miniWorldCupMustKnowNextFlag { return L("Pflichttreffer", "must hit") }
         return L("machbar", "possible")
     }
-    
+
     func miniWorldCupHistoryMark(for index: Int) -> PracticeHistoryMark {
         if index < miniWorldCupCurrentAttemptResults.count {
             return miniWorldCupCurrentAttemptResults[index] ? .known : .unknown
         }
         return .pending
     }
-    
+
     var miniWorldCupDangerShakeOffset: CGFloat {
         if miniWorldCupMustKnowNextFlag && miniWorldCupAnswerFeedback == nil {
             return miniWorldCupMustKnowPulse ? 14 : -14
         }
         return miniWorldCupDangerShakeTrigger.isMultiple(of: 2) ? 0 : -9
     }
-    
+
     var miniWorldCupSwipeColor: Color {
         if miniWorldCupCardDragOffset.width > 24 { return .green }
         if miniWorldCupCardDragOffset.width < -24 { return .red }
         if miniWorldCupMustKnowNextFlag { return .orange }
         return tealAccentColor
     }
-    
+
     func addMiniWorldCupPlayer() {
         let name = miniWorldCupNewPlayerName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
@@ -8386,7 +8639,7 @@ struct ContentView: View {
             isMiniWorldCupNameFocused = true
         }
     }
-    
+
     func startMiniWorldCup() {
         guard miniWorldCupPlayers.count >= 2 else { return }
         miniWorldCupActivePlayers = miniWorldCupPlayers
@@ -8410,7 +8663,7 @@ struct ContentView: View {
             miniWorldCupPhase = .handoff
         }
     }
-    
+
     func resetMiniWorldCupToSetup(keepPlayers: Bool) {
         if !keepPlayers {
             miniWorldCupPlayers = []
@@ -8435,13 +8688,13 @@ struct ContentView: View {
             miniWorldCupPhase = .setup
         }
     }
-    
+
     func nextMiniWorldCupCountry() -> Country {
         let countries = availableCountries.isEmpty ? allCountries : availableCountries
         if miniWorldCupDeckCountryCodes.isEmpty {
             miniWorldCupDeckCountryCodes = countries.map(\.code).shuffled()
         }
-        
+
         let recentLimit = min(6, max(2, countries.count / 4))
         let recentCodes = Set(miniWorldCupRecentCountryCodes.suffix(recentLimit))
         let nextCode = miniWorldCupDeckCountryCodes.first { !recentCodes.contains($0) }
@@ -8450,7 +8703,7 @@ struct ContentView: View {
         guard let nextCode, let country = countries.first(where: { $0.code == nextCode }) ?? allCountries.first(where: { $0.code == nextCode }) else {
             return allCountries[0]
         }
-        
+
         miniWorldCupDeckCountryCodes.removeAll { $0 == nextCode }
         miniWorldCupRecentCountryCodes.append(nextCode)
         if miniWorldCupRecentCountryCodes.count > 12 {
@@ -8458,7 +8711,7 @@ struct ContentView: View {
         }
         return country
     }
-    
+
     func resetMiniWorldCupCardState() {
         miniWorldCupCardIsFlipped = false
         miniWorldCupCardWasRevealed = false
@@ -8467,7 +8720,7 @@ struct ContentView: View {
         miniWorldCupCardDragOffset = .zero
         miniWorldCupAnswerFeedback = nil
     }
-    
+
     func presentMiniWorldCupQuestion() {
         miniWorldCupAdvancePopupText = nil
         miniWorldCupEliminationPopupText = nil
@@ -8477,11 +8730,11 @@ struct ContentView: View {
         miniWorldCupAnswerFeedback = nil
         miniWorldCupCardEntryOffset = -34
         miniWorldCupCardEntryOpacity = 0
-        
+
         withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
             miniWorldCupPhase = .question
         }
-        
+
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(40))
             withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
@@ -8490,7 +8743,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func revealMiniWorldCupCard() {
         guard miniWorldCupPhase == .question, miniWorldCupAnswerFeedback == nil else { return }
         Haptics.tap()
@@ -8499,10 +8752,11 @@ struct ContentView: View {
             miniWorldCupCardIsFlipped.toggle()
         }
     }
-    
+
     func saveMiniWorldCupUndoSnapshotIfNeeded() {
         guard miniWorldCupCurrentAttempt == 1 else { return }
         miniWorldCupUndoSnapshot = MiniWorldCupUndoSnapshot(
+            appData: appData,
             activePlayers: miniWorldCupActivePlayers,
             eliminations: miniWorldCupEliminations,
             roundResults: miniWorldCupRoundResults,
@@ -8520,9 +8774,11 @@ struct ContentView: View {
             suddenDeathIsActive: miniWorldCupSuddenDeathIsActive
         )
     }
-    
+
     func undoMiniWorldCupTurn() {
         guard let snapshot = miniWorldCupUndoSnapshot else { return }
+        appData = snapshot.appData
+        saveLocalCache()
         miniWorldCupActivePlayers = snapshot.activePlayers
         miniWorldCupEliminations = snapshot.eliminations
         miniWorldCupRoundResults = snapshot.roundResults
@@ -8545,7 +8801,7 @@ struct ContentView: View {
         miniWorldCupSuddenDeathAnnouncementVisible = false
         miniWorldCupUndoSnapshot = nil
     }
-    
+
     func finishMiniWorldCupSwipe(width: CGFloat) {
         let threshold: CGFloat = 82
         guard abs(width) >= threshold else {
@@ -8554,10 +8810,10 @@ struct ContentView: View {
             }
             return
         }
-        
+
         handleMiniWorldCupAnswer(known: width > 0)
     }
-    
+
     func handleMiniWorldCupAnswer(known: Bool) {
         guard miniWorldCupPhase == .question, !miniWorldCupActivePlayers.isEmpty, miniWorldCupAnswerFeedback == nil else { return }
         saveMiniWorldCupUndoSnapshotIfNeeded()
@@ -8567,17 +8823,17 @@ struct ContentView: View {
         if !countsAsKnown {
             miniWorldCupDangerShakeTrigger += 1
         }
-        
+
         withAnimation(.easeInOut(duration: 0.18)) {
             miniWorldCupCardDragOffset = CGSize(width: countsAsKnown ? 620 : -620, height: 0)
         }
-        
+
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(180))
             finishMiniWorldCupAttempt(known: countsAsKnown)
         }
     }
-    
+
     func finishMiniWorldCupAttempt(known: Bool) {
         guard !miniWorldCupActivePlayers.isEmpty else { return }
         let updatedCorrect = miniWorldCupCurrentCorrect + (known ? 1 : 0)
@@ -8587,12 +8843,12 @@ struct ContentView: View {
         let remainingAfterThisAttempt = max(flagCount - miniWorldCupCurrentAttempt, 0)
         let canStillAdvance = updatedCorrect + remainingAfterThisAttempt >= requiredCorrect
         miniWorldCupCurrentAttemptResults = updatedAttemptResults
-        
+
         if !canStillAdvance {
             showMiniWorldCupEliminationPopup(correctCount: updatedCorrect, flagCount: flagCount)
             return
         }
-        
+
         if miniWorldCupCurrentAttempt >= flagCount {
             if updatedCorrect >= requiredCorrect {
                 advanceMiniWorldCupCurrentPlayer(correctCount: updatedCorrect, flagCount: flagCount)
@@ -8618,7 +8874,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func advanceMiniWorldCupCurrentPlayer(correctCount: Int, flagCount: Int) {
         guard !miniWorldCupActivePlayers.isEmpty else { return }
         let safeIndex = min(max(miniWorldCupCurrentPlayerIndex, 0), miniWorldCupActivePlayers.count - 1)
@@ -8639,13 +8895,13 @@ struct ContentView: View {
         miniWorldCupCurrentPlayerIndex = (safeIndex + 1) % miniWorldCupActivePlayers.count
         prepareNextMiniWorldCupTurn()
     }
-    
+
     func showMiniWorldCupEliminationPopup(correctCount: Int, flagCount: Int) {
         miniWorldCupEliminationPopupText = L("\(miniWorldCupCurrentPlayer?.name ?? "-") ist raus", "\(miniWorldCupCurrentPlayer?.name ?? "-") is out")
         miniWorldCupAdvancePopupText = nil
         eliminateMiniWorldCupCurrentPlayer(correctCount: correctCount, flagCount: flagCount)
     }
-    
+
     func eliminateMiniWorldCupCurrentPlayer(correctCount: Int, flagCount: Int) {
         guard !miniWorldCupActivePlayers.isEmpty else { return }
         let safeIndex = min(max(miniWorldCupCurrentPlayerIndex, 0), miniWorldCupActivePlayers.count - 1)
@@ -8670,7 +8926,7 @@ struct ContentView: View {
             ),
             at: 0
         )
-        
+
         if miniWorldCupActivePlayers.count <= 1 {
             withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
                 miniWorldCupPhase = .finished
@@ -8678,12 +8934,15 @@ struct ContentView: View {
             }
             return
         }
-        
+
         miniWorldCupCurrentPlayerIndex = safeIndex % miniWorldCupActivePlayers.count
         prepareNextMiniWorldCupTurn()
     }
-    
+
     func prepareNextMiniWorldCupTurn() {
+        updateActiveProfile { profile in
+            profile.recordPartyRound()
+        }
         miniWorldCupRound += 1
         miniWorldCupCurrentAttempt = 1
         miniWorldCupCurrentCorrect = 0
@@ -8699,7 +8958,7 @@ struct ContentView: View {
             showMiniWorldCupSuddenDeathAnnouncement()
         }
     }
-    
+
     func showMiniWorldCupSuddenDeathAnnouncement() {
         withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
             miniWorldCupSuddenDeathAnnouncementVisible = true
@@ -8711,26 +8970,26 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func finishPracticeSwipe(translation: CGSize, predictedTranslation: CGSize) {
         guard !isFinishingPracticeSwipe else { return }
         let threshold: CGFloat = 72
         let committedWidth = abs(predictedTranslation.width) > abs(translation.width) ? predictedTranslation.width : translation.width
         let isMostlyHorizontal = abs(committedWidth) > abs(translation.height) * 1.15
-        
+
         guard isMostlyHorizontal, abs(committedWidth) >= threshold else {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                 practiceCardDragOffset = 0
             }
             return
         }
-        
+
         let isKnown = committedWidth > 0
         if isKnown && currentCardUsedHint {
             showHintKnownBlockedFeedback()
             return
         }
-        
+
         Haptics.tap(style: .medium)
         isFinishingPracticeSwipe = true
         withAnimation(.interpolatingSpring(stiffness: 180, damping: 24)) {
@@ -8740,54 +8999,71 @@ struct ContentView: View {
             recordPracticeCard(isKnown: isKnown)
         }
     }
-    
+
     func cardLimitTitle(_ limit: Int) -> String {
         limit == 0 ? L("Endlos", "Endless") : L("\(limit) Karten", "\(limit) cards")
     }
-    
+
     func cardLimitSelector(selection: Binding<Int>) -> some View {
-        HStack(spacing: 6) {
-            ForEach(cardLimitOptions, id: \.self) { limit in
-                let isSelected = selection.wrappedValue == limit
-                Button {
-                    guard !isSelected else { return }
+        VStack(alignment: .leading, spacing: 10) {
+            Picker(L("Showmaster-Länge", "Showmaster length"), selection: Binding(
+                get: { selection.wrappedValue == 0 ? 0 : 1 },
+                set: { mode in
                     Haptics.tap()
                     withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
-                        selection.wrappedValue = limit
+                        selection.wrappedValue = mode == 0 ? 0 : max(selection.wrappedValue, 10)
                     }
-                } label: {
-                    Text(cardLimitTitle(limit))
-                        .font(.caption.weight(.bold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                        .frame(maxWidth: .infinity, minHeight: 38)
-                        .padding(.horizontal, 6)
-                        .background(isSelected ? tealAccentColor : tealAccentColor.opacity(0.10))
-                        .foregroundStyle(isSelected ? .white : tealAccentColor)
-                        .clipShape(RoundedRectangle(cornerRadius: 9))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 9)
-                                .stroke(isSelected ? Color.white.opacity(0.22) : tealAccentColor.opacity(0.24), lineWidth: 1)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 9))
                 }
-                .buttonStyle(.plain)
+            )) {
+                Text(L("Endlos", "Endless")).tag(0)
+                Text(L("Begrenzt", "Limited")).tag(1)
+            }
+            .pickerStyle(.segmented)
+
+            if selection.wrappedValue > 0 {
+                HStack(spacing: 12) {
+                    Picker(L("Karten", "Cards"), selection: selection) {
+                        ForEach(1...300, id: \.self) { count in
+                            Text("\(count)").tag(count)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(width: 92, height: 116)
+                    .clipped()
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(cardLimitTitle(selection.wrappedValue))
+                            .font(.headline.monospacedDigit())
+                            .foregroundStyle(tealAccentColor)
+                        Text(L("Wische am Rad, um die gewünschte Anzahl zu wählen.", "Spin the wheel to choose the number of cards."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                Text(L("Der Showmaster läuft, bis du ihn beendest.", "Showmaster runs until you stop it."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
         }
-        .padding(6)
+        .padding(10)
         .background(tealAccentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(tealAccentColor.opacity(0.28), lineWidth: 1)
         )
     }
-    
+
     func sessionProgressText(current: Int, limit: Int, subject: LearningSubject) -> String {
         let displayedCurrent = max(current, 1)
         let unit = subject == .capitals ? L("Länder", "countries") : L("Flaggen", "flags")
         return limit == 0 ? L("\(displayedCurrent) \(unit) · Endlos", "\(displayedCurrent) \(unit) · endless") : "\(displayedCurrent) / \(limit) \(unit)"
     }
-    
+
     func showSessionProgressText() -> String {
         let displayedCurrent = selectedShowCardLimit > 0
             ? min(showSessionCount + 1, selectedShowCardLimit)
@@ -8797,49 +9073,68 @@ struct ContentView: View {
         guard selectedShowCardLimit > 0 else { return base }
         return L("\(base) von \(selectedShowCardLimit)", "\(base) of \(selectedShowCardLimit)")
     }
-    
+
     func nextPracticeCountry() -> Country {
         let candidates = countries(inContinents: selectedPracticeContinents)
         let unseenCandidates = candidates.filter { !practiceSessionSeenCountryCodes.contains($0.code) }
         let availableCandidates = unseenCandidates.isEmpty ? candidates : unseenCandidates
-        
+
         if allPracticeCandidatesAreS(candidates) {
             return decayRiskSortedCountries(from: availableCandidates).first ?? allCountries[0]
         }
-        
+
         let weightedCountries = availableCandidates.flatMap { country in
-            Array(repeating: country, count: practiceWeight(for: tier(for: country)))
+            Array(repeating: country, count: practiceWeight(for: country))
         }
-        
+
         return (weightedCountries.isEmpty ? availableCandidates : weightedCountries).randomElement() ?? allCountries[0]
     }
-    
+
     func allPracticeCandidatesAreS(_ candidates: [Country]) -> Bool {
         !candidates.isEmpty && candidates.allSatisfy { tier(for: $0) == .s }
     }
-    
+
     func decayRiskSortedCountries(from countries: [Country]) -> [Country] {
         countries.sorted { first, second in
-            decayRiskDate(for: first) < decayRiskDate(for: second)
+            let firstDaysUntilDecay = stats(for: first).daysUntilNextTierDecay() ?? Int.max
+            let secondDaysUntilDecay = stats(for: second).daysUntilNextTierDecay() ?? Int.max
+            if firstDaysUntilDecay != secondDaysUntilDecay {
+                return firstDaysUntilDecay < secondDaysUntilDecay
+            }
+            return decayRiskDate(for: first) < decayRiskDate(for: second)
         }
     }
-    
+
     func decayRiskDate(for country: Country) -> Date {
         let countryStats = stats(for: country)
         return countryStats.lastKnownAt ?? countryStats.lastPracticedAt ?? .distantPast
     }
-    
-    func practiceWeight(for tier: MasteryTier) -> Int {
-        switch tier {
+
+    func practiceWeight(for country: Country) -> Int {
+        let countryStats = stats(for: country)
+        let baseWeight: Int
+        switch countryStats.tier {
         case .f: return 8
-        case .d: return 6
-        case .c: return 4
-        case .b: return 3
-        case .a: return 2
-        case .s: return 1
+        case .d: baseWeight = 6
+        case .c: baseWeight = 4
+        case .b: baseWeight = 3
+        case .a: baseWeight = 2
+        case .s: baseWeight = 1
+        }
+
+        return baseWeight + decayRiskWeight(for: countryStats)
+    }
+
+    func decayRiskWeight(for stats: CountryStats) -> Int {
+        guard let daysUntilDecay = stats.daysUntilNextTierDecay() else { return 0 }
+        switch daysUntilDecay {
+        case 0: return 12
+        case 1: return 8
+        case 2: return 4
+        default: return 0
         }
     }
-    
+
     func prepareShowCard() {
         withAnimation(.easeInOut(duration: 0.22)) {
             currentCountry = nextShowCountry()
@@ -8847,7 +9142,7 @@ struct ContentView: View {
             resetCurrentCardHint()
         }
     }
-    
+
     func nextShowCard() {
         guard !showLimitReached else { return }
         showSessionCount += 1
@@ -8859,11 +9154,11 @@ struct ContentView: View {
             }
         }
         checkForUnlockedAchievements()
-        
+
         guard !showLimitReached else { return }
         prepareShowCard()
     }
-    
+
     func nextShowCountry() -> Country {
         let availableCountries = countries(inContinents: selectedShowContinents)
         let next: Country
@@ -8875,15 +9170,15 @@ struct ContentView: View {
         rememberShowCountry(next)
         return next
     }
-    
+
     func nextFromShowDeck(from availableCountries: [Country], excluding country: Country) -> Country {
         let availableCodes = Set(availableCountries.map(\.code))
         showDeckCountryCodes.removeAll { !availableCodes.contains($0) }
-        
+
         if showDeckCountryCodes.isEmpty {
             refillShowDeck(from: availableCountries, excluding: country)
         }
-        
+
         if
             availableCountries.count > 1,
             showDeckCountryCodes.first == country.code,
@@ -8891,15 +9186,15 @@ struct ContentView: View {
         {
             showDeckCountryCodes.swapAt(0, swapIndex)
         }
-        
+
         guard let nextCode = showDeckCountryCodes.first else {
             return nextRandomCountry(excluding: country, from: availableCountries)
         }
-        
+
         showDeckCountryCodes.removeFirst()
         return availableCountries.first { $0.code == nextCode } ?? nextRandomCountry(excluding: country, from: availableCountries)
     }
-    
+
     func refillShowDeck(from availableCountries: [Country], excluding country: Country) {
         var codes = availableCountries.map(\.code).shuffled()
         if
@@ -8911,18 +9206,18 @@ struct ContentView: View {
         }
         showDeckCountryCodes = codes
     }
-    
+
     func rememberShowCountry(_ country: Country) {
         showRecentCountryCodes.append(country.code)
         if showRecentCountryCodes.count > 8 {
             showRecentCountryCodes.removeFirst(showRecentCountryCodes.count - 8)
         }
     }
-    
+
     func nextRandomCountry(excluding country: Country, in continent: String = CountryScope.worldwide) -> Country {
         nextRandomCountry(excluding: country, from: countries(inContinent: continent))
     }
-    
+
     func nextRandomCountry(excluding country: Country, from availableCountries: [Country]) -> Country {
         var next = availableCountries.randomElement() ?? allCountries[0]
         if availableCountries.count > 1 {
@@ -8932,39 +9227,39 @@ struct ContentView: View {
         }
         return next
     }
-    
+
     var availableCountries: [Country] {
         includePartiallyRecognizedFlags ? allPracticeCountries : allCountries
     }
-    
+
     func countries(inContinent continent: String) -> [Country] {
         if continent == CountryScope.worldwide {
             return availableCountries
         }
-        
+
         return availableCountries.filter { $0.continent == continent }
     }
-    
+
     func countries(inContinents selectedContinents: Set<String>) -> [Country] {
         if selectedContinents.contains(CountryScope.worldwide) || selectedContinents.isEmpty {
             return availableCountries
         }
-        
+
         return availableCountries.filter { selectedContinents.contains($0.continent) }
     }
-    
+
     func countries(in tier: MasteryTier, continent: String) -> [Country] {
         countries(inContinent: continent)
             .filter { self.tier(for: $0) == tier }
             .sorted { countryName(for: $0) < countryName(for: $1) }
     }
-    
+
     func countries(in tier: MasteryTier, from countries: [Country]) -> [Country] {
         countries
             .filter { self.tier(for: $0) == tier }
             .sorted { countryName(for: $0) < countryName(for: $1) }
     }
-    
+
     func statisticsCountries(in tier: MasteryTier, from countries: [Country]) -> [Country] {
         countries
             .filter { self.tier(for: $0) == tier }
@@ -8977,69 +9272,69 @@ struct ContentView: View {
                 return countryName(for: first) < countryName(for: second)
             }
     }
-    
+
     func totalSeenFlags(in countries: [Country]) -> Int {
         countries.filter { stats(for: $0).cardReviews > 0 }.count
     }
-    
+
     func totalKnownAtLeastOnceFlags(in countries: [Country]) -> Int {
         countries.filter { stats(for: $0).cardKnown > 0 }.count
     }
-    
+
     func totalCardReviews(in countries: [Country]) -> Int {
         countries.reduce(0) { $0 + stats(for: $1).cardReviews }
     }
-    
+
     func totalCardKnown(in countries: [Country]) -> Int {
         countries.reduce(0) { $0 + stats(for: $1).cardKnown }
     }
-    
+
     func totalCardUnknown(in countries: [Country]) -> Int {
         countries.reduce(0) { $0 + stats(for: $1).cardUnknown }
     }
-    
+
     func aOrBetterCount(in countries: [Country]) -> Int {
         countries.filter { [.s, .a].contains(stats(for: $0).tier) }.count
     }
-    
+
     func sTierCount(in countries: [Country]) -> Int {
         countries.filter { stats(for: $0).tier == .s }.count
     }
-    
+
     func allSTierHeldDays(in countries: [Country], now: Date = Date()) -> Int {
         guard !countries.isEmpty, countries.allSatisfy({ stats(for: $0).tier == .s }) else { return 0 }
         let sStartDates = countries.compactMap { continuousSTierStartDate(for: stats(for: $0)) }
         guard sStartDates.count == countries.count, let allSStartDate = sStartDates.max() else { return 0 }
-        
+
         let calendar = Calendar.current
         let startDay = calendar.startOfDay(for: allSStartDate)
         let currentDay = calendar.startOfDay(for: now)
         return max(calendar.dateComponents([.day], from: startDay, to: currentDay).day ?? 0, 0)
     }
-    
+
     func continuousSTierStartDate(for stats: CountryStats) -> Date? {
         guard stats.tier == .s else { return nil }
         let history = (stats.tierHistory ?? []).sorted { $0.date < $1.date }
         guard !history.isEmpty else {
             return stats.lastKnownAt ?? stats.lastPracticedAt
         }
-        
+
         if let lastNonSIndex = history.lastIndex(where: { $0.tier != .s }) {
             return history[(lastNonSIndex + 1)...].first(where: { $0.tier == .s })?.date
         }
-        
+
         return history.first(where: { $0.tier == .s })?.date ?? stats.lastKnownAt ?? stats.lastPracticedAt
     }
-    
+
     func totalShowmasterPlayed(in countries: [Country]) -> Int {
         countries.reduce(0) { $0 + stats(for: $1).showmasterPlayed }
     }
-    
+
     func percent(_ value: Int, of total: Int) -> String {
         guard total > 0 else { return "0.0 %" }
         return String(format: "%.1f %%", Double(value) / Double(total) * 100)
     }
-    
+
     func activateHint() {
         guard !cardHintIsVisible else { return }
         Haptics.tap(style: .medium)
@@ -9049,13 +9344,13 @@ struct ContentView: View {
             hintBlockFeedbackIsVisible = false
         }
     }
-    
+
     func resetCurrentCardHint() {
         cardHintIsVisible = false
         currentCardUsedHint = false
         hintBlockFeedbackIsVisible = false
     }
-    
+
     func showHintKnownBlockedFeedback() {
         Haptics.notify(.warning)
         withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) {
@@ -9068,19 +9363,19 @@ struct ContentView: View {
             }
         }
     }
-    
+
     func hintText(for country: Country) -> String {
         let answer = selectedSubject == .capitals ? capitalName(for: country) : countryName(for: country)
         let firstLetter = answer.trimmingCharacters(in: .whitespacesAndNewlines).first.map(String.init) ?? "?"
         let continent = localizedScope(country.continent)
-        
+
         if selectedSubject == .capitals {
             return L("Die Hauptstadt beginnt mit \(firstLetter). Das Land liegt in \(continent).", "The capital starts with \(firstLetter). The country is in \(continent).")
         }
-        
+
         return L("Das Land beginnt mit \(firstLetter) und liegt in \(continent).", "The country starts with \(firstLetter) and is in \(continent).")
     }
-    
+
     func recordPracticeCard(isKnown: Bool) {
         guard practiceSessionActive, !practiceLimitReached else { return }
         let reviewedCountry = currentCountry
@@ -9116,7 +9411,7 @@ struct ContentView: View {
                     toTier: tierAfter
                 )
             )
-            
+
             if isKnown {
                 practiceSessionKnown += 1
                 if tierBefore.promoted != tierBefore {
@@ -9126,9 +9421,9 @@ struct ContentView: View {
                 practiceSessionUnknown += 1
             }
         }
-        
+
         checkForUnlockedAchievements()
-        
+
         if practiceLimitReached {
             finishPracticeSession(showSummary: true)
         } else {
@@ -9143,7 +9438,7 @@ enum PracticeHistoryMark: Equatable {
     case current
     case pending
     case seen
-    
+
     var systemImage: String {
         switch self {
         case .known: return "checkmark"
@@ -9168,7 +9463,7 @@ struct Triangle: Shape {
 
 struct PracticeHistoryBarMinYKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
-    
+
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
@@ -9176,7 +9471,7 @@ struct PracticeHistoryBarMinYKey: PreferenceKey {
 
 struct ShowHistoryBarMinYKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
-    
+
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
@@ -9189,14 +9484,14 @@ struct PracticeHistoryBar: View {
     let accentColor: Color
     let selectedChangeID: UUID?
     let onSelectChange: (PracticeHistoryPreview) -> Void
-    
+
     private var entries: [(mark: PracticeHistoryMark, change: PracticeSessionChange?)] {
         if limit == 0 {
             return changes.suffix(9).map { change in
                 (change.wasKnown ? .known : .unknown, change)
             } + [(.current, nil)]
         }
-        
+
         let total = max(limit, results.count + 1)
         return (0..<total).map { index in
             if index < results.count {
@@ -9208,7 +9503,7 @@ struct PracticeHistoryBar: View {
             return (.pending, nil)
         }
     }
-    
+
     var body: some View {
         HStack(spacing: 7) {
             ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
@@ -9244,7 +9539,7 @@ struct PracticeHistoryPill: View {
     let mark: PracticeHistoryMark
     let accentColor: Color
     let isSelected: Bool
-    
+
     private var fillColor: Color {
         switch mark {
         case .known: return .green
@@ -9254,11 +9549,11 @@ struct PracticeHistoryPill: View {
         case .seen: return accentColor.opacity(0.78)
         }
     }
-    
+
     private var iconColor: Color {
         mark == .pending ? .secondary : .white
     }
-    
+
     var body: some View {
         Image(systemName: mark.systemImage)
             .font(.system(size: 13, weight: .bold))
@@ -9292,15 +9587,15 @@ struct ShowHistoryBar: View {
     let accentColor: Color
     let selectedEntryID: UUID?
     let onSelectEntry: (ShowHistoryPreview) -> Void
-    
+
     private var visibleEntries: [ShowSessionEntry] {
         limit == 0 ? Array(entries.suffix(9)) : entries
     }
-    
+
     private var totalSlots: Int {
         limit == 0 ? max(visibleEntries.count + 1, 1) : max(limit, entries.count)
     }
-    
+
     var body: some View {
         HStack(spacing: 7) {
             ForEach(0..<totalSlots, id: \.self) { index in
@@ -9339,13 +9634,13 @@ struct MiniLocationGlobe: View {
     let country: Country
     let accentColor: Color
     @State private var boundaryData: GlobeBoundaryData?
-    
+
     var body: some View {
         Canvas { context, size in
             let rect = CGRect(origin: .zero, size: size)
             let globeRect = rect.insetBy(dx: 1, dy: 1)
             let circlePath = Path(ellipseIn: globeRect)
-            
+
             context.fill(
                 circlePath,
                 with: .linearGradient(
@@ -9357,19 +9652,19 @@ struct MiniLocationGlobe: View {
                     endPoint: CGPoint(x: globeRect.maxX, y: globeRect.maxY)
                 )
             )
-            
+
             context.clip(to: circlePath)
             drawGrid(in: &context, size: size)
-            
+
             guard let boundaryData else {
                 drawFallbackFocus(in: &context, size: size)
                 return
             }
-            
+
             let center = boundaryData.centroidsByCountryCode[country.code] ?? fallbackCoordinate
             let availableCodes = Set(allPracticeCountries.map(\.code))
             let selectedRings = boundaryData.ringsByCountryCode[country.code] ?? []
-            
+
             for code in availableCodes where code != country.code {
                 guard let rings = boundaryData.ringsByCountryCode[code] else { continue }
                 for ring in rings {
@@ -9378,14 +9673,14 @@ struct MiniLocationGlobe: View {
                     context.stroke(path, with: .color(Color.white.opacity(0.22)), lineWidth: 0.45)
                 }
             }
-            
+
             for ring in selectedRings {
                 let path = globePath(for: ring, center: center, size: size)
                 context.fill(path, with: .color(accentColor.opacity(0.94)))
                 context.stroke(path, with: .color(.white), lineWidth: 1.65)
                 context.stroke(path, with: .color(accentColor), lineWidth: 0.75)
             }
-            
+
             context.stroke(circlePath, with: .color(Color.white.opacity(0.46)), lineWidth: 1)
             context.stroke(circlePath, with: .color(accentColor.opacity(0.30)), lineWidth: 2)
         }
@@ -9407,7 +9702,7 @@ struct MiniLocationGlobe: View {
             loadBoundariesIfNeeded()
         }
     }
-    
+
     private var fallbackCoordinate: GlobeCoordinate {
         switch country.continent {
         case "Afrika": return GlobeCoordinate(latitude: 2, longitude: 20)
@@ -9420,13 +9715,13 @@ struct MiniLocationGlobe: View {
         default: return GlobeCoordinate(latitude: 20, longitude: 0)
         }
     }
-    
+
     private func loadBoundariesIfNeeded() {
         if let cachedData = GlobeBoundaryCache.data, GlobeBoundaryCache.source == globeBoundarySource {
             boundaryData = cachedData
             return
         }
-        
+
         guard boundaryData == nil, let url = URL(string: globeBoundaryURLString) else { return }
         URLSession.shared.dataTask(with: url) { data, _, _ in
             guard let data, let parsedData = GlobeBoundaryData.parse(data: data) else { return }
@@ -9437,13 +9732,13 @@ struct MiniLocationGlobe: View {
             }
         }.resume()
     }
-    
+
     private func drawFallbackFocus(in context: inout GraphicsContext, size: CGSize) {
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
         context.fill(Path(ellipseIn: CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8)), with: .color(accentColor))
         context.stroke(Path(ellipseIn: CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)), with: .color(.white), lineWidth: 1.4)
     }
-    
+
     private func drawGrid(in context: inout GraphicsContext, size: CGSize) {
         for fraction in [0.25, 0.5, 0.75] {
             var latitudePath = Path()
@@ -9455,7 +9750,7 @@ struct MiniLocationGlobe: View {
             ))
             context.stroke(latitudePath, with: .color(Color.white.opacity(0.14)), lineWidth: 0.6)
         }
-        
+
         for fraction in [0.32, 0.5, 0.68] {
             var longitudePath = Path()
             longitudePath.addEllipse(in: CGRect(
@@ -9467,17 +9762,17 @@ struct MiniLocationGlobe: View {
             context.stroke(longitudePath, with: .color(Color.white.opacity(0.14)), lineWidth: 0.6)
         }
     }
-    
+
     private func globePath(for ring: [GlobeCoordinate], center: GlobeCoordinate, size: CGSize) -> Path {
         var path = Path()
         var isDrawing = false
-        
+
         for coordinate in ring {
             guard let point = projectedPoint(for: coordinate, center: center, size: size) else {
                 isDrawing = false
                 continue
             }
-            
+
             if isDrawing {
                 path.addLine(to: point)
             } else {
@@ -9485,11 +9780,11 @@ struct MiniLocationGlobe: View {
                 isDrawing = true
             }
         }
-        
+
         path.closeSubpath()
         return path
     }
-    
+
     private func projectedPoint(for coordinate: GlobeCoordinate, center: GlobeCoordinate, size: CGSize) -> CGPoint? {
         let latitude = coordinate.latitude * .pi / 180
         let longitude = coordinate.longitude * .pi / 180
@@ -9497,13 +9792,13 @@ struct MiniLocationGlobe: View {
         let centerLongitude = center.longitude * .pi / 180
         let deltaLongitude = longitude - centerLongitude
         let visible = sin(centerLatitude) * sin(latitude) + cos(centerLatitude) * cos(latitude) * cos(deltaLongitude)
-        
+
         guard visible >= -0.03 else { return nil }
-        
+
         let radius = min(size.width, size.height) * 0.43
         let x = radius * cos(latitude) * sin(deltaLongitude)
         let y = -radius * (cos(centerLatitude) * sin(latitude) - sin(centerLatitude) * cos(latitude) * cos(deltaLongitude))
-        
+
         return CGPoint(x: size.width / 2 + x, y: size.height / 2 + y)
     }
 }
@@ -9514,7 +9809,7 @@ struct StartupScreen: View {
     @State private var logoOpacity: Double = 0
     @State private var contentOffset: CGFloat = 24
     @State private var gradientFloatsUp: Bool = false
-    
+
     var tealAccentColor: Color {
         Color(UIColor { traitCollection in
             traitCollection.userInterfaceStyle == .dark
@@ -9522,7 +9817,7 @@ struct StartupScreen: View {
                 : UIColor(red: 0.0, green: 0.62, blue: 0.58, alpha: 1)
         })
     }
-    
+
     var body: some View {
         ZStack {
             GeometryReader { geometry in
@@ -9557,7 +9852,7 @@ struct StartupScreen: View {
                 .ignoresSafeArea()
                 .animation(.easeInOut(duration: 1.45), value: gradientFloatsUp)
             }
-            
+
             VStack(spacing: 18) {
                 Image(systemName: "map.fill")
                     .font(.system(size: 104, weight: .regular))
@@ -9565,7 +9860,7 @@ struct StartupScreen: View {
                     .shadow(color: tealAccentColor.opacity(0.35), radius: 22, y: 10)
                     .scaleEffect(logoScale)
                     .opacity(logoOpacity)
-                
+
                 Text("Flaggenbande")
                     .font(.largeTitle.bold())
                     .multilineTextAlignment(.center)
@@ -9599,9 +9894,9 @@ struct PracticeRecapView: View {
     let onRepeat: () -> Void
     let onDismiss: () -> Void
     @State private var showsAllChanges: Bool = false
-    
+
     var total: Int { known + unknown }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -9616,17 +9911,17 @@ struct PracticeRecapView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
             }
-            
+
             HStack(spacing: 10) {
                 recapStat(title: localized("Gewusst", "Known", language: language), value: known, color: .green)
                 recapStat(title: localized("Nicht gewusst", "Not known", language: language), value: unknown, color: .red)
                 recapStat(title: localized("Verbessert", "Improved", language: language), value: improved, color: accentColor)
             }
-            
+
             Text(localized("Unten findest du die Sessionstatistiken und alle Stufenwechsel.", "Below you can see the session stats and every level change.", language: language))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            
+
             Button {
                 onRepeat()
             } label: {
@@ -9640,21 +9935,21 @@ struct PracticeRecapView: View {
                     .contentShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
-            
+
             sessionDetails
         }
         .padding()
         .background(Color(.secondarySystemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
-    
+
     var sessionDetails: some View {
         let visibleChanges = showsAllChanges ? changes : Array(changes.prefix(5))
         let hiddenChangeCount = max(changes.count - visibleChanges.count, 0)
         return VStack(alignment: .leading, spacing: 10) {
             Text(localized("Sessionstatistiken", "Session stats", language: language))
                 .font(.subheadline.weight(.bold))
-            
+
             if changes.isEmpty {
                 Text(localized("Keine Stufenwechsel in dieser Session.", "No level changes in this session.", language: language))
                     .font(.caption)
@@ -9688,7 +9983,7 @@ struct PracticeRecapView: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                
+
                 if hiddenChangeCount > 0 {
                     Button {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
@@ -9708,7 +10003,7 @@ struct PracticeRecapView: View {
         .background(Color(.systemBackground).opacity(0.55))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
-    
+
     func tierBadge(_ tier: MasteryTier) -> some View {
         Text(tier.rawValue)
             .font(.caption.weight(.black))
@@ -9720,7 +10015,7 @@ struct PracticeRecapView: View {
                     .stroke(Color.white.opacity(0.22), lineWidth: 1)
             )
     }
-    
+
     func recapChangeBackground(for change: PracticeSessionChange) -> Color {
         if isImprovement(change) {
             return Color.green.opacity(0.16)
@@ -9730,15 +10025,15 @@ struct PracticeRecapView: View {
         }
         return Color(.tertiarySystemFill)
     }
-    
+
     func isImprovement(_ change: PracticeSessionChange) -> Bool {
         tierScore(change.toTier) > tierScore(change.fromTier)
     }
-    
+
     func isDecline(_ change: PracticeSessionChange) -> Bool {
         tierScore(change.toTier) < tierScore(change.fromTier)
     }
-    
+
     func tierScore(_ tier: MasteryTier) -> Int {
         switch tier {
         case .f: return 0
@@ -9749,7 +10044,7 @@ struct PracticeRecapView: View {
         case .s: return 5
         }
     }
-    
+
     func recapStat(title: String, value: Int, color: Color) -> some View {
         VStack(spacing: 3) {
             Text("\(value)")
@@ -9776,7 +10071,7 @@ struct FlipCard: View {
     let subject: LearningSubject
     let capital: String
     @State private var auraPulse: Bool = false
-    
+
     func localizedContinent(_ continent: String) -> String {
         switch continent {
         case "Afrika": return localized("Afrika", "Africa", language: language)
@@ -9788,7 +10083,7 @@ struct FlipCard: View {
         default: return continent
         }
     }
-    
+
     var body: some View {
         ZStack {
             if hasGoldAura {
@@ -9797,11 +10092,11 @@ struct FlipCard: View {
                     .blur(radius: auraPulse ? 22 : 10)
                     .scaleEffect(auraPulse ? 1.04 : 0.96)
             }
-            
+
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color(.secondarySystemBackground))
                 .shadow(color: hasGoldAura ? .yellow.opacity(0.45) : .black.opacity(0.12), radius: hasGoldAura ? 16 : 10, y: 4)
-            
+
             if isFlipped {
                 VStack(spacing: 10) {
                     Text(subject == .countries ? localizedCountryName(country, language: language) : capital)
@@ -9876,7 +10171,7 @@ struct FlagImage: View {
     let height: CGFloat
     @State private var image: UIImage?
     @State private var didFailLoading = false
-    
+
     var body: some View {
         Group {
             if let image {
@@ -9897,7 +10192,7 @@ struct FlagImage: View {
             await loadImage()
         }
     }
-    
+
     @MainActor
     private func loadImage() async {
         guard let url = country.flagImageURL else {
@@ -9905,13 +10200,13 @@ struct FlagImage: View {
             didFailLoading = true
             return
         }
-        
+
         if let cachedImage = FlagImageCache.shared.image(for: url) {
             image = cachedImage
             didFailLoading = false
             return
         }
-        
+
         image = nil
         didFailLoading = false
         do {
@@ -9927,18 +10222,18 @@ struct FlagImage: View {
 
 final class FlagImageCache {
     static let shared = FlagImageCache()
-    
+
     private let cache = NSCache<NSURL, UIImage>()
     private var loadingTasks: [URL: Task<UIImage, Error>] = [:]
     private let diskCacheDirectory: URL
-    
+
     private init() {
         cache.countLimit = 220
         let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         diskCacheDirectory = cachesDirectory.appendingPathComponent("FlagImageCache", isDirectory: true)
         try? FileManager.default.createDirectory(at: diskCacheDirectory, withIntermediateDirectories: true, attributes: nil)
     }
-    
+
     @MainActor
     func image(for url: URL) -> UIImage? {
         if let cachedImage = cache.object(forKey: url as NSURL) {
@@ -9948,17 +10243,17 @@ final class FlagImageCache {
         cache.setObject(diskImage, forKey: url as NSURL)
         return diskImage
     }
-    
+
     @MainActor
     func loadImage(from url: URL) async throws -> UIImage {
         if let cachedImage = image(for: url) {
             return cachedImage
         }
-        
+
         if let task = loadingTasks[url] {
             return try await task.value
         }
-        
+
         let task = Task.detached(priority: .utility) {
             var request = URLRequest(url: url)
             request.cachePolicy = .returnCacheDataElseLoad
@@ -9969,7 +10264,7 @@ final class FlagImageCache {
             }
             return image
         }
-        
+
         loadingTasks[url] = task
         do {
             let loadedImage = try await task.value
@@ -9982,7 +10277,7 @@ final class FlagImageCache {
             throw error
         }
     }
-    
+
     private func diskURL(for url: URL) -> URL {
         let encoded = Data(url.absoluteString.utf8)
             .base64EncodedString()
@@ -9991,12 +10286,12 @@ final class FlagImageCache {
             .replacingOccurrences(of: "=", with: "")
         return diskCacheDirectory.appendingPathComponent(encoded).appendingPathExtension("png")
     }
-    
+
     private func loadImageFromDisk(for url: URL) -> UIImage? {
         guard let data = try? Data(contentsOf: diskURL(for: url)) else { return nil }
         return UIImage(data: data)
     }
-    
+
     private func saveImageToDisk(_ image: UIImage, for url: URL) {
         guard let data = image.pngData() else { return }
         try? data.write(to: diskURL(for: url), options: [.atomic])
@@ -10007,7 +10302,7 @@ struct ActionButtonStyle: ButtonStyle {
     let color: Color
     var isProminent: Bool = true
     @Environment(\.isEnabled) private var isEnabled
-    
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline.weight(.semibold))
@@ -10025,14 +10320,14 @@ struct ActionButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed && isEnabled ? 0.985 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
-    
+
     private func backgroundColor(isPressed: Bool) -> Color {
         if !isEnabled {
             return Color(.tertiarySystemFill)
         }
         return isProminent ? color.opacity(isPressed ? 0.82 : 1) : color.opacity(isPressed ? 0.18 : 0.10)
     }
-    
+
     private var foregroundColor: Color {
         if !isEnabled {
             return .secondary
@@ -10069,6 +10364,13 @@ struct ScoreHistoryPoint: Identifiable {
     let score: Double
 }
 
+struct PracticeBalanceHistoryPoint: Identifiable {
+    var id: String { "\(date.timeIntervalSince1970)-\(known)-\(unknown)" }
+    let date: Date
+    let known: Int
+    let unknown: Int
+}
+
 struct MasteryScoreCard: View {
     let title: String
     let score: Double
@@ -10077,16 +10379,16 @@ struct MasteryScoreCard: View {
     let accentColor: Color
     let isComplete: Bool
     @Binding var isInfoPresented: Bool
-    
+
     private var scoreColor: Color {
         isComplete ? Color(red: 0.96, green: 0.68, blue: 0.10) : accentColor
     }
-    
+
     var body: some View {
         HStack(spacing: 16) {
             ScoreRingView(score: score, color: scoreColor)
                 .frame(width: 92, height: 92)
-            
+
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text(title)
@@ -10102,7 +10404,7 @@ struct MasteryScoreCard: View {
                         scoreInfoView
                     }
                 }
-                
+
                 Text(String(format: "%.1f", score * 100))
                     .font(.largeTitle.weight(.bold))
                     .foregroundStyle(scoreColor)
@@ -10116,11 +10418,11 @@ struct MasteryScoreCard: View {
         }
         .padding(.vertical, 8)
     }
-    
+
     var scoreInfoView: some View {
         let totalCards = rows.reduce(0) { $0 + $1.count }
         let weightedPoints = rows.reduce(0.0) { $0 + ($1.value * 100 * Double($1.count)) }
-        
+
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(systemName: "function")
@@ -10128,7 +10430,7 @@ struct MasteryScoreCard: View {
                     .foregroundStyle(scoreColor)
                     .frame(width: 32, height: 32)
                     .background(scoreColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(localized("Berechnung", "Calculation", language: language))
                         .font(.headline)
@@ -10138,12 +10440,12 @@ struct MasteryScoreCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            
+
             VStack(alignment: .leading, spacing: 8) {
                 Text(localized("Formel", "Formula", language: language))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                
+
                 Text("S x 100 + A x 80 + B x 60 + C x 40 + D x 20 + F x 0")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.primary)
@@ -10154,7 +10456,7 @@ struct MasteryScoreCard: View {
             }
             .padding(12)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            
+
             VStack(alignment: .leading, spacing: 7) {
                 ForEach(rows) { row in
                     HStack(spacing: 10) {
@@ -10163,24 +10465,24 @@ struct MasteryScoreCard: View {
                             .foregroundStyle(.white)
                             .frame(width: 24, height: 22)
                             .background(row.tier.color, in: RoundedRectangle(cornerRadius: 5))
-                        
+
                         Text(row.tier.description)
                             .font(.caption)
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.78)
-                        
+
                         Spacer(minLength: 8)
-                        
+
                         Text(String(format: "%.0f x %d", row.value * 100, row.count))
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            
+
             Divider()
-            
+
             HStack {
                 Text(localized("Ergebnis", "Result", language: language))
                     .font(.caption.weight(.semibold))
@@ -10202,7 +10504,7 @@ struct MasteryScoreCard: View {
 struct ScoreRingView: View {
     let score: Double
     let color: Color
-    
+
     var body: some View {
         ZStack {
             Circle()
@@ -10220,7 +10522,7 @@ struct TierValueBreakdownChart: View {
     let rows: [TierScoreRow]
     let totalCards: Int
     let language: AppLanguage
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(localized("Stufenwert-Verteilung", "Tier value distribution", language: language))
@@ -10262,7 +10564,7 @@ struct ScopeScoreBarChart: View {
     let rows: [ScopeScoreRow]
     let language: AppLanguage
     let accentColor: Color
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(localized("Score nach Bereich", "Score by scope", language: language))
@@ -10301,146 +10603,362 @@ struct ScopeScoreBarChart: View {
 }
 
 struct PracticeBalanceChart: View {
-    let rows: [PracticeBalanceRow]
+    let previousPoints: [PracticeBalanceHistoryPoint]
+    let points: [PracticeBalanceHistoryPoint]
+    let nextPoints: [PracticeBalanceHistoryPoint]
+    let range: PracticeBalanceRange
+    @Binding var pageOffset: Int
+    @Binding var selectedPoint: PracticeBalanceHistoryPoint?
     let language: AppLanguage
-    
-    var total: Int { rows.reduce(0) { $0 + $1.count } }
-    
+    @GestureState private var dragOffset: CGFloat = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(localized("Trainings-Balance", "Practice balance", language: language))
-                .font(.subheadline.weight(.semibold))
-            HStack(alignment: .bottom, spacing: 12) {
-                ForEach(rows) { row in
-                    VStack(spacing: 7) {
-                        GeometryReader { geometry in
-                            VStack {
-                                Spacer(minLength: 0)
-                                RoundedRectangle(cornerRadius: 7)
-                                    .fill(row.color.opacity(row.count == 0 ? 0.18 : 0.75))
-                                    .frame(height: max(8, geometry.size.height * barShare(for: row)))
+            HStack(alignment: .firstTextBaseline) {
+                Text(localized("Trainings-Balance", "Practice balance", language: language))
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                if let displayedPoint = selectedPoint ?? points.last {
+                    Text("\(displayedPoint.known) / \(displayedPoint.unknown)")
+                        .font(.caption.monospacedDigit().weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if points.isEmpty {
+                Text(localized("Noch keine Trainingsdaten.", "No practice data yet.", language: language))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 150, alignment: .center)
+            } else {
+                GeometryReader { geometry in
+                    let width = max(geometry.size.width, 1)
+                    ZStack {
+                        Canvas { context, size in
+                            let plotRect = CGRect(x: 34, y: 10, width: max(size.width - 46, 1), height: max(size.height - 44, 1))
+                            drawCountGrid(in: plotRect, context: &context)
+                        }
+                        .frame(height: 178)
+
+                        ZStack {
+                            balanceBand(points: previousPoints, size: geometry.size)
+                                .offset(x: -width)
+                            balanceBand(points: points, size: geometry.size)
+                            balanceBand(points: nextPoints, size: geometry.size)
+                                .offset(x: width)
+
+                            let plotRect = CGRect(x: 34, y: 10, width: max(width - 46, 1), height: max(geometry.size.height - 44, 1))
+                            ForEach(Array(zip(points.indices, xPositions(in: plotRect, count: points.count))), id: \.0) { index, x in
+                                Button {
+                                    selectedPoint = points[index]
+                                } label: {
+                                    Rectangle()
+                                        .fill(Color.clear)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .frame(width: max(plotRect.width / CGFloat(max(points.count, 1)), 30), height: 178)
+                                .position(x: x, y: 89)
+                                .accessibilityLabel(pointAccessibilityLabel(points[index]))
                             }
                         }
-                        .frame(height: 96)
-                        Text("\(row.count)")
-                            .font(.caption.monospacedDigit().weight(.bold))
-                        Text(row.title)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.72)
+                        .offset(x: dragOffset)
+                        .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.86), value: dragOffset)
+                        .clipped()
                     }
-                    .frame(maxWidth: .infinity)
+                }
+                .frame(height: 178)
+                .gesture(
+                    DragGesture(minimumDistance: 24)
+                        .updating($dragOffset) { value, state, _ in
+                            state = value.translation.width
+                        }
+                        .onEnded { value in
+                            updatePageOffset(with: value)
+                            selectedPoint = nil
+                        }
+                )
+
+                HStack(spacing: 10) {
+                    Label(localized("Gewusst", "Known", language: language), systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Label(localized("Nicht gewusst", "Not known", language: language), systemImage: "xmark.circle.fill")
+                        .foregroundStyle(.red)
+                }
+                .font(.caption2.weight(.semibold))
+
+                HStack {
+                    ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+                        Text(shouldShowDateLabel(at: index) ? label(for: point.date) : "")
+                            .font(.caption2)
+                            .foregroundStyle(point.id == selectedPoint?.id ? .primary : .secondary)
+                            .frame(maxWidth: .infinity)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                }
+
+                if let selectedPoint {
+                    Text("\(label(for: selectedPoint.date)): \(localized("Gewusst", "Known", language: language)) \(selectedPoint.known), \(localized("Nicht gewusst", "Not known", language: language)) \(selectedPoint.unknown)")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
         .padding(.vertical, 6)
     }
-    
-    func barShare(for row: PracticeBalanceRow) -> Double {
-        guard let maxCount = rows.map(\.count).max(), maxCount > 0 else { return 0 }
-        return Double(row.count) / Double(maxCount)
+
+    var maxValue: Int {
+        let allPoints = previousPoints + points + nextPoints
+        return max(allPoints.map(\.known).max() ?? 0, allPoints.map(\.unknown).max() ?? 0, 1)
+    }
+
+    func balanceBand(points bandPoints: [PracticeBalanceHistoryPoint], size: CGSize) -> some View {
+        Canvas { context, size in
+            let plotRect = CGRect(x: 34, y: 10, width: max(size.width - 46, 1), height: max(size.height - 44, 1))
+            let knownPoints = chartPoints(in: plotRect, values: bandPoints.map(\.known))
+            let unknownPoints = chartPoints(in: plotRect, values: bandPoints.map(\.unknown))
+
+            if knownPoints.count > 1 {
+                context.stroke(smoothPath(for: knownPoints), with: .color(.green), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+            }
+            if unknownPoints.count > 1 {
+                context.stroke(smoothPath(for: unknownPoints), with: .color(.red), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+            }
+
+            for (index, point) in knownPoints.enumerated() {
+                let isSelected = bandPoints[index].id == selectedPoint?.id
+                drawDot(at: point, color: isSelected ? .primary : .green, context: &context)
+            }
+            for (index, point) in unknownPoints.enumerated() {
+                let isSelected = bandPoints[index].id == selectedPoint?.id
+                drawDot(at: point, color: isSelected ? .primary : .red, context: &context)
+            }
+        }
+        .frame(width: size.width, height: 178)
+    }
+
+    func chartPoints(in rect: CGRect, values: [Int]) -> [CGPoint] {
+        let xs = xPositions(in: rect, count: values.count)
+        return values.enumerated().map { index, value in
+            CGPoint(
+                x: xs[index],
+                y: rect.maxY - rect.height * CGFloat(value) / CGFloat(maxValue)
+            )
+        }
+    }
+
+    func xPositions(in rect: CGRect, count: Int) -> [CGFloat] {
+        guard count > 1 else { return [rect.midX] }
+        return (0..<count).map { index in
+            rect.minX + rect.width * CGFloat(index) / CGFloat(count - 1)
+        }
+    }
+
+    func drawCountGrid(in rect: CGRect, context: inout GraphicsContext) {
+        for fraction in [0.0, 0.5, 1.0] {
+            let y = rect.maxY - rect.height * fraction
+            var gridPath = Path()
+            gridPath.move(to: CGPoint(x: rect.minX, y: y))
+            gridPath.addLine(to: CGPoint(x: rect.maxX, y: y))
+            context.stroke(gridPath, with: .color(.secondary.opacity(0.12)), lineWidth: 1)
+        }
+        var axisPath = Path()
+        axisPath.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        axisPath.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        axisPath.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        context.stroke(axisPath, with: .color(.secondary.opacity(0.24)), lineWidth: 1)
+        context.draw(Text("\(maxValue)").font(.caption2.monospacedDigit()).foregroundStyle(.secondary), at: CGPoint(x: 10, y: rect.minY - 6), anchor: .leading)
+        context.draw(Text("0").font(.caption2.monospacedDigit()).foregroundStyle(.secondary), at: CGPoint(x: 24, y: rect.maxY - 10), anchor: .leading)
+    }
+
+    func drawDot(at point: CGPoint, color: Color, context: inout GraphicsContext) {
+        let rect = CGRect(x: point.x - 3.5, y: point.y - 3.5, width: 7, height: 7)
+        context.fill(Path(ellipseIn: rect), with: .color(color))
+    }
+
+    func smoothPath(for points: [CGPoint]) -> Path {
+        var path = Path()
+        guard let first = points.first else { return path }
+        path.move(to: first)
+        guard points.count > 1 else {
+            path.addLine(to: first)
+            return path
+        }
+        for index in 1..<points.count {
+            let previous = points[index - 1]
+            let current = points[index]
+            let controlDistance = (current.x - previous.x) * 0.42
+            path.addCurve(
+                to: current,
+                control1: CGPoint(x: previous.x + controlDistance, y: previous.y),
+                control2: CGPoint(x: current.x - controlDistance, y: current.y)
+            )
+        }
+        return path
+    }
+
+    func label(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: language == .german ? "de_DE" : "en_US")
+        formatter.dateFormat = "dd.MM"
+        return formatter.string(from: date)
+    }
+
+    func pointAccessibilityLabel(_ point: PracticeBalanceHistoryPoint) -> String {
+        "\(label(for: point.date)), \(point.known), \(point.unknown)"
+    }
+
+    func shouldShowDateLabel(at index: Int) -> Bool {
+        guard points.count > 10 else { return true }
+        let stride = max(points.count / 6, 1)
+        return index == 0 || index == points.count - 1 || index.isMultiple(of: stride)
+    }
+
+    func updatePageOffset(with value: DragGesture.Value) {
+        let horizontal = abs(value.predictedEndTranslation.width) > abs(value.predictedEndTranslation.height)
+        guard horizontal, abs(value.predictedEndTranslation.width) > 80 else { return }
+        if value.predictedEndTranslation.width < 0 {
+            pageOffset -= 1
+        } else if pageOffset < 0 {
+            pageOffset += 1
+        }
     }
 }
 
 struct FlaggenbossScoreChart: View {
     let title: String
+    let previousPoints: [ScoreHistoryPoint]
     let points: [ScoreHistoryPoint]
+    let nextPoints: [ScoreHistoryPoint]
+    let range: PracticeBalanceRange
+    @Binding var pageOffset: Int
+    @Binding var selectedPoint: ScoreHistoryPoint?
     let language: AppLanguage
     let accentColor: Color
-    
+    @GestureState private var dragOffset: CGFloat = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                if let latest = points.last {
-                    Text(String(format: "%.1f", latest.score * 100))
+                if let displayedPoint = selectedPoint ?? points.last {
+                    Text(String(format: "%.1f", displayedPoint.score * 100))
                         .font(.caption.monospacedDigit().weight(.bold))
                         .foregroundStyle(accentColor)
                 }
             }
             if points.isEmpty {
-                Text(localized("Noch keine Änderungen im Verlauf.", "No score changes yet.", language: language))
+                Text(localized("Noch keine Verlaufspunkte.", "No history points yet.", language: language))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 150, alignment: .center)
             } else {
-                Canvas { context, size in
-                    let plotRect = CGRect(x: 34, y: 10, width: max(size.width - 46, 1), height: max(size.height - 44, 1))
-                    let axisColor = Color.secondary.opacity(0.24)
-                    let gridColor = Color.secondary.opacity(0.10)
-                    
-                    for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
-                        let y = plotRect.maxY - plotRect.height * fraction
-                        var gridPath = Path()
-                        gridPath.move(to: CGPoint(x: plotRect.minX, y: y))
-                        gridPath.addLine(to: CGPoint(x: plotRect.maxX, y: y))
-                        context.stroke(gridPath, with: .color(gridColor), lineWidth: 1)
+                GeometryReader { geometry in
+                    let width = max(geometry.size.width, 1)
+                    ZStack {
+                        Canvas { context, size in
+                            let plotRect = CGRect(x: 34, y: 10, width: max(size.width - 46, 1), height: max(size.height - 44, 1))
+                            drawScoreGrid(in: plotRect, context: &context)
+                        }
+                        .frame(height: 178)
+
+                        ZStack {
+                            scoreBand(points: previousPoints, size: geometry.size)
+                                .offset(x: -width)
+                            scoreBand(points: points, size: geometry.size)
+                            scoreBand(points: nextPoints, size: geometry.size)
+                                .offset(x: width)
+
+                            let plotRect = CGRect(x: 34, y: 10, width: max(width - 46, 1), height: max(geometry.size.height - 44, 1))
+                            ForEach(Array(zip(points.indices, chartPoints(in: plotRect, points: points))), id: \.0) { index, point in
+                                Button {
+                                    selectedPoint = points[index]
+                                } label: {
+                                    Circle()
+                                        .fill(Color.clear)
+                                        .contentShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .frame(width: 34, height: 34)
+                                .position(point)
+                                .accessibilityLabel(pointAccessibilityLabel(points[index]))
+                            }
+                        }
+                        .offset(x: dragOffset)
+                        .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.86), value: dragOffset)
+                        .clipped()
                     }
-                    
-                    var axisPath = Path()
-                    axisPath.move(to: CGPoint(x: plotRect.minX, y: plotRect.minY))
-                    axisPath.addLine(to: CGPoint(x: plotRect.minX, y: plotRect.maxY))
-                    axisPath.addLine(to: CGPoint(x: plotRect.maxX, y: plotRect.maxY))
-                    context.stroke(axisPath, with: .color(axisColor), lineWidth: 1)
-                    
-                    let resolvedPoints = chartPoints(in: plotRect)
-                    guard let first = resolvedPoints.first, let last = resolvedPoints.last else { return }
-                    let smoothLine = smoothPath(for: resolvedPoints)
-                    
-                    var areaPath = smoothLine
-                    areaPath.addLine(to: CGPoint(x: last.x, y: plotRect.maxY))
-                    areaPath.addLine(to: CGPoint(x: first.x, y: plotRect.maxY))
-                    areaPath.closeSubpath()
-                    context.fill(areaPath, with: .linearGradient(
-                        Gradient(colors: [accentColor.opacity(0.34), accentColor.opacity(0.07)]),
-                        startPoint: CGPoint(x: plotRect.midX, y: plotRect.minY),
-                        endPoint: CGPoint(x: plotRect.midX, y: plotRect.maxY)
-                    ))
-                    context.stroke(smoothLine, with: .color(accentColor), style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round))
-                    
-                    let latestRect = CGRect(x: last.x - 3, y: last.y - 3, width: 6, height: 6)
-                    context.fill(Path(ellipseIn: latestRect), with: .color(accentColor))
-                    
-                    drawAxisLabel("100", at: CGPoint(x: 13, y: plotRect.minY - 6), context: &context)
-                    drawAxisLabel("50", at: CGPoint(x: 18, y: plotRect.midY - 6), context: &context)
-                    drawAxisLabel("0", at: CGPoint(x: 24, y: plotRect.maxY - 10), context: &context)
                 }
                 .frame(height: 178)
-                
-                VStack(spacing: 6) {
-                    HStack {
-                        if let first = points.first {
-                            Text(dayLabel(for: first.date))
+                .gesture(
+                    DragGesture(minimumDistance: 24)
+                        .updating($dragOffset) { value, state, _ in
+                            state = value.translation.width
                         }
-                        Spacer()
-                        Text(localized("Änderungstage", "change days", language: language))
-                        Spacer()
-                        if let last = points.last {
-                            Text(dayLabel(for: last.date))
+                        .onEnded { value in
+                            updatePageOffset(with: value)
+                            selectedPoint = nil
                         }
-                    }
-                    if points.count > 2 {
-                        Text(points.map { dayLabel(for: $0.date) }.joined(separator: " · "))
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.72)
+                )
+
+                HStack {
+                    ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
+                        Text(shouldShowDateLabel(at: index) ? label(for: point.date) : "")
+                            .font(.caption2)
+                            .foregroundStyle(point.id == selectedPoint?.id ? accentColor : .secondary)
+                            .frame(maxWidth: .infinity)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+
+                if let selectedPoint {
+                    Text("\(label(for: selectedPoint.date)): \(String(format: "%.1f", selectedPoint.score * 100))")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(accentColor)
+                }
             }
         }
         .padding(.vertical, 6)
     }
-    
-    func chartPoints(in rect: CGRect) -> [CGPoint] {
-        guard !points.isEmpty else { return [] }
-        guard let firstDate = points.first?.date, let lastDate = points.last?.date else { return [] }
+
+    func scoreBand(points bandPoints: [ScoreHistoryPoint], size: CGSize) -> some View {
+        Canvas { context, size in
+            let plotRect = CGRect(x: 34, y: 10, width: max(size.width - 46, 1), height: max(size.height - 44, 1))
+            let resolvedPoints = chartPoints(in: plotRect, points: bandPoints)
+            guard let first = resolvedPoints.first, let last = resolvedPoints.last else { return }
+            let smoothLine = smoothPath(for: resolvedPoints)
+
+            var areaPath = smoothLine
+            areaPath.addLine(to: CGPoint(x: last.x, y: plotRect.maxY))
+            areaPath.addLine(to: CGPoint(x: first.x, y: plotRect.maxY))
+            areaPath.closeSubpath()
+            context.fill(areaPath, with: .linearGradient(
+                Gradient(colors: [accentColor.opacity(0.34), accentColor.opacity(0.07)]),
+                startPoint: CGPoint(x: plotRect.midX, y: plotRect.minY),
+                endPoint: CGPoint(x: plotRect.midX, y: plotRect.maxY)
+            ))
+            context.stroke(smoothLine, with: .color(accentColor), style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round))
+
+            for (index, point) in resolvedPoints.enumerated() {
+                let isSelected = bandPoints[index].id == selectedPoint?.id
+                let radius: CGFloat = isSelected ? 5 : 3.5
+                let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+                context.fill(Path(ellipseIn: rect), with: .color(isSelected ? .primary : accentColor))
+            }
+        }
+        .frame(width: size.width, height: 178)
+    }
+
+    func chartPoints(in rect: CGRect, points bandPoints: [ScoreHistoryPoint]) -> [CGPoint] {
+        guard !bandPoints.isEmpty else { return [] }
+        guard let firstDate = bandPoints.first?.date, let lastDate = bandPoints.last?.date else { return [] }
         let totalInterval = max(lastDate.timeIntervalSince(firstDate), 1)
-        return points.map { point in
-            let xFraction = points.count == 1 ? 1 : point.date.timeIntervalSince(firstDate) / totalInterval
+        return bandPoints.map { point in
+            let xFraction = bandPoints.count == 1 ? 1 : point.date.timeIntervalSince(firstDate) / totalInterval
             let yFraction = min(max(point.score, 0), 1)
             return CGPoint(
                 x: rect.minX + rect.width * xFraction,
@@ -10448,7 +10966,30 @@ struct FlaggenbossScoreChart: View {
             )
         }
     }
-    
+
+    func drawScoreGrid(in rect: CGRect, context: inout GraphicsContext) {
+        let axisColor = Color.secondary.opacity(0.24)
+        let gridColor = Color.secondary.opacity(0.10)
+
+        for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let y = rect.maxY - rect.height * fraction
+            var gridPath = Path()
+            gridPath.move(to: CGPoint(x: rect.minX, y: y))
+            gridPath.addLine(to: CGPoint(x: rect.maxX, y: y))
+            context.stroke(gridPath, with: .color(gridColor), lineWidth: 1)
+        }
+
+        var axisPath = Path()
+        axisPath.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        axisPath.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        axisPath.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        context.stroke(axisPath, with: .color(axisColor), lineWidth: 1)
+
+        drawAxisLabel("100", at: CGPoint(x: 13, y: rect.minY - 6), context: &context)
+        drawAxisLabel("50", at: CGPoint(x: 18, y: rect.midY - 6), context: &context)
+        drawAxisLabel("0", at: CGPoint(x: 24, y: rect.maxY - 10), context: &context)
+    }
+
     func smoothPath(for points: [CGPoint]) -> Path {
         var path = Path()
         guard let first = points.first else { return path }
@@ -10467,7 +11008,7 @@ struct FlaggenbossScoreChart: View {
         }
         return path
     }
-    
+
     func drawAxisLabel(_ text: String, at point: CGPoint, context: inout GraphicsContext) {
         context.draw(
             Text(text)
@@ -10477,12 +11018,32 @@ struct FlaggenbossScoreChart: View {
             anchor: .leading
         )
     }
-    
-    func dayLabel(for date: Date) -> String {
+
+    func label(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: language == .german ? "de_DE" : "en_US")
         formatter.dateFormat = "dd.MM"
         return formatter.string(from: date)
+    }
+
+    func pointAccessibilityLabel(_ point: ScoreHistoryPoint) -> String {
+        "\(label(for: point.date)), \(String(format: "%.1f", point.score * 100))"
+    }
+
+    func shouldShowDateLabel(at index: Int) -> Bool {
+        guard points.count > 10 else { return true }
+        let stride = max(points.count / 6, 1)
+        return index == 0 || index == points.count - 1 || index.isMultiple(of: stride)
+    }
+
+    func updatePageOffset(with value: DragGesture.Value) {
+        let horizontal = abs(value.predictedEndTranslation.width) > abs(value.predictedEndTranslation.height)
+        guard horizontal, abs(value.predictedEndTranslation.width) > 80 else { return }
+        if value.predictedEndTranslation.width < 0 {
+            pageOffset -= 1
+        } else if pageOffset < 0 {
+            pageOffset += 1
+        }
     }
 }
 
@@ -10492,7 +11053,7 @@ struct TierSummaryGrid: View {
     let subject: LearningSubject
     var selectedTier: MasteryTier? = nil
     var onSelectTier: ((MasteryTier) -> Void)? = nil
-    
+
     var body: some View {
         let counts = tierCounts()
         VStack(spacing: 10) {
@@ -10512,16 +11073,16 @@ struct TierSummaryGrid: View {
         }
         .padding(.vertical, 6)
     }
-    
+
     func tierCounts() -> [MasteryTier: Int] {
         Dictionary(uniqueKeysWithValues: MasteryTier.allCases.map { tier in
             (tier, countries.filter { profile.tier(for: $0, subject: subject) == tier }.count)
         })
     }
-    
+
     func tierBar(tier: MasteryTier, count: Int) -> some View {
         let percentage = countries.isEmpty ? 0 : Double(count) / Double(countries.count)
-        
+
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 Text(tier.rawValue)
@@ -10529,25 +11090,25 @@ struct TierSummaryGrid: View {
                     .foregroundStyle(.white)
                     .frame(width: 34, height: 30)
                     .background(tier.color, in: RoundedRectangle(cornerRadius: 7))
-                
+
                 Text("Stufe \(tier.rawValue)")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                
+
                 Spacer(minLength: 8)
-                
+
                 Text("\(count) · \(percent(percentage))")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-            
+
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 7)
                         .fill(tier.color.opacity(0.10 + percentage * 0.18))
-                    
+
                     RoundedRectangle(cornerRadius: 7)
                         .fill(tier.color.opacity(0.58))
                         .frame(width: max(geometry.size.width * percentage, count == 0 ? 0 : 8))
@@ -10567,7 +11128,7 @@ struct TierSummaryGrid: View {
                 .stroke(selectedTier == tier ? tier.color.opacity(0.45) : Color.clear, lineWidth: 1)
         )
     }
-    
+
     func percent(_ value: Double) -> String {
         String(format: "%.1f %%", value * 100)
     }
@@ -10579,17 +11140,17 @@ struct GlobeSceneView: UIViewRepresentable {
     let resetToken: Int
     let focusCountryCode: String?
     let onSelectCountryCode: (String) -> Void
-    
+
     func makeCoordinator() -> Coordinator {
         Coordinator(onSelectCountryCode: onSelectCountryCode)
     }
-    
+
     func makeUIView(context: Context) -> SCNView {
         let sceneView = SCNView()
         sceneView.backgroundColor = .clear
         sceneView.allowsCameraControl = false
         context.coordinator.configure(sceneView)
-        
+
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
         panGesture.maximumNumberOfTouches = 1
@@ -10600,14 +11161,14 @@ struct GlobeSceneView: UIViewRepresentable {
         sceneView.addGestureRecognizer(pinchGesture)
         return sceneView
     }
-    
+
     func updateUIView(_ sceneView: SCNView, context: Context) {
         context.coordinator.onSelectCountryCode = onSelectCountryCode
         context.coordinator.resetIfNeeded(token: resetToken)
         context.coordinator.updateCountries(countries, tiersByCountryCode: tiersByCountryCode)
         context.coordinator.focusIfNeeded(countryCode: focusCountryCode)
     }
-    
+
     final class Coordinator: NSObject {
         var onSelectCountryCode: (String) -> Void
         private weak var sceneView: SCNView?
@@ -10632,37 +11193,37 @@ struct GlobeSceneView: UIViewRepresentable {
         private var inertiaAngularVelocity: Float = 0
         private var lastPanTimestamp: TimeInterval?
         private var inertiaDisplayLink: CADisplayLink?
-        
+
         init(onSelectCountryCode: @escaping (String) -> Void) {
             self.onSelectCountryCode = onSelectCountryCode
         }
-        
+
         func configure(_ sceneView: SCNView) {
             self.sceneView = sceneView
-            
+
             let scene = SCNScene()
             sceneView.scene = scene
-            
+
             cameraNode.camera = SCNCamera()
             cameraNode.camera?.zNear = 0.01
             cameraNode.camera?.zFar = 100
             scene.rootNode.addChildNode(cameraNode)
             sceneView.pointOfView = cameraNode
             applyGermanyFocus(animated: false)
-            
+
             let ambientLight = SCNNode()
             ambientLight.light = SCNLight()
             ambientLight.light?.type = .ambient
             ambientLight.light?.intensity = 650
             scene.rootNode.addChildNode(ambientLight)
-            
+
             let directionalLight = SCNNode()
             directionalLight.light = SCNLight()
             directionalLight.light?.type = .directional
             directionalLight.light?.intensity = 500
             directionalLight.eulerAngles = SCNVector3(-0.6, 0.5, 0)
             scene.rootNode.addChildNode(directionalLight)
-            
+
             let sphere = SCNSphere(radius: 1)
             sphere.segmentCount = 160
             globeMaterial.diffuse.contents = UIColor(red: 0.03, green: 0.19, blue: 0.32, alpha: 1)
@@ -10670,15 +11231,15 @@ struct GlobeSceneView: UIViewRepresentable {
             globeMaterial.specular.contents = UIColor.white.withAlphaComponent(0.34)
             globeMaterial.shininess = 0.55
             sphere.firstMaterial = globeMaterial
-            
+
             globeNode.geometry = sphere
             globeNode.addChildNode(borderNode)
             globeNode.addChildNode(makeAtmosphereNode())
             scene.rootNode.addChildNode(globeNode)
-            
+
             loadBoundariesIfNeeded()
         }
-        
+
         func updateCountries(_ countries: [Country], tiersByCountryCode: [String: MasteryTier]) {
             let textureSignature = countries.map(\.code).joined(separator: ",") + "|" + tiersByCountryCode.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value.rawValue)" }.joined(separator: ",")
             guard textureSignature != currentTextureSignature else { return }
@@ -10687,7 +11248,7 @@ struct GlobeSceneView: UIViewRepresentable {
             currentTiersByCountryCode = tiersByCountryCode
             rebuildGlobeTexture()
         }
-        
+
         private func makeAtmosphereNode() -> SCNNode {
             let atmosphere = SCNSphere(radius: 1.018)
             atmosphere.segmentCount = 160
@@ -10701,7 +11262,7 @@ struct GlobeSceneView: UIViewRepresentable {
             atmosphere.firstMaterial = material
             return SCNNode(geometry: atmosphere)
         }
-        
+
         func resetIfNeeded(token: Int) {
             guard token != lastResetToken else { return }
             lastResetToken = token
@@ -10712,7 +11273,7 @@ struct GlobeSceneView: UIViewRepresentable {
             cameraDistance = 3.2
             applyGermanyFocus(animated: true)
         }
-        
+
         func focusIfNeeded(countryCode: String?) {
             guard let countryCode, countryCode != lastFocusedCountryCode else { return }
             guard let coordinate = globeMainlandFocusByCountryCode[countryCode] ?? boundaryData?.centroidsByCountryCode[countryCode] else {
@@ -10725,12 +11286,12 @@ struct GlobeSceneView: UIViewRepresentable {
             cameraDistance = min(cameraDistance, 3.0)
             applyFocus(on: coordinate, animated: true)
         }
-        
+
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let sceneView else { return }
             let location = gesture.location(in: sceneView)
             let hitResults = sceneView.hitTest(location, options: [:])
-            
+
             for result in hitResults {
                 guard result.node == globeNode || result.node.parent == globeNode else { continue }
                 let coordinate = coordinate(from: result.localCoordinates)
@@ -10740,12 +11301,12 @@ struct GlobeSceneView: UIViewRepresentable {
                 }
             }
         }
-        
+
         @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
             guard let view = gesture.view else { return }
             let timestamp = CACurrentMediaTime()
             let currentVector = trackballVector(for: gesture.location(in: view), in: view.bounds.size)
-            
+
             switch gesture.state {
             case .began:
                 stopInertia()
@@ -10770,7 +11331,7 @@ struct GlobeSceneView: UIViewRepresentable {
                 break
             }
         }
-        
+
         @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
             stopInertia()
             let scale = max(Float(gesture.scale), 0.01)
@@ -10778,20 +11339,20 @@ struct GlobeSceneView: UIViewRepresentable {
             cameraNode.position = SCNVector3(0, 0, cameraDistance)
             gesture.scale = 1
         }
-        
+
         @objc private func handleInertiaFrame(_ displayLink: CADisplayLink) {
             let deltaTime = Float(displayLink.targetTimestamp - displayLink.timestamp)
             let angle = inertiaAngularVelocity * deltaTime
             if angle > 0.0001 {
                 apply(rotation: simd_quatf(angle: angle, axis: inertiaAxis), animated: false)
             }
-            
+
             inertiaAngularVelocity *= pow(0.92, deltaTime * 60)
             if inertiaAngularVelocity < 0.08 {
                 stopInertia()
             }
         }
-        
+
         private func startInertiaIfNeeded() {
             guard inertiaAngularVelocity > 1.2 else { return }
             stopInertia()
@@ -10799,12 +11360,12 @@ struct GlobeSceneView: UIViewRepresentable {
             displayLink.add(to: .main, forMode: .common)
             inertiaDisplayLink = displayLink
         }
-        
+
         private func stopInertia() {
             inertiaDisplayLink?.invalidate()
             inertiaDisplayLink = nil
         }
-        
+
         private func apply(rotation: simd_quatf, animated: Bool) {
             globeOrientation = rotation * globeOrientation
             let changes = {
@@ -10820,7 +11381,7 @@ struct GlobeSceneView: UIViewRepresentable {
                 changes()
             }
         }
-        
+
         private func trackballVector(for point: CGPoint, in size: CGSize) -> SIMD3<Float> {
             let dimension = max(Float(min(size.width, size.height)), 1)
             var x = Float((2 * point.x - size.width) / CGFloat(dimension))
@@ -10834,7 +11395,7 @@ struct GlobeSceneView: UIViewRepresentable {
             }
             return SIMD3<Float>(x, y, sqrt(1 - lengthSquared))
         }
-        
+
         private func rotation(from start: SIMD3<Float>, to end: SIMD3<Float>) -> simd_quatf? {
             let axis = simd_cross(start, end)
             let axisLength = simd_length(axis)
@@ -10844,18 +11405,18 @@ struct GlobeSceneView: UIViewRepresentable {
             }
             return simd_quatf(angle: acos(clampedDot), axis: axis / axisLength)
         }
-        
+
         private func fallbackAxis(for vector: SIMD3<Float>) -> SIMD3<Float> {
             let reference = abs(vector.y) < 0.9 ? SIMD3<Float>(0, 1, 0) : SIMD3<Float>(1, 0, 0)
             return simd_normalize(simd_cross(vector, reference))
         }
-        
+
         private func applyGermanyFocus(animated: Bool) {
             let europeLatitude = Float(52.0 * .pi / 180)
             let europeLongitude = Float(12.0 * .pi / 180)
             applyFocus(latitude: europeLatitude, longitude: europeLongitude, animated: animated)
         }
-        
+
         private func applyFocus(on coordinate: GlobeCoordinate, animated: Bool) {
             applyFocus(
                 latitude: Float(coordinate.latitude * .pi / 180),
@@ -10863,19 +11424,19 @@ struct GlobeSceneView: UIViewRepresentable {
                 animated: animated
             )
         }
-        
+
         private func applyFocus(latitude: Float, longitude: Float, animated: Bool) {
             let longitudeRotation = simd_quatf(angle: -longitude, axis: SIMD3<Float>(0, 1, 0))
             let latitudeRotation = simd_quatf(angle: latitude, axis: SIMD3<Float>(1, 0, 0))
             globeOrientation = latitudeRotation * longitudeRotation
-            
+
             let changes = {
                 self.globeNode.simdOrientation = self.globeOrientation
                 self.cameraNode.position = SCNVector3(0, 0, self.cameraDistance)
                 self.cameraNode.eulerAngles = SCNVector3Zero
                 self.sceneView?.pointOfView = self.cameraNode
             }
-            
+
             if animated {
                 SCNTransaction.begin()
                 SCNTransaction.animationDuration = 0.32
@@ -10886,11 +11447,11 @@ struct GlobeSceneView: UIViewRepresentable {
                 changes()
             }
         }
-        
+
         private func loadBoundariesIfNeeded() {
             guard !didStartLoadingBoundaries else { return }
             didStartLoadingBoundaries = true
-            
+
             if let cachedData = GlobeBoundaryCache.data, GlobeBoundaryCache.source == globeBoundarySource {
                 boundaryData = cachedData
                 rebuildGlobeTexture()
@@ -10898,9 +11459,9 @@ struct GlobeSceneView: UIViewRepresentable {
                 focusIfNeeded(countryCode: pendingFocusCountryCode)
                 return
             }
-            
+
             guard let url = URL(string: globeBoundaryURLString) else { return }
-            
+
             URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
                 guard let self, let data, let boundaryData = GlobeBoundaryData.parse(data: data) else { return }
                 DispatchQueue.main.async {
@@ -10913,16 +11474,16 @@ struct GlobeSceneView: UIViewRepresentable {
                 }
             }.resume()
         }
-        
+
         private func rebuildBoundaries() {
             borderNode.childNodes.forEach { $0.removeFromParentNode() }
             guard let boundaryData else { return }
-            
+
             let borderMaterial = SCNMaterial()
             borderMaterial.diffuse.contents = UIColor.white.withAlphaComponent(0.78)
             borderMaterial.emission.contents = UIColor.white.withAlphaComponent(0.28)
             borderMaterial.lightingModel = .constant
-            
+
             for ring in boundaryData.rings {
                 guard ring.count > 1 else { continue }
                 let vertices = ring.map { position(for: $0, radius: 1.006) }
@@ -10938,31 +11499,31 @@ struct GlobeSceneView: UIViewRepresentable {
                 borderNode.addChildNode(SCNNode(geometry: geometry))
             }
         }
-        
+
         private func rebuildGlobeTexture() {
             guard let boundaryData else { return }
             let size = CGSize(width: 4096, height: 2048)
             let renderer = UIGraphicsImageRenderer(size: size)
-            
+
             let image = renderer.image { context in
                 UIColor(red: 0.03, green: 0.19, blue: 0.32, alpha: 1).setFill()
                 context.fill(CGRect(origin: .zero, size: size))
-                
+
                 for country in currentCountries {
                     guard let countryRings = boundaryData.ringsByCountryCode[country.code] else { continue }
                     let tier = currentTiersByCountryCode[country.code] ?? .f
                     tier.globeUIColor.setFill()
-                    
+
                     for ring in countryRings {
                         let path = texturePath(for: ring, in: size)
                         path.fill()
                     }
                 }
             }
-            
+
             globeMaterial.diffuse.contents = image
         }
-        
+
         private func texturePath(for ring: [GlobeCoordinate], in size: CGSize) -> UIBezierPath {
             let path = UIBezierPath()
             for (index, coordinate) in ring.enumerated() {
@@ -10976,13 +11537,13 @@ struct GlobeSceneView: UIViewRepresentable {
             path.close()
             return path
         }
-        
+
         private func texturePoint(for coordinate: GlobeCoordinate, in size: CGSize) -> CGPoint {
             let x = (coordinate.longitude + 180) / 360 * size.width
             let y = (90 - coordinate.latitude) / 180 * size.height
             return CGPoint(x: x, y: y)
         }
-        
+
         private func position(for coordinate: GlobeCoordinate, radius: Double) -> SCNVector3 {
             let latitude = coordinate.latitude * .pi / 180
             let longitude = coordinate.longitude * .pi / 180
@@ -10991,7 +11552,7 @@ struct GlobeSceneView: UIViewRepresentable {
             let z = radius * cos(latitude) * cos(longitude)
             return SCNVector3(Float(x), Float(y), Float(z))
         }
-        
+
         private func coordinate(from position: SCNVector3) -> GlobeCoordinate {
             let x = Double(position.x)
             let y = Double(position.y)
@@ -11001,26 +11562,26 @@ struct GlobeSceneView: UIViewRepresentable {
             let longitude = atan2(x, z) * 180 / .pi
             return GlobeCoordinate(latitude: latitude, longitude: longitude)
         }
-        
+
         private func countryCode(containing coordinate: GlobeCoordinate) -> String? {
             guard let boundaryData else { return nil }
             let availableCodes = Set(currentCountries.map(\.code))
-            
+
             for countryCode in availableCodes {
                 guard let rings = boundaryData.ringsByCountryCode[countryCode] else { continue }
                 if rings.contains(where: { ringContains(coordinate, ring: $0) }) {
                     return countryCode
                 }
             }
-            
+
             return nil
         }
-        
+
         private func ringContains(_ coordinate: GlobeCoordinate, ring: [GlobeCoordinate]) -> Bool {
             guard ring.count > 2 else { return false }
             var isInside = false
             var previous = ring[ring.count - 1]
-            
+
             for current in ring {
                 let crossesLatitude = (current.latitude > coordinate.latitude) != (previous.latitude > coordinate.latitude)
                 if crossesLatitude {
@@ -11031,7 +11592,7 @@ struct GlobeSceneView: UIViewRepresentable {
                 }
                 previous = current
             }
-            
+
             return isInside
         }
     }
@@ -11067,7 +11628,7 @@ private struct GlobeBoundaryData {
     let rings: [[GlobeCoordinate]]
     let ringsByCountryCode: [String: [[GlobeCoordinate]]]
     let centroidsByCountryCode: [String: GlobeCoordinate]
-    
+
     static func parse(data: Data) -> GlobeBoundaryData? {
         guard
             let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -11075,16 +11636,16 @@ private struct GlobeBoundaryData {
         else {
             return nil
         }
-        
+
         var rings: [[GlobeCoordinate]] = []
         var ringsByCountryCode: [String: [[GlobeCoordinate]]] = [:]
         var centroidsByCountryCode: [String: GlobeCoordinate] = [:]
-        
+
         for feature in features {
             guard let geometry = feature["geometry"] as? [String: Any] else { continue }
             let featureRings = parseRings(from: geometry)
             rings.append(contentsOf: featureRings)
-            
+
             if
                 let properties = feature["properties"] as? [String: Any],
                 let countryCode = normalizedCountryCode(from: properties),
@@ -11094,33 +11655,33 @@ private struct GlobeBoundaryData {
                 centroidsByCountryCode[countryCode] = centroid
             }
         }
-        
+
         return GlobeBoundaryData(rings: rings, ringsByCountryCode: ringsByCountryCode, centroidsByCountryCode: centroidsByCountryCode)
     }
-    
+
     private static func parseRings(from geometry: [String: Any]) -> [[GlobeCoordinate]] {
         guard let type = geometry["type"] as? String else { return [] }
-        
+
         if type == "Polygon", let polygons = geometry["coordinates"] as? [[[Double]]] {
             return polygons.map { parseRing($0) }.filter { !$0.isEmpty }
         }
-        
+
         if type == "MultiPolygon", let multiPolygons = geometry["coordinates"] as? [[[[Double]]]] {
             return multiPolygons.flatMap { polygon in
                 polygon.map { parseRing($0) }.filter { !$0.isEmpty }
             }
         }
-        
+
         return []
     }
-    
+
     private static func parseRing(_ rawRing: [[Double]]) -> [GlobeCoordinate] {
         rawRing.compactMap { pair in
             guard pair.count >= 2 else { return nil }
             return GlobeCoordinate(latitude: pair[1], longitude: pair[0])
         }
     }
-    
+
     static func centroid(from rings: [[GlobeCoordinate]]) -> GlobeCoordinate? {
         let allCoordinates = rings.flatMap { $0 }
         guard !allCoordinates.isEmpty else { return nil }
@@ -11128,7 +11689,7 @@ private struct GlobeBoundaryData {
         let longitude = allCoordinates.reduce(0) { $0 + $1.longitude } / Double(allCoordinates.count)
         return GlobeCoordinate(latitude: latitude, longitude: longitude)
     }
-    
+
     private static func normalizedCountryCode(from properties: [String: Any]) -> String? {
         let codeCandidates = [
             properties["ISO_A2"] as? String,
@@ -11147,7 +11708,7 @@ private struct GlobeBoundaryData {
             properties["SOV_A3"] as? String,
             properties["sov_a3"] as? String
         ].compactMap { $0?.uppercased() }
-        
+
         if let rawCode = codeCandidates.first(where: { !$0.isEmpty && $0 != "-99" }) {
             switch rawCode {
             case "XK", "XKX": return "XK"
@@ -11166,7 +11727,7 @@ private struct GlobeBoundaryData {
                 if rawCode.count == 2 { return rawCode }
             }
         }
-        
+
         let nameCandidates = [
             properties["NAME"] as? String,
             properties["name"] as? String,
@@ -11175,7 +11736,7 @@ private struct GlobeBoundaryData {
             properties["ADMIN"] as? String,
             properties["admin"] as? String
         ].compactMap { $0?.lowercased() }
-        
+
         if nameCandidates.contains(where: { $0.contains("united kingdom") || $0 == "england" || $0 == "scotland" || $0 == "wales" || $0.contains("northern ireland") }) { return "GB" }
         if nameCandidates.contains(where: { $0.contains("france") }) { return "FR" }
         if nameCandidates.contains(where: { $0.contains("norway") }) { return "NO" }
@@ -11187,7 +11748,7 @@ private struct GlobeBoundaryData {
         if nameCandidates.contains(where: { $0.contains("south ossetia") }) { return "OS" }
         if nameCandidates.contains(where: { $0.contains("northern cyprus") || $0.contains("n. cyprus") }) { return "NC" }
         if nameCandidates.contains(where: { $0.contains("somaliland") }) { return "SLD" }
-        
+
         return nil
     }
 }
@@ -11209,7 +11770,7 @@ struct OnlinePlayerStatsRow: View {
     let rank: Int
     let stats: OnlinePlayerStats
     let language: AppLanguage
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -11224,7 +11785,7 @@ struct OnlinePlayerStatsRow: View {
                     .font(.headline)
                     .foregroundStyle(.green)
             }
-            
+
             HStack(spacing: 10) {
                 Text(localized("Geübt: \(stats.totalPracticed)", "Practiced: \(stats.totalPracticed)", language: language))
                 Text(localized("Gewusst: \(stats.known)", "Known: \(stats.known)", language: language))
@@ -11232,14 +11793,14 @@ struct OnlinePlayerStatsRow: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            
+
             Text("S \(stats.tierS) · A \(stats.tierA) · B \(stats.tierB) · C \(stats.tierC) · D \(stats.tierD) · F \(stats.tierF)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
     }
-    
+
     func percent(_ value: Double) -> String {
         String(format: "%.1f %%", value * 100)
     }
@@ -11250,7 +11811,7 @@ struct LeagueLeaderboardRow: View {
     let player: OnlinePlayerStats
     let isCurrentPlayer: Bool
     let language: AppLanguage
-    
+
     var body: some View {
         HStack(spacing: 10) {
             Text("\(rank)")
@@ -11258,7 +11819,7 @@ struct LeagueLeaderboardRow: View {
                 .foregroundStyle(rank <= 3 ? .white : (isCurrentPlayer ? .green : .secondary))
                 .frame(width: 30, height: 28)
                 .background(rank <= 3 ? rankAccentColor : Color.clear, in: RoundedRectangle(cornerRadius: 7))
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(player.displayName)
                     .font(.subheadline.weight(.semibold))
@@ -11267,9 +11828,9 @@ struct LeagueLeaderboardRow: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
+
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(player.leagueBestScore)")
                     .font(.subheadline.monospacedDigit().weight(.bold))
@@ -11287,7 +11848,7 @@ struct LeagueLeaderboardRow: View {
                 .stroke(rankAccentColor.opacity(rank <= 3 ? 0.35 : 0), lineWidth: 1)
         )
     }
-    
+
     var rankAccentColor: Color {
         switch rank {
         case 1: return Color(red: 0.95, green: 0.66, blue: 0.12)
@@ -11301,7 +11862,7 @@ struct LeagueLeaderboardRow: View {
 struct AchievementPopup: View {
     let item: AchievementItem
     let language: AppLanguage
-    
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "trophy.fill")
@@ -11309,7 +11870,7 @@ struct AchievementPopup: View {
                 .foregroundStyle(item.tint)
                 .frame(width: 30, height: 30)
                 .background(item.tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(localized("Achievement erreicht", "Achievement unlocked", language: language))
                     .font(.caption.weight(.semibold))
@@ -11324,7 +11885,7 @@ struct AchievementPopup: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            
+
             Spacer(minLength: 8)
         }
         .padding(.horizontal, 12)
@@ -11344,7 +11905,7 @@ struct AchievementRow: View {
     var achievedAt: Date? = nil
     var globalUnlockCount: Int? = nil
     var globalPlayerCount: Int? = nil
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: item.isUnlocked ? "checkmark.seal.fill" : item.iconName)
@@ -11352,7 +11913,7 @@ struct AchievementRow: View {
                 .foregroundStyle(item.isUnlocked ? item.tint : .secondary)
                 .frame(width: 34, height: 34)
                 .background((item.isUnlocked ? item.tint : Color.secondary).opacity(0.14), in: RoundedRectangle(cornerRadius: 9))
-            
+
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(item.title)
@@ -11362,11 +11923,11 @@ struct AchievementRow: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(item.isUnlocked ? item.tint : .secondary)
                 }
-                
+
                 Text(item.description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                
+
                 if item.isUnlocked, let achievedAt {
                     Label(
                         localized("Erreicht: \(achievementDateText(achievedAt))", "Unlocked: \(achievementDateText(achievedAt))", language: language),
@@ -11375,7 +11936,7 @@ struct AchievementRow: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(item.tint)
                 }
-                
+
                 if let globalUnlockCount, let globalPlayerCount, globalPlayerCount > 0 {
                     Label(
                         localized("Weltweit: \(globalUnlockPercent(globalUnlockCount, globalPlayerCount))", "Worldwide: \(globalUnlockPercent(globalUnlockCount, globalPlayerCount))", language: language),
@@ -11384,7 +11945,7 @@ struct AchievementRow: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                 }
-                
+
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 4)
@@ -11400,12 +11961,12 @@ struct AchievementRow: View {
         .padding(.vertical, 6)
         .opacity(item.isUnlocked ? 1 : 0.72)
     }
-    
+
     func globalUnlockPercent(_ count: Int, _ total: Int) -> String {
         guard total > 0 else { return "0 %" }
         return String(format: "%.0f %%", min(max(Double(count) / Double(total), 0), 1) * 100)
     }
-    
+
     func achievementDateText(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: language == .german ? "de_DE" : "en_US")
@@ -11418,7 +11979,7 @@ struct AchievementRow: View {
 struct StatRow: View {
     let title: String
     let value: String
-    
+
     var body: some View {
         HStack {
             Text(title)
@@ -11433,7 +11994,7 @@ struct CompactStatTile: View {
     let title: String
     let value: String
     let subtitle: String
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
@@ -11466,12 +12027,12 @@ struct FreeTierCountryRow: View {
     let subject: LearningSubject
     let capital: String
     let accentColor: Color
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 FlagImage(country: country, width: 32, height: 22)
-                
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(localizedCountryName(country, language: language))
                         .font(.headline)
@@ -11481,15 +12042,15 @@ struct FreeTierCountryRow: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Text(localized("Stufe \(stats.tier.rawValue)", "Level \(stats.tier.rawValue)", language: language))
 
                     .font(.headline)
                     .foregroundStyle(stats.tier.color)
             }
-            
+
             ZStack(alignment: .leading) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(subject == .capitals ? localized("Hauptstadt gesehen: \(stats.cardReviews)", "Capital seen: \(stats.cardReviews)", language: language) : localized("Gesehen: \(stats.cardReviews)", "Seen: \(stats.cardReviews)", language: language))
@@ -11500,7 +12061,7 @@ struct FreeTierCountryRow: View {
                 .foregroundStyle(.secondary)
                 .blur(radius: 4)
                 .opacity(0.48)
-                
+
                 Label(localized("Details", "Details", language: language), systemImage: "lock.fill")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(accentColor)
@@ -11517,7 +12078,7 @@ struct STierHistorySparkline: View {
     let values: [Int]
     let maxValue: Int
     let accentColor: Color
-    
+
     var body: some View {
         Canvas { context, size in
             let samples = values.isEmpty ? [0] : values
@@ -11529,7 +12090,7 @@ struct STierHistorySparkline: View {
                 let y = size.height - (normalized * max(size.height - 4, 1)) - 2
                 return CGPoint(x: x, y: y)
             }
-            
+
             var fillPath = Path()
             fillPath.move(to: CGPoint(x: 0, y: size.height))
             for point in points {
@@ -11538,7 +12099,7 @@ struct STierHistorySparkline: View {
             fillPath.addLine(to: CGPoint(x: size.width, y: size.height))
             fillPath.closeSubpath()
             context.fill(fillPath, with: .color(accentColor.opacity(0.12)))
-            
+
             var linePath = Path()
             if let first = points.first {
                 linePath.move(to: first)
@@ -11561,12 +12122,12 @@ struct SLevelBar: View {
     let value: Int
     let total: Int
     let accentColor: Color
-    
+
     var progress: Double {
         guard total > 0 else { return 0 }
         return min(max(Double(value) / Double(total), 0), 1)
     }
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
@@ -11587,12 +12148,12 @@ struct ComparisonStatRow: View {
     let otherValue: String
     let otherName: String
     let language: AppLanguage
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-            
+
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(localized("Du", "You", language: language))
@@ -11602,7 +12163,7 @@ struct ComparisonStatRow: View {
                         .font(.headline)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                
+
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(otherName)
                         .font(.caption2.weight(.semibold))
@@ -11621,21 +12182,21 @@ struct ComparisonStatRow: View {
 struct TierHistoryView: View {
     let stats: CountryStats
     let language: AppLanguage
-    
+
     private let tierOrder: [MasteryTier] = [.s, .a, .b, .c, .d, .f]
-    
+
     var visibleHistory: [TierHistoryEntry] {
         let storedHistory = stats.tierHistory ?? []
         let history = storedHistory.isEmpty ? [TierHistoryEntry(date: stats.lastPracticedAt ?? Date(), tier: stats.tier)] : storedHistory
         return Array(oneEntryPerDay(from: history).suffix(10))
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(localized("Verlauf", "History", language: language))
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
-            
+
             Canvas { context, size in
                 let leftPadding: CGFloat = 26
                 let rightPadding: CGFloat = 6
@@ -11644,19 +12205,19 @@ struct TierHistoryView: View {
                 let graphWidth = max(size.width - leftPadding - rightPadding, 1)
                 let graphHeight = max(size.height - topPadding - bottomPadding, 1)
                 let entries = visibleHistory
-                
+
                 for (index, tier) in tierOrder.enumerated() {
                     let y = yPosition(for: tier, top: topPadding, height: graphHeight)
                     var gridPath = Path()
                     gridPath.move(to: CGPoint(x: leftPadding, y: y))
                     gridPath.addLine(to: CGPoint(x: size.width - rightPadding, y: y))
                     context.stroke(gridPath, with: .color(.secondary.opacity(0.16)), lineWidth: 1)
-                    
+
                     let label = Text(tier.rawValue)
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(tier.color)
                     context.draw(label, at: CGPoint(x: 9, y: y), anchor: .center)
-                    
+
                     if index == tierOrder.count - 1 {
                         var axisPath = Path()
                         axisPath.move(to: CGPoint(x: leftPadding, y: topPadding))
@@ -11665,14 +12226,14 @@ struct TierHistoryView: View {
                         context.stroke(axisPath, with: .color(.secondary.opacity(0.32)), lineWidth: 1)
                     }
                 }
-                
+
                 let points = entries.enumerated().map { index, entry in
                     CGPoint(
                         x: xPosition(for: index, count: entries.count, left: leftPadding, width: graphWidth),
                         y: yPosition(for: entry.tier, top: topPadding, height: graphHeight)
                     )
                 }
-                
+
                 if points.count > 1 {
                     var linePath = Path()
                     linePath.move(to: points[0])
@@ -11681,12 +12242,12 @@ struct TierHistoryView: View {
                     }
                     context.stroke(linePath, with: .color(.primary.opacity(0.72)), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 }
-                
+
                 for (index, entry) in entries.enumerated() {
                     let point = points[index]
                     let rect = CGRect(x: point.x - 4, y: point.y - 4, width: 8, height: 8)
                     context.fill(Path(ellipseIn: rect), with: .color(entry.tier.color))
-                    
+
                     if index == 0 || index == entries.count - 1 || entries.count <= 4 {
                         let dateLabel = Text(shortDate(entry.date))
                             .font(.system(size: 8, weight: .medium))
@@ -11700,35 +12261,35 @@ struct TierHistoryView: View {
         }
         .padding(.top, 2)
     }
-    
+
     func xPosition(for index: Int, count: Int, left: CGFloat, width: CGFloat) -> CGFloat {
         guard count > 1 else { return left + width / 2 }
         return left + width * CGFloat(index) / CGFloat(count - 1)
     }
-    
+
     func yPosition(for tier: MasteryTier, top: CGFloat, height: CGFloat) -> CGFloat {
         let index = tierOrder.firstIndex(of: tier) ?? tierOrder.count - 1
         return top + height * CGFloat(index) / CGFloat(max(tierOrder.count - 1, 1))
     }
-    
+
     func shortDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = language == .german ? Locale(identifier: "de_DE") : Locale(identifier: "en_US")
         formatter.dateFormat = "d.M."
         return formatter.string(from: date)
     }
-    
+
     func oneEntryPerDay(from history: [TierHistoryEntry]) -> [TierHistoryEntry] {
         let calendar = Calendar.current
         let sortedHistory = history.sorted { $0.date < $1.date }
         var entriesByDay: [String: TierHistoryEntry] = [:]
-        
+
         for entry in sortedHistory {
             let components = calendar.dateComponents([.year, .month, .day], from: entry.date)
             let dayKey = "\(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)"
             entriesByDay[dayKey] = entry
         }
-        
+
         return entriesByDay.values.sorted { $0.date < $1.date }
     }
 }
@@ -11739,13 +12300,13 @@ struct CompactCountryStatsRow: View {
     let language: AppLanguage
     let subject: LearningSubject
     let capital: String
-    
+
     var hasBeenSeen: Bool { stats.cardReviews > 0 }
-    
+
     var body: some View {
         HStack(spacing: 10) {
             FlagImage(country: country, width: 34, height: 24)
-            
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(localizedCountryName(country, language: language))
                     .font(.headline)
@@ -11755,15 +12316,15 @@ struct CompactCountryStatsRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            
+
             Spacer()
-            
+
             Text(stats.tier.rawValue)
                 .font(.headline.weight(.bold))
                 .foregroundStyle(.white)
                 .frame(width: 30, height: 28)
                 .background(stats.tier.color, in: RoundedRectangle(cornerRadius: 7))
-            
+
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -11780,16 +12341,16 @@ struct CountryStatsRow: View {
     let subject: LearningSubject
     let capital: String
     var showsHeader: Bool = true
-    
+
     var hasBeenSeen: Bool { stats.cardReviews > 0 }
     var cardAccuracyText: String { hasBeenSeen ? percent(stats.cardAccuracy) : "-" }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if showsHeader {
                 HStack {
                     FlagImage(country: country, width: 32, height: 22)
-                    
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text(localizedCountryName(country, language: language))
                             .font(.headline)
@@ -11799,19 +12360,19 @@ struct CountryStatsRow: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    
+
                     Spacer()
-                    
+
                     Text(localized("Stufe \(stats.tier.rawValue)", "Level \(stats.tier.rawValue)", language: language))
                         .font(.headline)
                         .foregroundStyle(stats.tier.color)
                 }
-                
+
                 Text(localizedContinent(country.continent))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             VStack(alignment: .leading, spacing: 3) {
                 if subject == .capitals {
                     Text(localized("Hauptstadt gesehen: \(stats.cardReviews)", "Capital seen: \(stats.cardReviews)", language: language))
@@ -11829,13 +12390,13 @@ struct CountryStatsRow: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
-            
+
             TierHistoryView(stats: stats, language: language)
         }
         .padding(.vertical, 4)
         .opacity(hasBeenSeen ? 1 : 0.46)
     }
-    
+
     func localizedContinent(_ continent: String) -> String {
         switch continent {
         case "Afrika": return localized("Afrika", "Africa", language: language)
@@ -11847,7 +12408,7 @@ struct CountryStatsRow: View {
         default: return continent
         }
     }
-    
+
     func percent(_ value: Double) -> String {
         String(format: "%.1f %%", value * 100)
     }
