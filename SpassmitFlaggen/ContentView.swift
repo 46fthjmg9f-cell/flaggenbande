@@ -269,7 +269,7 @@ let allCountries: [Country] = [
     Country(code: "VC", name: "St. Vincent und die Grenadinen", continent: "Nordamerika"),
     Country(code: "SD", name: "Sudan", continent: "Afrika"),
     Country(code: "SR", name: "Suriname", continent: "Südamerika"),
-    Country(code: "SZ", name: "Swasiland", continent: "Afrika"),
+    Country(code: "SZ", name: "Eswatini (Swasiland)", continent: "Afrika"),
     Country(code: "SY", name: "Syrien", continent: "Asien"),
     Country(code: "ST", name: "São Tomé und Príncipe", continent: "Afrika"),
     Country(code: "ZA", name: "Südafrika", continent: "Afrika"),
@@ -466,13 +466,19 @@ func capitalPronunciation(for country: Country, capital: String) -> String {
 }
 
 enum Haptics {
+    private static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: "hapticsEnabled") as? Bool ?? true
+    }
+    
     static func tap(style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
+        guard isEnabled else { return }
         let generator = UIImpactFeedbackGenerator(style: style)
         generator.prepare()
         generator.impactOccurred()
     }
     
     static func notify(_ type: UINotificationFeedbackGenerator.FeedbackType) {
+        guard isEnabled else { return }
         let generator = UINotificationFeedbackGenerator()
         generator.prepare()
         generator.notificationOccurred(type)
@@ -1105,6 +1111,7 @@ struct OnlinePlayerStats: Identifiable {
     let leagueBestScore: Int
     let leagueAverageScore: Double
     let leagueAccuracy: Double
+    let bestLearningStreak: Int
     let updatedAt: Date
     
     var accuracy: Double {
@@ -1212,6 +1219,7 @@ enum OnlineStatsService {
         record["leagueBestScore"] = (profile.leagueStats?.bestScore ?? 0) as CKRecordValue
         record["leagueAverageScore"] = (profile.leagueStats?.averageScore ?? 0) as CKRecordValue
         record["leagueAccuracy"] = (profile.leagueStats?.accuracy ?? 0) as CKRecordValue
+        record["bestLearningStreak"] = (profile.bestLearningStreak ?? 0) as CKRecordValue
         record["tierS"] = (counts[.s] ?? 0) as CKRecordValue
         record["tierA"] = (counts[.a] ?? 0) as CKRecordValue
         record["tierB"] = (counts[.b] ?? 0) as CKRecordValue
@@ -1317,6 +1325,7 @@ enum OnlineStatsService {
         record["leagueBestScore"] = 1240 as CKRecordValue
         record["leagueAverageScore"] = 840.0 as CKRecordValue
         record["leagueAccuracy"] = 0.82 as CKRecordValue
+        record["bestLearningStreak"] = 14 as CKRecordValue
         record["tierS"] = (tierCounts[.s] ?? 0) as CKRecordValue
         record["tierA"] = (tierCounts[.a] ?? 0) as CKRecordValue
         record["tierB"] = (tierCounts[.b] ?? 0) as CKRecordValue
@@ -1607,6 +1616,7 @@ extension OnlinePlayerStats {
         leagueBestScore = (record["leagueBestScore"] as? NSNumber)?.intValue ?? 0
         leagueAverageScore = (record["leagueAverageScore"] as? NSNumber)?.doubleValue ?? 0
         leagueAccuracy = (record["leagueAccuracy"] as? NSNumber)?.doubleValue ?? 0
+        bestLearningStreak = (record["bestLearningStreak"] as? NSNumber)?.intValue ?? 0
         updatedAt = (record["updatedAt"] as? Date) ?? .distantPast
     }
     
@@ -1676,25 +1686,25 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
     func infoText(language: AppLanguage) -> String {
         switch self {
         case .games:
-            return localized("Alle Spielmodi an einem Ort: Üben, Showmaster, Partymodus und Flaggenrun.", "All game modes in one place: Practice, Showmaster, Party Mode, and Flag Run.", language: language)
+            return localized("Hier liegen alle aktiven Spielmodi. Üben ist für deinen Lernfortschritt, Showmaster für schnelles Abfragen, Partymodus für mehrere Personen an einem Handy und Flaggenrun für Punkte auf Zeit.", "All active game modes are here. Practice is for learning progress, Showmaster is for quick self-check rounds, Party Mode is for several people on one phone, and Flag Run is for timed scoring.", language: language)
         case .practice:
-            return localized("Trainiere Flaggen oder Hauptstädte mit Wischkarten. Rechts heißt gewusst, links heißt nicht gewusst; schwierige Karten kommen dadurch häufiger wieder.", "Train flags or capitals with swipe cards. Right means known, left means not known; difficult cards then appear more often.", language: language)
+            return localized("Trainiere Flaggen oder Hauptstädte mit Karten. Wische nach rechts, wenn du es wusstest, und nach links, wenn nicht. Die App passt daraus die Stufen an, fragt unsichere Länder häufiger ab und zählt deinen Fortschritt für Statistik und Achievements.", "Train flags or capitals with cards. Swipe right when you knew it and left when you did not. The app adjusts levels from that, repeats uncertain countries more often, and counts progress for statistics and achievements.", language: language)
         case .showmaster:
-            return localized("Spiele eine schnelle Kartenrunde zum Abfragen. Du siehst nacheinander Flaggen und entscheidest selbst, ob die Antwort gezählt wird.", "Play a quick quiz round. You see flags one after another and decide yourself whether the answer counts.", language: language)
+            return localized("Showmaster ist der schnelle Abfrage-Modus. Du bekommst eine feste Anzahl Karten, sagst die Antwort laut oder im Kopf und deckst danach auf. Dann markierst du selbst, ob es richtig war. Gut für kurze Tests, aber entspannter als Flaggenrun, weil kein Timer Druck macht.", "Showmaster is the fast self-check mode. You get a fixed number of cards, say the answer out loud or in your head, then reveal it. After that you mark whether it was correct. Good for quick tests, but calmer than Flag Run because there is no timer pressure.", language: language)
         case .miniWorldCup:
-            return localized("Party-Modus zum Handy-Weitergeben. Jede Person bekommt pro Runde Flaggen, braucht genug richtige Antworten und fliegt sonst aus dem Turnier.", "Party mode for passing the phone around. Each person gets flags per round, needs enough correct answers, and is otherwise eliminated from the tournament.", language: language)
+            return localized("Party-Modus für mehrere Spieler an einem Handy. Jede Person bekommt ihre Flaggen, danach wird weitergegeben. Wer zu wenig richtig hat, fliegt raus. Am Ende siehst du, wer in welcher Runde weiterkam oder ausgeschieden ist.", "Party mode for multiple players on one phone. Each person gets their flags, then passes the phone on. Whoever gets too few correct is eliminated. At the end you see who advanced or dropped out in each round.", language: language)
         case .league:
-            return localized("WIP: Zeitmodus für deinen besten Flaggenrun. Verbessere deinen Highscore und vergleiche ihn online.", "WIP: timed mode for your best Flag Run. Improve your high score and compare it online.", language: language)
+            return localized("Beta-Modus für deinen besten Flaggenrun. Du spielst gegen die Zeit, bekommst Punkte für richtige Antworten und mehr Punkte, wenn du schnell bist. Der beste Highscore kann online verglichen werden.", "Beta mode for your best Flag Run. You play against the clock, get points for correct answers, and more points when you are fast. Your best high score can be compared online.", language: language)
         case .statistics:
-            return localized("Zeigt Lernstände, Trefferquoten, Serien, Matchverläufe und welche Länder du sicher oder unsicher kannst.", "Shows mastery levels, accuracy, streaks, match history, and which countries are strong or weak for you.", language: language)
+            return localized("Hier siehst du deinen Lernstand kompakt: Stufen von F bis S, Trefferquoten, Streaks, Verläufe und einzelne Länder. So erkennst du schnell, was sicher sitzt und was wiederholt werden sollte.", "This shows your learning state compactly: F to S levels, accuracy, streaks, history, and individual countries. It helps you see what is solid and what should be repeated.", language: language)
         case .globe:
-            return localized("Erkunde deinen Fortschritt auf dem Globus. Farben zeigen Lernstufen, einzelne Länder öffnen Detailstatistiken.", "Explore your progress on the globe. Colors show mastery levels, and individual countries open detailed stats.", language: language)
+            return localized("Der Globus zeigt deinen Fortschritt räumlich. Farben stehen für die Lernstufen der Länder. Du kannst drehen, zoomen, Länder suchen und einzelne Länder antippen, um Details zu sehen.", "The globe shows your progress spatially. Colors represent country mastery levels. You can rotate, zoom, search for countries, and tap individual countries for details.", language: language)
         case .achievements:
-            return localized("Sammelt Erfolge für Üben, Showmaster und Spezialziele. Du siehst, was freigeschaltet ist und was als Nächstes fehlt.", "Collects achievements for practice, Showmaster, and special goals. You see what is unlocked and what is still missing.", language: language)
+            return localized("Achievements sammeln besondere Ziele aus Üben, Showmaster und Regionen. Du siehst pro Kategorie, wie viel geschafft ist, was bereits freigeschaltet wurde und welche Ziele als Nächstes erreichbar sind.", "Achievements collect special goals from Practice, Showmaster, and regions. You see per category how much is done, what is unlocked, and which goals are closest next.", language: language)
         case .friends:
-            return localized("Verwaltet Onlinefunktionen, Freundesvergleiche, Ranglisten und Cloud-Sync.", "Manages online features, friend comparisons, leaderboards, and cloud sync.", language: language)
+            return localized("Online bündelt Cloud-Sync, Bestenlisten und Vergleiche. Du kannst deinen Spitznamen nutzen, Highscores vergleichen und sehen, wie andere bei Flaggen oder Hauptstädten stehen.", "Online collects cloud sync, leaderboards, and comparisons. You can use your nickname, compare high scores, and see how others are doing with flags or capitals.", language: language)
         case .options:
-            return localized("Einstellungen für Sprache, Daten, Vollversion, Onlinefunktionen und Debug-Hilfen während der Entwicklung.", "Settings for language, data, full version, online features, and debug helpers during development.", language: language)
+            return localized("In den Optionen stellst du Sprache, Design, Vibration, Spitznamen, Daten und Vollversion ein. Debug-Hilfen sind nur für Entwicklung und Balancing gedacht.", "Options control language, design, haptics, nickname, data, and full version. Debug tools are only intended for development and balancing.", language: language)
         }
     }
 }
@@ -1758,6 +1768,7 @@ enum OnlineLeaderboardMetric {
     case week
     case flaggenrun
     case flaggenscore
+    case learningStreak
 }
 
 enum OnlineLeaderboardScope: String, CaseIterable, Identifiable {
@@ -2004,6 +2015,7 @@ struct ContentView: View {
     @AppStorage("didEnableOnlineByDefault") private var didEnableOnlineByDefault: Bool = false
     @AppStorage("debugToolsEnabled") private var debugToolsEnabled: Bool = false
     @AppStorage("fullVersionUnlocked") private var fullVersionUnlocked: Bool = false
+    @AppStorage("hapticsEnabled") private var hapticsEnabled: Bool = true
     @StateObject private var storeKit = StoreKitManager()
     @State private var appData: AppData = AppStorageService.load()
     @State private var onlineLeaderboard: [OnlinePlayerStats] = []
@@ -2137,6 +2149,8 @@ struct ContentView: View {
     @State private var isShowingStartupScreen: Bool = true
     @State private var selectedGlobeCountry: Country?
     @State private var globeResetToken: Int = 0
+    @State private var globeSearchText: String = ""
+    @State private var globeFocusCountryCode: String?
     @State private var tierDecayPopup: TierDecayPopup?
     @State private var selectedTierDecayChangeID: String?
     @State private var tierDecayShowsAllChanges: Bool = false
@@ -2627,6 +2641,16 @@ struct ContentView: View {
         }
     }
     
+    var scopedBestLearningStreakLeaderboard: [OnlinePlayerStats] {
+        let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
+        return source.sorted {
+            if $0.bestLearningStreak == $1.bestLearningStreak {
+                return $0.learnedThisWeek > $1.learnedThisWeek
+            }
+            return $0.bestLearningStreak > $1.bestLearningStreak
+        }
+    }
+    
     var friendFlaggenscoreLeaderboard: [OnlinePlayerStats] {
         friendLeaderboard.sorted {
             let firstScore = onlineFlaggenbossScore(for: $0)
@@ -3065,6 +3089,56 @@ struct ContentView: View {
         achievementItems.filter(\.isUnlocked).count
     }
     
+    var bossScoreTitle: String {
+        selectedSubject == .capitals ? L("Städteboss-Score", "City boss score") : L("Flaggenboss-Score", "Flaggenboss score")
+    }
+    
+    var bossTitle: String {
+        selectedSubject == .capitals ? L("Städteboss", "City boss") : L("Flaggenboss", "Flaggenboss")
+    }
+    
+    var runTitle: String {
+        selectedSubject == .capitals ? L("Städterun", "City Run") : L("Flaggenrun", "Flag Run")
+    }
+    
+    var runTitleWithBeta: String {
+        "\(runTitle) Beta"
+    }
+    
+    var runHighscoreTitle: String {
+        selectedSubject == .capitals ? L("Städterun Highscore", "City Run high score") : L("Flaggenrun Highscore", "Flag Run high score")
+    }
+    
+    func screenTitle(_ screen: AppScreen) -> String {
+        screen == .league ? runTitleWithBeta : screen.title(language: appLanguage)
+    }
+    
+    func screenInfoText(_ screen: AppScreen) -> String {
+        if screen == .games, selectedSubject == .capitals {
+            return L("Hier liegen alle aktiven Spielmodi. Üben ist für deinen Lernfortschritt, Showmaster für schnelles Abfragen, Partymodus für mehrere Personen an einem Handy und Städterun für Punkte auf Zeit.", "All active game modes are here. Practice is for learning progress, Showmaster is for quick self-check rounds, Party Mode is for several people on one phone, and City Run is for timed scoring.")
+        }
+        if screen == .league, selectedSubject == .capitals {
+            return L("Beta-Modus für deinen besten Städterun. Du siehst eine Flagge, gibst die passende Hauptstadt ein und bekommst automatisch Punkte, wenn die Eingabe nah genug erkannt wird. Schnelle richtige Antworten bringen mehr Punkte.", "Beta mode for your best City Run. You see a flag, type the matching capital, and automatically score when the input is close enough. Faster correct answers give more points.")
+        }
+        return screen.infoText(language: appLanguage)
+    }
+    
+    func achievementSectionTitle(_ title: String, items: [AchievementItem]) -> String {
+        "\(title) \(items.filter(\.isUnlocked).count)/\(items.count)"
+    }
+    
+    func achievementsSortedInsideCategory(_ items: [AchievementItem]) -> [AchievementItem] {
+        items.sorted { first, second in
+            if first.isUnlocked != second.isUnlocked {
+                return first.isUnlocked
+            }
+            if first.progress != second.progress {
+                return first.progress > second.progress
+            }
+            return first.title.localizedStandardCompare(second.title) == .orderedAscending
+        }
+    }
+    
     var activeAchievementIDs: Set<String> {
         Set(achievementItems.filter(\.isUnlocked).map(\.id))
     }
@@ -3240,7 +3314,7 @@ struct ContentView: View {
                     Image(systemName: screen.iconName)
                         .font(.title3)
                         .frame(width: 28)
-                    Text(screen.title(language: appLanguage))
+                    Text(screenTitle(screen))
                         .font(.title3.weight(.semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
@@ -3269,7 +3343,7 @@ struct ContentView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(L("Info zu \(screen.title(language: appLanguage))", "Info about \(screen.title(language: appLanguage))"))
+            .accessibilityLabel(L("Info zu \(screenTitle(screen))", "Info about \(screenTitle(screen))"))
         }
         .padding(.trailing, 6)
         .frame(maxWidth: .infinity)
@@ -3302,27 +3376,31 @@ struct ContentView: View {
     
     func menuInfoSheet(for screen: AppScreen) -> some View {
         NavigationStack {
-            VStack(spacing: 16) {
-                Image(systemName: screen.iconName)
-                    .font(.system(size: 44, weight: .bold))
-                    .foregroundStyle(tealAccentColor)
-                    .frame(width: 72, height: 72)
-                    .background(tealAccentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-                
-                Text(screen.title(language: appLanguage))
-                    .font(.title2.weight(.bold))
-                    .multilineTextAlignment(.center)
-                
-                Text(screen.infoText(language: appLanguage))
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                Spacer(minLength: 0)
+            ScrollView {
+                VStack(spacing: 12) {
+                    Image(systemName: screen.iconName)
+                        .font(.system(size: 30, weight: .bold))
+                        .foregroundStyle(tealAccentColor)
+                        .frame(width: 54, height: 54)
+                        .background(tealAccentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                    
+                    Text(screenTitle(screen))
+                        .font(.headline.weight(.bold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
+                    
+                    Text(screenInfoText(screen))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(18)
+                .frame(maxWidth: 380)
+                .frame(maxWidth: .infinity)
             }
-            .padding(22)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(appBackgroundGradient.ignoresSafeArea())
             .navigationTitle(L("Info", "Info"))
             .navigationBarTitleDisplayMode(.inline)
@@ -3334,7 +3412,7 @@ struct ContentView: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.height(310), .medium])
     }
     
     var practiceView: some View {
@@ -4570,9 +4648,9 @@ struct ContentView: View {
                         .background(tealAccentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
                     
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(L("\(unlockedAchievementCount) von \(achievementItems.count) erreicht", "\(unlockedAchievementCount) of \(achievementItems.count) unlocked"))
+                        Text("\(unlockedAchievementCount)/\(achievementItems.count)")
                             .font(.headline)
-                        Text(L("Üben und Showmaster werden getrennt gewertet.", "Practice and Showmaster are tracked separately."))
+                        Text(L("Erreichte Achievements", "Unlocked achievements"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -4591,8 +4669,8 @@ struct ContentView: View {
             
             switch achievementSortMode {
             case .category:
-                Section(L("Üben", "Practice")) {
-                    ForEach(practiceAchievementItems) { item in
+                Section(achievementSectionTitle(L("Üben", "Practice"), items: practiceAchievementItems)) {
+                    ForEach(achievementsSortedInsideCategory(practiceAchievementItems)) { item in
                         AchievementRow(
                             item: item,
                             language: appLanguage,
@@ -4603,8 +4681,8 @@ struct ContentView: View {
                     }
                 }
                 
-                Section(L("Regionen & Spezialsets", "Regions & special sets")) {
-                    ForEach(regionAchievementItems) { item in
+                Section(achievementSectionTitle(L("Regionen & Spezialsets", "Regions & special sets"), items: regionAchievementItems)) {
+                    ForEach(achievementsSortedInsideCategory(regionAchievementItems)) { item in
                         AchievementRow(
                             item: item,
                             language: appLanguage,
@@ -4615,8 +4693,8 @@ struct ContentView: View {
                     }
                 }
                 
-                Section("Showmaster") {
-                    ForEach(showmasterAchievementItems) { item in
+                Section(achievementSectionTitle("Showmaster", items: showmasterAchievementItems)) {
+                    ForEach(achievementsSortedInsideCategory(showmasterAchievementItems)) { item in
                         AchievementRow(
                             item: item,
                             language: appLanguage,
@@ -4676,12 +4754,14 @@ struct ContentView: View {
             }
             
             if isAllCountriesStatisticsScope {
-                Section(L("Flaggenboss", "Flaggenboss")) {
+                Section(bossTitle) {
                     MasteryScoreCard(
+                        title: bossScoreTitle,
                         score: masteryScore(in: availableCountries),
                         rows: tierScoreRows(in: availableCountries),
                         language: appLanguage,
                         accentColor: tealAccentColor,
+                        isComplete: activeProfileTierCount(.s) == availableCountries.count && !availableCountries.isEmpty,
                         isInfoPresented: $isMasteryScoreInfoExpanded
                     )
                 }
@@ -4736,7 +4816,7 @@ struct ContentView: View {
             .onTapGesture { dismissStatisticsSearchKeyboard() }
             
             if !fullVersionUnlocked {
-                Section(L("Flaggenboss-Stufen", "Flaggenboss levels")) {
+                Section(selectedSubject == .capitals ? L("Städteboss-Stufen", "City boss levels") : L("Flaggenboss-Stufen", "Flaggenboss levels")) {
                     TierSummaryGrid(profile: activeProfile, countries: availableCountries, subject: selectedSubject, selectedTier: selectedStatisticsTier) { tier in
                         dismissStatisticsSearchKeyboard()
                         Haptics.tap()
@@ -4746,7 +4826,7 @@ struct ContentView: View {
                 .onTapGesture { dismissStatisticsSearchKeyboard() }
                 
                 if let selectedStatisticsTier {
-                    Section("Flaggenboss-Stufe \(selectedStatisticsTier.rawValue)") {
+                    Section("\(bossTitle)-Stufe \(selectedStatisticsTier.rawValue)") {
                         ForEach(statisticsCountries(in: selectedStatisticsTier, from: availableCountries)) { country in
                             FreeTierCountryRow(
                                 country: country,
@@ -4776,6 +4856,7 @@ struct ContentView: View {
                     )
                     
                     FlaggenbossScoreChart(
+                        title: bossTitle,
                         points: flaggenbossPoints(in: availableCountries),
                         language: appLanguage,
                         accentColor: tealAccentColor
@@ -4794,6 +4875,7 @@ struct ContentView: View {
                                 language: appLanguage
                             )
                             FlaggenbossScoreChart(
+                                title: bossTitle,
                                 points: flaggenbossPoints(in: availableCountries),
                                 language: appLanguage,
                                 accentColor: tealAccentColor
@@ -4923,6 +5005,57 @@ struct ContentView: View {
         })
     }
     
+    func focusGlobeSearchResult() {
+        guard let country = bestGlobeSearchMatch(for: globeSearchText) else { return }
+        Haptics.tap()
+        focusGlobe(on: country)
+    }
+    
+    func focusGlobe(on country: Country) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            globeFocusCountryCode = country.code
+        }
+    }
+    
+    func bestGlobeSearchMatch(for query: String) -> Country? {
+        globeSearchMatches(for: query, minimumScore: 0.62).first?.country
+    }
+    
+    func globeSearchSuggestions(for query: String) -> [Country] {
+        globeSearchMatches(for: query, minimumScore: 0.38).prefix(5).map { $0.country }
+    }
+    
+    func globeSearchMatches(for query: String, minimumScore: Double) -> [(country: Country, score: Double)] {
+        let normalizedQuery = normalizedLeagueAnswer(query)
+        guard !normalizedQuery.isEmpty else { return [] }
+        
+        let ranked = globeCountries.compactMap { country -> (country: Country, score: Double)? in
+            let names = [
+                country.name,
+                countryEnglishNameByCode[country.code] ?? country.name,
+                country.code
+            ].map { normalizedLeagueAnswer($0) }
+            
+            let score = names.map { name -> Double in
+                if name == normalizedQuery { return 1 }
+                if name.hasPrefix(normalizedQuery) { return 0.92 }
+                if name.contains(normalizedQuery) { return 0.82 }
+                let distance = levenshteinDistance(normalizedQuery, name, maxDistance: max(2, normalizedQuery.count / 3))
+                let length = max(normalizedQuery.count, name.count, 1)
+                return max(0, 1 - Double(distance) / Double(length))
+            }.max() ?? 0
+            
+            return score >= minimumScore ? (country, score) : nil
+        }
+        
+        return ranked.sorted { first, second in
+            if first.score != second.score {
+                return first.score > second.score
+            }
+            return countryName(for: first.country).localizedStandardCompare(countryName(for: second.country)) == .orderedAscending
+        }
+    }
+    
     var globeView: some View {
         ZStack {
             appBackgroundGradient
@@ -4932,10 +5065,64 @@ struct ContentView: View {
                 VStack(spacing: 16) {
                     modeHeader(title: L("Globus", "Globe"), subtitle: "")
                     
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(.secondary)
+                            TextField(L("Land suchen", "Search country"), text: $globeSearchText)
+                                .textInputAutocapitalization(.words)
+                                .submitLabel(.search)
+                                .onSubmit {
+                                    focusGlobeSearchResult()
+                                }
+                            if !globeSearchText.isEmpty {
+                                Button {
+                                    globeSearchText = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        
+                        let suggestions = globeSearchSuggestions(for: globeSearchText)
+                        if !suggestions.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(suggestions) { country in
+                                        Button {
+                                            Haptics.tap()
+                                            globeSearchText = countryName(for: country)
+                                            focusGlobe(on: country)
+                                        } label: {
+                                            Text(countryName(for: country))
+                                                .font(.caption.weight(.semibold))
+                                                .lineLimit(1)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 7)
+                                                .background(tealAccentColor.opacity(0.12), in: Capsule())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.vertical, 1)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(.secondary.opacity(0.14), lineWidth: 1)
+                    )
+                    
                     GlobeSceneView(
                         countries: globeCountries,
                         tiersByCountryCode: globeTierByCountryCode,
                         resetToken: globeResetToken,
+                        focusCountryCode: globeFocusCountryCode,
                         onSelectCountryCode: { code in
                             selectedGlobeCountry = globeCountries.first { $0.code == code }
                             Haptics.tap()
@@ -5037,12 +5224,13 @@ struct ContentView: View {
                         .buttonStyle(.plain)
                         .popover(isPresented: $isShowingFriendInfo) {
                             Text(L("Dein angezeigter Name ist dein Game-Center-Name, außer du gibst dir in den Einstellungen einen Spitznamen, unter dem dich Freunde finden können.", "Your displayed name is your Game Center name unless you set a nickname in Settings that friends can use to find you."))
-                                .font(.caption)
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
+                                .lineSpacing(2)
                                 .lineLimit(nil)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .padding(16)
-                                .frame(width: 320, alignment: .leading)
+                                .padding(14)
+                                .frame(width: 280, alignment: .leading)
                                 .presentationCompactAdaptation(.popover)
                         }
                     }
@@ -5254,7 +5442,7 @@ struct ContentView: View {
         }
         
         if selectedOnlineScope == .friends {
-            Section(L("Flaggenboss Score", "Flaggenboss score")) {
+            Section(bossScoreTitle) {
                 if friendFlaggenscoreLeaderboard.isEmpty {
                     Text(L("Keine Freundes-Statistiken gefunden. Füge Freunde oben rechts hinzu oder warte, bis Freunde ihre Statistik hochgeladen haben.", "No friend stats found. Add friends from the top-right button or wait until friends have uploaded their stats."))
                         .font(.caption)
@@ -5276,7 +5464,13 @@ struct ContentView: View {
                 }
             }
             
-            Section(L("Flaggenrun Highscore", "Flag Run high score")) {
+            Section(L("Längste Lernstreak", "Longest learning streak")) {
+                ForEach(Array(scopedBestLearningStreakLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
+                    onlinePlayerRow(rank: index + 1, player: player, metric: .learningStreak)
+                }
+            }
+            
+            Section(runHighscoreTitle) {
                 ForEach(Array(scopedFlaggenrunLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
                     onlinePlayerRow(rank: index + 1, player: player, metric: .flaggenrun)
                 }
@@ -5358,7 +5552,9 @@ struct ContentView: View {
         case .flaggenrun:
             return L("Bester Run", "Best run")
         case .flaggenscore:
-            return L("Gleiche Berechnung wie Statistik", "Same calculation as statistics")
+            return bossTitle
+        case .learningStreak:
+            return L("10 Karten pro Tag", "10 cards per day")
         }
     }
     
@@ -5367,6 +5563,7 @@ struct ContentView: View {
         case .week: return "\(player.learnedThisWeek)"
         case .flaggenrun: return "\(player.leagueBestScore)"
         case .flaggenscore: return String(format: "%.1f", onlineFlaggenbossScore(for: player) * 100)
+        case .learningStreak: return "\(player.bestLearningStreak)"
         }
     }
     
@@ -5375,6 +5572,7 @@ struct ContentView: View {
         case .week: return selectedSubject == .capitals ? L("gewusst", "known") : L("gewusst", "known")
         case .flaggenrun: return L("Highscore", "high score")
         case .flaggenscore: return L("Boss", "boss")
+        case .learningStreak: return L("Tage", "days")
         }
     }
     
@@ -5498,7 +5696,8 @@ struct ContentView: View {
                         GlobeSceneView(
                             countries: availableCountries,
                             tiersByCountryCode: player.tiersByCountryCode,
-                            resetToken: globeResetToken
+                            resetToken: globeResetToken,
+                            focusCountryCode: nil
                         ) { countryCode in
                             selectedGlobeCountry = availableCountries.first { $0.code == countryCode }
                         }
@@ -5586,6 +5785,7 @@ struct ContentView: View {
                 countries: availableCountries,
                 tiersByCountryCode: tiersByCountryCode,
                 resetToken: globeResetToken,
+                focusCountryCode: nil,
                 onSelectCountryCode: { _ in }
             )
             .blur(radius: 6)
@@ -5630,10 +5830,11 @@ struct ContentView: View {
             content()
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineSpacing(2)
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(16)
-                .frame(width: 320, alignment: .leading)
+                .padding(14)
+                .frame(width: 280, alignment: .leading)
                 .presentationCompactAdaptation(.popover)
         }
     }
@@ -5775,9 +5976,32 @@ struct ContentView: View {
     }
     
     func tierDecayCountryTitle(for change: TierDecayChange) -> String {
-        let code = change.statsKey.replacingOccurrences(of: "capital_", with: "")
+        let code = normalizedCountryCode(fromStatsKey: change.statsKey)
         guard let country = allCountries.first(where: { $0.code == code }) else { return change.statsKey }
         return localizedCountryName(country, language: appLanguage)
+    }
+    
+    func normalizedCountryCode(fromStatsKey statsKey: String) -> String {
+        var key = statsKey
+            .replacingOccurrences(of: "capital_", with: "")
+            .replacingOccurrences(of: "country_", with: "")
+            .replacingOccurrences(of: "flag_", with: "")
+        
+        if let lastUnderscore = key.split(separator: "_").last {
+            key = String(lastUnderscore)
+        }
+        if let lastColon = key.split(separator: ":").last {
+            key = String(lastColon)
+        }
+        
+        let uppercasedKey = key.uppercased()
+        if allCountries.contains(where: { $0.code == uppercasedKey }) {
+            return uppercasedKey
+        }
+        
+        return allCountries.first { country in
+            uppercasedKey.hasSuffix(country.code)
+        }?.code ?? uppercasedKey
     }
     
     func tierDecaySubjectTitle(for change: TierDecayChange) -> String {
@@ -5791,7 +6015,7 @@ struct ContentView: View {
             
             ScrollView {
                 VStack(spacing: 16) {
-                    modeHeader(title: L("Flaggenrun Beta", "Flag Run Beta"), subtitle: L("Highscore auf Zeit", "Timed high score"))
+                    modeHeader(title: runTitleWithBeta, subtitle: L("Highscore auf Zeit", "Timed high score"))
                     
                     if leagueMatchActive {
                         leagueMatchCard
@@ -5806,7 +6030,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .navigationTitle(L("Flaggenrun Beta", "Flag Run Beta"))
+        .navigationTitle(runTitleWithBeta)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             if leagueMatchActive && leagueMatchPhase == .playing {
@@ -5838,7 +6062,7 @@ struct ContentView: View {
                     leagueShowsStartMenu = false
                 }
             } label: {
-                Label(L("Flaggenrun starten", "Start Flag Run"), systemImage: "trophy.circle.fill")
+                Label(L("\(runTitle) starten", "Start \(runTitle)"), systemImage: "trophy.circle.fill")
                     .font(.title3.weight(.bold))
                     .frame(maxWidth: .infinity, minHeight: 56)
             }
@@ -5878,7 +6102,7 @@ struct ContentView: View {
                 leagueMetricTile(title: L("Bestscore", "Best score"), value: "\(activeProfile.leagueStats?.bestScore ?? result.ownScore)")
             }
             
-            Text(L("\(result.correct) richtig · \(result.wrong) falsch · \(result.answerDetails?.count ?? result.totalAnswers) Flaggen", "\(result.correct) correct · \(result.wrong) wrong · \(result.answerDetails?.count ?? result.totalAnswers) flags"))
+            Text(selectedSubject == .capitals ? L("\(result.correct) richtig · \(result.wrong) falsch · \(result.answerDetails?.count ?? result.totalAnswers) Hauptstädte", "\(result.correct) correct · \(result.wrong) wrong · \(result.answerDetails?.count ?? result.totalAnswers) capitals") : L("\(result.correct) richtig · \(result.wrong) falsch · \(result.answerDetails?.count ?? result.totalAnswers) Flaggen", "\(result.correct) correct · \(result.wrong) wrong · \(result.answerDetails?.count ?? result.totalAnswers) flags"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             
@@ -5889,7 +6113,7 @@ struct ContentView: View {
                     leagueShowsStartMenu = true
                 }
             } label: {
-                Label(L("Zurück zu Flaggenrun", "Back to Flag Run"), systemImage: "list.bullet")
+                Label(L("Zurück zu \(runTitle)", "Back to \(runTitle)"), systemImage: "list.bullet")
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
             .buttonStyle(ActionButtonStyle(color: tealAccentColor))
@@ -5937,7 +6161,7 @@ struct ContentView: View {
         let stats = activeProfile.leagueStats ?? LeagueStats()
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label(L("Flaggenrun", "Flag Run"), systemImage: "bolt.trophy.fill")
+                Label(runTitle, systemImage: "bolt.trophy.fill")
                     .font(.headline)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
@@ -5988,7 +6212,7 @@ struct ContentView: View {
             }
             
             if matches.isEmpty {
-                Text(L("Noch keine Flaggenruns gespielt.", "No Flag Runs played yet."))
+                Text(selectedSubject == .capitals ? L("Noch keine Städteruns gespielt.", "No City Runs played yet.") : L("Noch keine Flaggenruns gespielt.", "No Flag Runs played yet."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
@@ -6006,7 +6230,7 @@ struct ContentView: View {
     var flaggenrunLeaderboardCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label(L("Globale Flaggenrun-Bestenliste", "Global Flag Run leaderboard"), systemImage: "globe.europe.africa.fill")
+                Label(selectedSubject == .capitals ? L("Globale Städterun-Bestenliste", "Global City Run leaderboard") : L("Globale Flaggenrun-Bestenliste", "Global Flag Run leaderboard"), systemImage: "globe.europe.africa.fill")
                     .font(.headline)
                 Spacer()
                 Button {
@@ -6138,7 +6362,7 @@ struct ContentView: View {
             .animation(.spring(response: 0.22, dampingFraction: 0.82), value: leagueAnswerFeedback)
             .animation(.easeOut(duration: 0.16), value: leagueInputIsLocked)
             
-            TextField(L("Name der Flagge", "Flag name"), text: $leagueAnswerText)
+            TextField(selectedSubject == .capitals ? L("Name der Hauptstadt", "Capital name") : L("Name der Flagge", "Flag name"), text: $leagueAnswerText)
                 .focused($isLeagueAnswerFocused)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
@@ -6205,7 +6429,7 @@ struct ContentView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(isCurrentCountry ? tealAccentColor : (match.isCertain ? .red : .orange))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(isCurrentCountry ? L("Erkannt: \(localizedCountryName(match.country, language: appLanguage))", "Recognized: \(localizedCountryName(match.country, language: appLanguage))") : L("Meintest du \(localizedCountryName(match.country, language: appLanguage))?", "Did you mean \(localizedCountryName(match.country, language: appLanguage))?"))
+                    Text(isCurrentCountry ? L("Erkannt: \(leagueExpectedAnswerName(for: match.country))", "Recognized: \(leagueExpectedAnswerName(for: match.country))") : L("Meintest du \(leagueExpectedAnswerName(for: match.country))?", "Did you mean \(leagueExpectedAnswerName(for: match.country))?"))
                         .font(.caption.weight(.semibold))
                     Text(match.isCertain ? (isCurrentCountry ? L("Wird automatisch richtig gewertet", "Will be marked correct automatically") : L("Wird automatisch falsch gewertet", "Will be marked wrong automatically")) : L("Weiter tippen oder Enter drücken", "Keep typing or press Return"))
                         .font(.caption2)
@@ -6215,7 +6439,7 @@ struct ContentView: View {
                 Image(systemName: "text.magnifyingglass")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
-                Text(L("Tippe den Ländernamen. Kleine Fehler sind okay.", "Type the country name. Small typos are okay."))
+                Text(selectedSubject == .capitals ? L("Tippe die Hauptstadt. Kleine Fehler sind okay.", "Type the capital. Small typos are okay.") : L("Tippe den Ländernamen. Kleine Fehler sind okay.", "Type the country name. Small typos are okay."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -6431,10 +6655,10 @@ struct ContentView: View {
         guard !answer.isEmpty || forcedCorrectness != nil else { return }
         let match = leagueAnswerMatch ?? bestLeagueAnswerMatch(for: leagueAnswerText)
         let isCorrect = forcedCorrectness ?? (match?.country == leagueCurrentCountry && (match?.isAcceptable == true || match?.isCertain == true))
-        let correctCountryName = localizedCountryName(leagueCurrentCountry, language: appLanguage)
+        let correctCountryName = leagueExpectedAnswerName(for: leagueCurrentCountry)
         let submittedAnswer = leagueAnswerText.trimmingCharacters(in: .whitespacesAndNewlines)
         let visibleSubmittedAnswer = submittedAnswer.isEmpty ? L("Weiß ich nicht", "I don't know") : submittedAnswer
-        let detectedCountryName = match.map { localizedCountryName($0.country, language: appLanguage) } ?? L("Keine eindeutige Erkennung", "No clear detection")
+        let detectedCountryName = match.map { leagueExpectedAnswerName(for: $0.country) } ?? L("Keine eindeutige Erkennung", "No clear detection")
         let responseTime = Date().timeIntervalSince(leagueCurrentQuestionStartedAt)
         let pointsAwarded = isCorrect ? leaguePointsForAnswer(responseTime: responseTime) : 0
         
@@ -6618,7 +6842,23 @@ struct ContentView: View {
         )
     }
     
+    func leagueExpectedAnswerName(for country: Country) -> String {
+        selectedSubject == .capitals ? capitalName(for: country) : localizedCountryName(country, language: appLanguage)
+    }
+    
     func leagueAnswerAliases(for country: Country) -> [(displayName: String, normalizedName: String)] {
+        if selectedSubject == .capitals {
+            let rawAliases = [
+                capitalName(for: country),
+                capitalPronunciationByCountryCode[country.code]
+            ].compactMap { $0 } + leagueCapitalExtraAliases(for: country)
+            
+            return Set(rawAliases).map { alias in
+                (displayName: alias, normalizedName: normalizedLeagueAnswer(alias))
+            }
+            .filter { !$0.normalizedName.isEmpty }
+        }
+        
         let rawAliases = [
             localizedCountryName(country, language: appLanguage),
             country.name,
@@ -6644,6 +6884,43 @@ struct ContentView: View {
             (displayName: alias, normalizedName: normalizedLeagueAnswer(alias))
         }
         .filter { !$0.normalizedName.isEmpty }
+    }
+    
+    func leagueCapitalExtraAliases(for country: Country) -> [String] {
+        switch country.code {
+        case "AT": return ["Vienna"]
+        case "BE": return ["Brussels"]
+        case "BG": return ["Sofia"]
+        case "BY": return ["Minsk"]
+        case "CH": return ["Berne"]
+        case "CN": return ["Beijing"]
+        case "CZ": return ["Prague"]
+        case "DK": return ["Copenhagen"]
+        case "EG": return ["Cairo"]
+        case "FI": return ["Helsinki"]
+        case "GB": return ["London"]
+        case "GR": return ["Athens"]
+        case "HU": return ["Budapest"]
+        case "IS": return ["Reykjavik"]
+        case "IT": return ["Rome"]
+        case "JP": return ["Tokyo"]
+        case "KP": return ["Pyongyang"]
+        case "NO": return ["Oslo"]
+        case "PL": return ["Warsaw"]
+        case "RO": return ["Bucharest"]
+        case "RU": return ["Moscow"]
+        case "SE": return ["Stockholm"]
+        case "TR": return ["Ankara"]
+        case "UA": return ["Kyiv", "Kiev"]
+        case "US": return ["Washington DC", "Washington D C", "Washington"]
+        case "MX": return ["Mexico City", "Mexiko City"]
+        case "VA": return ["Vatikanstadt", "Vatican City"]
+        case "ZA": return ["Pretoria", "Kapstadt", "Cape Town", "Bloemfontein"]
+        case "LK": return ["Colombo", "Sri Jayawardenepura"]
+        case "BO": return ["La Paz", "Sucre"]
+        case "NL": return ["Den Haag", "The Hague", "Amsterdam"]
+        default: return []
+        }
     }
     
     func leagueExtraAliases(for country: Country) -> [String] {
@@ -6672,7 +6949,7 @@ struct ContentView: View {
         case "PS": return ["Palestine"]
         case "RU": return ["Russian Federation"]
         case "ST": return ["Sao Tome", "São Tomé"]
-        case "SZ": return ["Eswatini"]
+        case "SZ": return ["Eswatini", "Swasiland", "Swaziland"]
         case "TL": return ["Timor Leste", "East Timor"]
         case "TR": return ["Turkey"]
         case "TZ": return ["Tanzania"]
@@ -6914,6 +7191,12 @@ struct ContentView: View {
                 }
             }
             
+            Section(L("Bedienung", "Controls")) {
+                Toggle(isOn: $hapticsEnabled) {
+                    Label(L("Vibration", "Haptics"), systemImage: "iphone.radiowaves.left.and.right")
+                }
+            }
+            
             Section(L("Online", "Online")) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
@@ -6992,14 +7275,14 @@ struct ContentView: View {
                         get: { activeProfile.leagueStats?.bestScore ?? 0 },
                         set: { debugSetFlaggenrunHighscore($0) }
                     ), in: 0...100000, step: 500) {
-                        Label("\(L("Flaggenrun-Highscore", "Flag Run high score")): \(activeProfile.leagueStats?.bestScore ?? 0)", systemImage: "chart.line.uptrend.xyaxis")
+                        Label("\(runHighscoreTitle): \(activeProfile.leagueStats?.bestScore ?? 0)", systemImage: "chart.line.uptrend.xyaxis")
                     }
                     
                     Button {
                         Haptics.tap()
                         debugResetLeagueStats()
                     } label: {
-                        Label(L("Flaggenrun-Stats zurücksetzen", "Reset Flag Run stats"), systemImage: "arrow.counterclockwise")
+                        Label(L("\(runTitle)-Stats zurücksetzen", "Reset \(runTitle) stats"), systemImage: "arrow.counterclockwise")
                     }
                     
                     Menu {
@@ -7472,11 +7755,11 @@ struct ContentView: View {
         if !didEnableOnlineByDefault {
             didEnableOnlineByDefault = true
         }
-        applyWeeklyTierDecay(showPopup: true)
         if !onlineFeaturesEnabled {
             disableOnlineRuntimeState()
         }
-        hideStartupScreenAfterDelay()
+        await hideStartupScreenAfterDelay()
+        applyWeeklyTierDecay(showPopup: true)
     }
     
     func ensureTrainerProfile() {
@@ -7726,13 +8009,13 @@ struct ContentView: View {
         }
     }
     
-    func hideStartupScreenAfterDelay() {
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.45))
-            withAnimation(.spring(response: 0.62, dampingFraction: 0.9)) {
-                isShowingStartupScreen = false
-            }
+    @MainActor
+    func hideStartupScreenAfterDelay() async {
+        try? await Task.sleep(for: .seconds(1.45))
+        withAnimation(.spring(response: 0.62, dampingFraction: 0.9)) {
+            isShowingStartupScreen = false
         }
+        try? await Task.sleep(for: .milliseconds(360))
     }
     
     @MainActor
@@ -9647,14 +9930,23 @@ final class FlagImageCache {
     
     private let cache = NSCache<NSURL, UIImage>()
     private var loadingTasks: [URL: Task<UIImage, Error>] = [:]
+    private let diskCacheDirectory: URL
     
     private init() {
         cache.countLimit = 220
+        let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        diskCacheDirectory = cachesDirectory.appendingPathComponent("FlagImageCache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: diskCacheDirectory, withIntermediateDirectories: true, attributes: nil)
     }
     
     @MainActor
     func image(for url: URL) -> UIImage? {
-        cache.object(forKey: url as NSURL)
+        if let cachedImage = cache.object(forKey: url as NSURL) {
+            return cachedImage
+        }
+        guard let diskImage = loadImageFromDisk(for: url) else { return nil }
+        cache.setObject(diskImage, forKey: url as NSURL)
+        return diskImage
     }
     
     @MainActor
@@ -9682,12 +9974,32 @@ final class FlagImageCache {
         do {
             let loadedImage = try await task.value
             cache.setObject(loadedImage, forKey: url as NSURL)
+            saveImageToDisk(loadedImage, for: url)
             loadingTasks[url] = nil
             return loadedImage
         } catch {
             loadingTasks[url] = nil
             throw error
         }
+    }
+    
+    private func diskURL(for url: URL) -> URL {
+        let encoded = Data(url.absoluteString.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
+        return diskCacheDirectory.appendingPathComponent(encoded).appendingPathExtension("png")
+    }
+    
+    private func loadImageFromDisk(for url: URL) -> UIImage? {
+        guard let data = try? Data(contentsOf: diskURL(for: url)) else { return nil }
+        return UIImage(data: data)
+    }
+    
+    private func saveImageToDisk(_ image: UIImage, for url: URL) {
+        guard let data = image.pngData() else { return }
+        try? data.write(to: diskURL(for: url), options: [.atomic])
     }
 }
 
@@ -9758,20 +10070,26 @@ struct ScoreHistoryPoint: Identifiable {
 }
 
 struct MasteryScoreCard: View {
+    let title: String
     let score: Double
     let rows: [TierScoreRow]
     let language: AppLanguage
     let accentColor: Color
+    let isComplete: Bool
     @Binding var isInfoPresented: Bool
+    
+    private var scoreColor: Color {
+        isComplete ? Color(red: 0.96, green: 0.68, blue: 0.10) : accentColor
+    }
     
     var body: some View {
         HStack(spacing: 16) {
-            ScoreRingView(score: score, color: accentColor)
+            ScoreRingView(score: score, color: scoreColor)
                 .frame(width: 92, height: 92)
             
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Text(localized("Flaggenboss-Score", "Flaggenboss score", language: language))
+                    Text(title)
                         .font(.headline)
                     Button {
                         isInfoPresented.toggle()
@@ -9787,7 +10105,12 @@ struct MasteryScoreCard: View {
                 
                 Text(String(format: "%.1f", score * 100))
                     .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(accentColor)
+                    .foregroundStyle(scoreColor)
+                if isComplete {
+                    Label(localized("Alles auf S", "All S-ranked", language: language), systemImage: "sparkles")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(scoreColor)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -9802,9 +10125,9 @@ struct MasteryScoreCard: View {
             HStack(spacing: 10) {
                 Image(systemName: "function")
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(accentColor)
+                    .foregroundStyle(scoreColor)
                     .frame(width: 32, height: 32)
-                    .background(accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .background(scoreColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(localized("Berechnung", "Calculation", language: language))
@@ -9827,7 +10150,7 @@ struct MasteryScoreCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text("/ \(max(totalCards, 1))")
                     .font(.caption2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(accentColor)
+                    .foregroundStyle(scoreColor)
             }
             .padding(12)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
@@ -9865,13 +10188,13 @@ struct MasteryScoreCard: View {
                 Spacer()
                 Text(String(format: "%.0f / %d = %.1f", weightedPoints, max(totalCards, 1), score * 100))
                     .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(accentColor)
+                    .foregroundStyle(scoreColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
             }
         }
         .padding(16)
-        .frame(width: 360, alignment: .leading)
+        .frame(minWidth: 280, idealWidth: 360, maxWidth: 420, alignment: .leading)
         .presentationCompactAdaptation(.popover)
     }
 }
@@ -10021,6 +10344,7 @@ struct PracticeBalanceChart: View {
 }
 
 struct FlaggenbossScoreChart: View {
+    let title: String
     let points: [ScoreHistoryPoint]
     let language: AppLanguage
     let accentColor: Color
@@ -10028,7 +10352,7 @@ struct FlaggenbossScoreChart: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Flaggenboss")
+                Text(title)
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 if let latest = points.last {
@@ -10253,6 +10577,7 @@ struct GlobeSceneView: UIViewRepresentable {
     let countries: [Country]
     let tiersByCountryCode: [String: MasteryTier]
     let resetToken: Int
+    let focusCountryCode: String?
     let onSelectCountryCode: (String) -> Void
     
     func makeCoordinator() -> Coordinator {
@@ -10280,6 +10605,7 @@ struct GlobeSceneView: UIViewRepresentable {
         context.coordinator.onSelectCountryCode = onSelectCountryCode
         context.coordinator.resetIfNeeded(token: resetToken)
         context.coordinator.updateCountries(countries, tiersByCountryCode: tiersByCountryCode)
+        context.coordinator.focusIfNeeded(countryCode: focusCountryCode)
     }
     
     final class Coordinator: NSObject {
@@ -10292,9 +10618,12 @@ struct GlobeSceneView: UIViewRepresentable {
         private var boundaryData: GlobeBoundaryData?
         private var currentCountries: [Country] = []
         private var currentTiersByCountryCode: [String: MasteryTier] = [:]
+        private var currentTextureSignature: String = ""
         private var didStartLoadingBoundaries = false
         private var cameraDistance: Float = 3.2
         private var lastResetToken: Int = 0
+        private var lastFocusedCountryCode: String?
+        private var pendingFocusCountryCode: String?
         private let minimumCameraDistance: Float = 1.65
         private let maximumCameraDistance: Float = 4.8
         private var globeOrientation = simd_quatf(angle: 0, axis: SIMD3<Float>(0, 1, 0))
@@ -10351,6 +10680,9 @@ struct GlobeSceneView: UIViewRepresentable {
         }
         
         func updateCountries(_ countries: [Country], tiersByCountryCode: [String: MasteryTier]) {
+            let textureSignature = countries.map(\.code).joined(separator: ",") + "|" + tiersByCountryCode.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value.rawValue)" }.joined(separator: ",")
+            guard textureSignature != currentTextureSignature else { return }
+            currentTextureSignature = textureSignature
             currentCountries = countries
             currentTiersByCountryCode = tiersByCountryCode
             rebuildGlobeTexture()
@@ -10373,11 +10705,25 @@ struct GlobeSceneView: UIViewRepresentable {
         func resetIfNeeded(token: Int) {
             guard token != lastResetToken else { return }
             lastResetToken = token
+            lastFocusedCountryCode = nil
             stopInertia()
             inertiaAngularVelocity = 0
             previousTrackballVector = nil
             cameraDistance = 3.2
             applyGermanyFocus(animated: true)
+        }
+        
+        func focusIfNeeded(countryCode: String?) {
+            guard let countryCode, countryCode != lastFocusedCountryCode else { return }
+            guard let coordinate = globeMainlandFocusByCountryCode[countryCode] ?? boundaryData?.centroidsByCountryCode[countryCode] else {
+                pendingFocusCountryCode = countryCode
+                return
+            }
+            pendingFocusCountryCode = nil
+            lastFocusedCountryCode = countryCode
+            stopInertia()
+            cameraDistance = min(cameraDistance, 3.0)
+            applyFocus(on: coordinate, animated: true)
         }
         
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -10507,8 +10853,20 @@ struct GlobeSceneView: UIViewRepresentable {
         private func applyGermanyFocus(animated: Bool) {
             let europeLatitude = Float(52.0 * .pi / 180)
             let europeLongitude = Float(12.0 * .pi / 180)
-            let longitudeRotation = simd_quatf(angle: -europeLongitude, axis: SIMD3<Float>(0, 1, 0))
-            let latitudeRotation = simd_quatf(angle: europeLatitude, axis: SIMD3<Float>(1, 0, 0))
+            applyFocus(latitude: europeLatitude, longitude: europeLongitude, animated: animated)
+        }
+        
+        private func applyFocus(on coordinate: GlobeCoordinate, animated: Bool) {
+            applyFocus(
+                latitude: Float(coordinate.latitude * .pi / 180),
+                longitude: Float(coordinate.longitude * .pi / 180),
+                animated: animated
+            )
+        }
+        
+        private func applyFocus(latitude: Float, longitude: Float, animated: Bool) {
+            let longitudeRotation = simd_quatf(angle: -longitude, axis: SIMD3<Float>(0, 1, 0))
+            let latitudeRotation = simd_quatf(angle: latitude, axis: SIMD3<Float>(1, 0, 0))
             globeOrientation = latitudeRotation * longitudeRotation
             
             let changes = {
@@ -10537,6 +10895,7 @@ struct GlobeSceneView: UIViewRepresentable {
                 boundaryData = cachedData
                 rebuildGlobeTexture()
                 rebuildBoundaries()
+                focusIfNeeded(countryCode: pendingFocusCountryCode)
                 return
             }
             
@@ -10550,6 +10909,7 @@ struct GlobeSceneView: UIViewRepresentable {
                     self.boundaryData = boundaryData
                     self.rebuildGlobeTexture()
                     self.rebuildBoundaries()
+                    self.focusIfNeeded(countryCode: self.pendingFocusCountryCode)
                 }
             }.resume()
         }
@@ -10679,6 +11039,19 @@ struct GlobeSceneView: UIViewRepresentable {
 
 private let globeBoundarySource = "ne_50m_admin_0_map_units"
 private let globeBoundaryURLString = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_map_units.geojson"
+private let globeMainlandFocusByCountryCode: [String: GlobeCoordinate] = [
+    "FR": GlobeCoordinate(latitude: 46.6, longitude: 2.4),
+    "GB": GlobeCoordinate(latitude: 54.6, longitude: -2.5),
+    "NL": GlobeCoordinate(latitude: 52.2, longitude: 5.3),
+    "DK": GlobeCoordinate(latitude: 56.1, longitude: 10.0),
+    "NO": GlobeCoordinate(latitude: 61.3, longitude: 8.2),
+    "ES": GlobeCoordinate(latitude: 40.3, longitude: -3.7),
+    "PT": GlobeCoordinate(latitude: 39.6, longitude: -8.0),
+    "US": GlobeCoordinate(latitude: 39.8, longitude: -98.6),
+    "CA": GlobeCoordinate(latitude: 56.1, longitude: -106.3),
+    "AU": GlobeCoordinate(latitude: -25.3, longitude: 134.8),
+    "NZ": GlobeCoordinate(latitude: -41.3, longitude: 174.8)
+]
 
 private enum GlobeBoundaryCache {
     static var source: String?
@@ -11112,6 +11485,7 @@ struct FreeTierCountryRow: View {
                 Spacer()
                 
                 Text(localized("Stufe \(stats.tier.rawValue)", "Level \(stats.tier.rawValue)", language: language))
+
                     .font(.headline)
                     .foregroundStyle(stats.tier.color)
             }
