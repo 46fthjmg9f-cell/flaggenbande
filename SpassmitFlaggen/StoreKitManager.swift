@@ -1,0 +1,109 @@
+import SwiftUI
+import Foundation
+import Combine
+import StoreKit
+
+@MainActor
+final class StoreKitManager: ObservableObject {
+    @Published private(set) var products: [Product] = []
+    @Published private(set) var purchasedFullVersion: Bool = false
+    @Published private(set) var isLoading: Bool = false
+    @Published var statusText: String?
+
+    private var updatesTask: Task<Void, Never>?
+
+    init() {}
+
+    deinit {
+        updatesTask?.cancel()
+    }
+
+    var fullVersionProduct: Product? {
+        products.first { $0.id == StoreProductID.fullVersion.rawValue }
+    }
+
+    var donationProducts: [Product] {
+        products
+            .filter { StoreProductID.donationIDs.contains($0.id) }
+            .sorted { $0.displayPrice < $1.displayPrice }
+    }
+
+    private func startObservingTransactionsIfNeeded() {
+        guard updatesTask == nil else { return }
+        updatesTask = Task { [weak self] in
+            for await result in StoreKit.Transaction.updates {
+                await self?.handleTransactionResult(result)
+            }
+        }
+    }
+
+    func loadProducts() async {
+        startObservingTransactionsIfNeeded()
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            products = try await Product.products(for: StoreProductID.allIDs)
+            await refreshEntitlements()
+            statusText = nil
+        } catch {
+            statusText = "Store konnte nicht geladen werden."
+        }
+    }
+
+    func purchase(_ product: Product) async {
+        startObservingTransactionsIfNeeded()
+        do {
+            let result = try await product.purchase()
+            switch result {
+            case .success(let verificationResult):
+                await handleTransactionResult(verificationResult)
+            case .pending:
+                statusText = "Kauf wartet auf Bestätigung."
+            case .userCancelled:
+                statusText = nil
+            @unknown default:
+                statusText = "Kauf konnte nicht abgeschlossen werden."
+            }
+        } catch {
+            statusText = "Kauf fehlgeschlagen."
+        }
+    }
+
+    func restorePurchases() async {
+        startObservingTransactionsIfNeeded()
+        do {
+            try await AppStore.sync()
+            await refreshEntitlements()
+            statusText = purchasedFullVersion ? "Vollversion wiederhergestellt." : "Keine Vollversion gefunden."
+        } catch {
+            statusText = "Wiederherstellen fehlgeschlagen."
+        }
+    }
+
+    func refreshEntitlements() async {
+        var hasFullVersion = false
+        for await result in StoreKit.Transaction.currentEntitlements {
+            guard case .verified(let transaction) = result else { continue }
+            if transaction.productID == StoreProductID.fullVersion.rawValue && transaction.revocationDate == nil {
+                hasFullVersion = true
+            }
+        }
+        purchasedFullVersion = hasFullVersion
+    }
+
+    private func handleTransactionResult(_ result: VerificationResult<StoreKit.Transaction>) async {
+        switch result {
+        case .verified(let transaction):
+            if transaction.productID == StoreProductID.fullVersion.rawValue {
+                purchasedFullVersion = transaction.revocationDate == nil
+                statusText = purchasedFullVersion ? "Vollversion freigeschaltet." : nil
+            } else if StoreProductID.donationIDs.contains(transaction.productID) {
+                statusText = "Danke für deine Unterstützung."
+            }
+            await transaction.finish()
+        case .unverified:
+            statusText = "Kauf konnte nicht verifiziert werden."
+        }
+    }
+}
