@@ -4,6 +4,7 @@ import Foundation
 extension ContentView {
     func onlineGlobeSheet(for player: OnlinePlayerStats) -> some View {
         NavigationStack {
+            let playerSubjectStats = player.stats(for: selectedSubject)
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
@@ -11,7 +12,7 @@ extension ContentView {
                             .font(.title2.bold())
                             .lineLimit(nil)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text(L("\(player.totalPracticed) gelernt · \(player.achievementCount) Achievements · Code \(player.friendCode)", "\(player.totalPracticed) learned · \(player.achievementCount) achievements · Code \(player.friendCode)"))
+                        Text(L("\(playerSubjectStats.totalPracticed) gelernt · \(player.achievementCount) Achievements · Code \(player.friendCode)", "\(playerSubjectStats.totalPracticed) learned · \(player.achievementCount) achievements · Code \(player.friendCode)"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(nil)
@@ -21,21 +22,14 @@ extension ContentView {
                 }
 
                 Section(L("Direkter Vergleich", "Direct comparison")) {
-                    ComparisonStatRow(title: L("Gelernt", "Learned"), ownValue: "\(activeProfileTotalPracticed)", otherValue: "\(player.totalPracticed)", otherName: player.displayName, language: appLanguage)
-                    ComparisonStatRow(title: L("Letzte 7 Tage", "Last 7 days"), ownValue: "\(activeProfile.practiceCardsInLastSevenDays(subject: selectedSubject))", otherValue: "\(player.learnedThisWeek)", otherName: player.displayName, language: appLanguage)
-                    ComparisonStatRow(title: L("Quote", "Rate"), ownValue: percentText(activeProfileCardAccuracy), otherValue: percentText(player.accuracy), otherName: player.displayName, language: appLanguage)
+                    ComparisonStatRow(title: L("Gelernt", "Learned"), ownValue: "\(activeProfileTotalPracticed)", otherValue: "\(playerSubjectStats.totalPracticed)", otherName: player.displayName, language: appLanguage)
+                    ComparisonStatRow(title: L("Letzte 7 Tage", "Last 7 days"), ownValue: "\(activeProfile.practiceCardsInLastSevenDays(subject: selectedSubject))", otherValue: "\(playerSubjectStats.learnedThisWeek)", otherName: player.displayName, language: appLanguage)
+                    ComparisonStatRow(title: L("Quote", "Rate"), ownValue: percentText(activeProfileCardAccuracy), otherValue: percentText(playerSubjectStats.accuracy), otherName: player.displayName, language: appLanguage)
                     ComparisonStatRow(title: L("Achievements", "Achievements"), ownValue: "\(unlockedAchievementCount)", otherValue: "\(player.achievementCount)", otherName: player.displayName, language: appLanguage)
-                    ComparisonStatRow(title: "S", ownValue: "\(activeProfileTierCount(.s)) (\(percent(activeProfileTierCount(.s), of: availableCountries.count)))", otherValue: "\(player.tierS) (\(percent(player.tierS, of: availableCountries.count)))", otherName: player.displayName, language: appLanguage)
-                    ComparisonStatRow(title: "A", ownValue: "\(activeProfileTierCount(.a))", otherValue: "\(player.tierA)", otherName: player.displayName, language: appLanguage)
+                    ComparisonStatRow(title: "S", ownValue: "\(activeProfileTierCount(.s)) (\(percent(activeProfileTierCount(.s), of: availableCountries.count)))", otherValue: "\(playerSubjectStats.tierS) (\(percent(playerSubjectStats.tierS, of: availableCountries.count)))", otherName: player.displayName, language: appLanguage)
+                    ComparisonStatRow(title: "A", ownValue: "\(activeProfileTierCount(.a))", otherValue: "\(playerSubjectStats.tierA)", otherName: player.displayName, language: appLanguage)
                 }
 
-                Section(L("S-Stufe Verlauf", "S level history")) {
-                    STierHistorySparkline(values: player.sTierHistory, maxValue: max(availableCountries.count, 1), accentColor: tealAccentColor)
-                        .frame(height: 72)
-                    Text(L("Zeigt, wie viele \(selectedSubject == .capitals ? "Hauptstädte" : "Flaggen") zuletzt auf S-Stufe waren.", "Shows how many \(selectedSubject == .capitals ? "capitals" : "flags") were recently on S level."))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
 
                 if let onlineProfile = player.profileSnapshot {
                     Section(L("Online-Verlauf", "Online history")) {
@@ -48,25 +42,42 @@ extension ContentView {
                         .onChange(of: selectedPracticeBalanceRange) { _, _ in
                             scoreHistoryPageOffset = 0
                             practiceBalancePageOffset = 0
+                            learnedHistoryPageOffset = 0
                             selectedScoreHistoryPoint = nil
                             selectedPracticeBalancePoint = nil
+                            selectedLearnedHistoryPoint = nil
                         }
 
                         PracticeBalanceChart(
-                            previousPoints: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: min(practiceBalancePageOffset + 1, 0)),
-                            points: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
-                            nextPoints: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - 1),
+                            title: selectedSubject == .capitals ? L("Gelernte Städte", "Learned cities") : L("Gelernte Flaggen", "Learned flags"),
+                            primaryLabel: L("Gelernt", "Learned"),
+                            showsUnknown: false,
+                            previousPoints: learnedPracticePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset - selectedPracticeBalanceRange.days),
+                            points: learnedPracticePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
+                            nextPoints: nextLearnedPracticePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
                             range: selectedPracticeBalanceRange,
+                            maxValue: learnedPracticeMaxValue(profile: onlineProfile),
+                            pageOffset: $learnedHistoryPageOffset,
+                            selectedPoint: $selectedLearnedHistoryPoint,
+                            language: appLanguage
+                        )
+
+                        PracticeBalanceChart(
+                            previousPoints: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - selectedPracticeBalanceRange.days),
+                            points: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                            nextPoints: nextPracticeBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                            range: selectedPracticeBalanceRange,
+                            maxValue: practiceBalanceMaxValue(profile: onlineProfile),
                             pageOffset: $practiceBalancePageOffset,
                             selectedPoint: $selectedPracticeBalancePoint,
                             language: appLanguage
                         )
 
                         FlaggenbossScoreChart(
-                            title: player.displayName,
-                            previousPoints: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: min(scoreHistoryPageOffset + 1, 0)),
+                            title: bossTitle,
+                            previousPoints: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - selectedPracticeBalanceRange.days),
                             points: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
-                            nextPoints: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - 1),
+                            nextPoints: nextFlaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
                             range: selectedPracticeBalanceRange,
                             pageOffset: $scoreHistoryPageOffset,
                             selectedPoint: $selectedScoreHistoryPoint,
@@ -80,7 +91,7 @@ extension ContentView {
                     Section(L("Globus", "Globe")) {
                         GlobeSceneView(
                             countries: availableCountries,
-                            tiersByCountryCode: player.tiersByCountryCode,
+                            tiersByCountryCode: playerSubjectStats.tiersByCountryCode,
                             resetToken: globeResetToken,
                             focusCountryCode: nil
                         ) { countryCode in
@@ -91,7 +102,7 @@ extension ContentView {
                     }
                 } else {
                     Section(L("Globus", "Globe")) {
-                        lockedGlobePreview(tiersByCountryCode: player.tiersByCountryCode)
+                        lockedGlobePreview(tiersByCountryCode: playerSubjectStats.tiersByCountryCode)
                     }
                 }
 
@@ -104,14 +115,45 @@ extension ContentView {
                     .padding(.vertical, 6)
                 }
 
-                Section(L("Achievements", "Achievements")) {
-                    ForEach(achievementsSortedByGlobalUnlocks(achievementItems(for: player))) { item in
-                        AchievementRow(
-                            item: item,
-                            language: appLanguage,
-                            globalUnlockCount: globalUnlockCount(for: item.id),
-                            globalPlayerCount: globalAchievementPlayerCount
-                        )
+                Section(L("Sortieren", "Sort")) {
+                    Picker(L("Sortieren", "Sort"), selection: $achievementSortMode) {
+                        ForEach(AchievementSortMode.allCases) { mode in
+                            Text(mode.title(language: appLanguage)).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                switch achievementSortMode {
+                case .category:
+                    Section(achievementSectionTitle(L("Üben", "Practice"), items: onlineAchievementItems(for: player, matching: practiceAchievementItems))) {
+                        ForEach(achievementsSortedInsideCategory(onlineAchievementItems(for: player, matching: practiceAchievementItems))) { item in
+                            onlineAchievementRow(item)
+                        }
+                    }
+
+                    Section(achievementSectionTitle(L("Regionen & Spezialsets", "Regions & special sets"), items: onlineAchievementItems(for: player, matching: regionAchievementItems))) {
+                        ForEach(achievementsSortedInsideCategory(onlineAchievementItems(for: player, matching: regionAchievementItems))) { item in
+                            onlineAchievementRow(item)
+                        }
+                    }
+
+                    Section(achievementSectionTitle("Showmaster", items: onlineAchievementItems(for: player, matching: showmasterAchievementItems))) {
+                        ForEach(achievementsSortedInsideCategory(onlineAchievementItems(for: player, matching: showmasterAchievementItems))) { item in
+                            onlineAchievementRow(item)
+                        }
+                    }
+                case .date:
+                    Section(L("Datum", "Date")) {
+                        ForEach(onlineAchievementsSortedByDate(for: player)) { item in
+                            onlineAchievementRow(item)
+                        }
+                    }
+                case .worldwide:
+                    Section(L("Weltweit", "Worldwide")) {
+                        ForEach(achievementsSortedByGlobalUnlocks(achievementItems(for: player))) { item in
+                            onlineAchievementRow(item)
+                        }
                     }
                 }
             }
@@ -130,13 +172,32 @@ extension ContentView {
     }
 
     func virtualProfile(for player: OnlinePlayerStats) -> UserProfile {
+        let subjectStats = player.stats(for: selectedSubject)
         var profile = UserProfile(id: UUID(), name: player.displayName, pin: "")
         for country in availableCountries {
             var stats = CountryStats()
-            stats.storedTier = player.tiersByCountryCode[country.code] ?? .f
+            stats.storedTier = subjectStats.tiersByCountryCode[country.code] ?? .f
             profile.byCountry[selectedSubject.statsKey(for: country)] = stats
         }
         return profile
+    }
+
+    func onlineAchievementItems(for player: OnlinePlayerStats, matching sourceItems: [AchievementItem]) -> [AchievementItem] {
+        let itemsByID = Dictionary(uniqueKeysWithValues: achievementItems(for: player).map { ($0.id, $0) })
+        return sourceItems.compactMap { itemsByID[$0.id] }
+    }
+
+    func onlineAchievementsSortedByDate(for player: OnlinePlayerStats) -> [AchievementItem] {
+        achievementsSortedInsideCategory(achievementItems(for: player))
+    }
+
+    func onlineAchievementRow(_ item: AchievementItem) -> some View {
+        AchievementRow(
+            item: item,
+            language: appLanguage,
+            globalUnlockCount: globalUnlockCount(for: item.id),
+            globalPlayerCount: globalAchievementPlayerCount
+        )
     }
 
     func fullVersionLockedView(feature: String) -> some View {

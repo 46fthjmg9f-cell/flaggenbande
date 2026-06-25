@@ -3,6 +3,8 @@ import Foundation
 import UIKit
 
 struct ContentView: View {
+    @Environment(\.dismiss) var dismiss
+
     // MARK: - Persisted Settings
 
     @AppStorage("onlinePlayerName") var onlinePlayerName: String = ""
@@ -50,8 +52,11 @@ struct ContentView: View {
     @State var isTierExplanationExpanded: Bool = false
     @State var isMasteryScoreInfoExpanded: Bool = false
     @State var isDisputedTerritoriesInfoExpanded: Bool = false
+    @State var statisticsGraphHintIsVisible: Bool = false
     @State var scoreHistoryPageOffset: Int = 0
     @State var selectedScoreHistoryPoint: ScoreHistoryPoint?
+    @State var learnedHistoryPageOffset: Int = 0
+    @State var selectedLearnedHistoryPoint: PracticeBalanceHistoryPoint?
     @State var selectedPracticeBalanceRange: PracticeBalanceRange = .lastWeek
     @State var practiceBalancePageOffset: Int = 0
     @State var selectedPracticeBalancePoint: PracticeBalanceHistoryPoint?
@@ -168,10 +173,11 @@ struct ContentView: View {
     @State var selectedMenuInfoScreen: AppScreen?
     @State var isShowingResetConfirmation: Bool = false
     @State var isShowingShowCancelConfirmation: Bool = false
+    @State var navigationPath: [AppScreen] = []
 
     var body: some View {
         ZStack {
-            NavigationStack {
+            NavigationStack(path: $navigationPath) {
                 startView
                     .navigationDestination(for: AppScreen.self) { screen in
                         switch screen {

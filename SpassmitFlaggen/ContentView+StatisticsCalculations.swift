@@ -121,6 +121,83 @@ extension ContentView {
         }
     }
 
+    func practiceBalanceMaxValue(profile: UserProfile? = nil) -> Int {
+        let sourceProfile = profile ?? activeProfile
+        let prefix = "\(selectedSubject.rawValue)|"
+        let knownMax = sourceProfile.practiceKnownCardsByDay?
+            .filter { $0.key.hasPrefix(prefix) }
+            .map(\.value)
+            .max() ?? 0
+        let unknownMax = sourceProfile.practiceUnknownCardsByDay?
+            .filter { $0.key.hasPrefix(prefix) }
+            .map(\.value)
+            .max() ?? 0
+        return max(knownMax, unknownMax, 1)
+    }
+
+    func learnedPracticeMaxValue(profile: UserProfile? = nil) -> Int {
+        let sourceProfile = profile ?? activeProfile
+        let prefix = "\(selectedSubject.rawValue)|"
+        return max(
+            sourceProfile.practiceKnownCardsByDay?
+                .filter { $0.key.hasPrefix(prefix) }
+                .map(\.value)
+                .max() ?? 0,
+            1
+        )
+    }
+
+    func learnedPracticePoints(profile: UserProfile? = nil, range: PracticeBalanceRange, pageOffset: Int) -> [PracticeBalanceHistoryPoint] {
+        let sourceProfile = profile ?? activeProfile
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        return analysisPeriodStarts(range: range, pageOffset: pageOffset, today: today, calendar: calendar).map { day in
+            PracticeBalanceHistoryPoint(
+                date: day,
+                known: practiceCount(on: day, countsByDay: sourceProfile.practiceKnownCardsByDay, subject: selectedSubject, calendar: calendar),
+                unknown: 0
+            )
+        }
+    }
+
+    func nextLearnedPracticePoints(profile: UserProfile? = nil, range: PracticeBalanceRange, pageOffset: Int) -> [PracticeBalanceHistoryPoint] {
+        guard pageOffset < 0 else { return [] }
+        let sourceProfile = profile ?? activeProfile
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let startOffset = pageOffset + 1
+        let endOffset = min(pageOffset + range.days, 0)
+        guard startOffset <= endOffset else { return [] }
+
+        return (startOffset...endOffset).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
+            return PracticeBalanceHistoryPoint(
+                date: day,
+                known: practiceCount(on: day, countsByDay: sourceProfile.practiceKnownCardsByDay, subject: selectedSubject, calendar: calendar),
+                unknown: 0
+            )
+        }
+    }
+
+    func nextPracticeBalancePoints(profile: UserProfile? = nil, range: PracticeBalanceRange, pageOffset: Int) -> [PracticeBalanceHistoryPoint] {
+        guard pageOffset < 0 else { return [] }
+        let sourceProfile = profile ?? activeProfile
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let startOffset = pageOffset + 1
+        let endOffset = min(pageOffset + range.days, 0)
+        guard startOffset <= endOffset else { return [] }
+
+        return (startOffset...endOffset).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
+            return PracticeBalanceHistoryPoint(
+                date: day,
+                known: practiceCount(on: day, countsByDay: sourceProfile.practiceKnownCardsByDay, subject: selectedSubject, calendar: calendar),
+                unknown: practiceCount(on: day, countsByDay: sourceProfile.practiceUnknownCardsByDay, subject: selectedSubject, calendar: calendar)
+            )
+        }
+    }
+
     func practiceCountByDay(profile countsByDay: [String: Int]?, subject: LearningSubject, days: Int, now: Date = Date(), calendar: Calendar = .current) -> Int {
         let prefix = "\(subject.rawValue)|"
         let today = calendar.startOfDay(for: now)
@@ -169,7 +246,6 @@ extension ContentView {
         let sourceProfile = profile ?? activeProfile
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
-        let pageOffset = min(pageOffset, 0)
         let periodStarts = analysisPeriodStarts(range: range, pageOffset: pageOffset, today: today, calendar: calendar)
 
         return periodStarts.map { periodStart in
@@ -182,11 +258,30 @@ extension ContentView {
         }
     }
 
+    func nextFlaggenbossPoints(profile: UserProfile? = nil, in countries: [Country], range: PracticeBalanceRange, pageOffset: Int) -> [ScoreHistoryPoint] {
+        guard !countries.isEmpty, pageOffset < 0 else { return [] }
+        let sourceProfile = profile ?? activeProfile
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let startOffset = pageOffset + 1
+        let endOffset = min(pageOffset + range.days, 0)
+        guard startOffset <= endOffset else { return [] }
+
+        return (startOffset...endOffset).compactMap { offset in
+            guard let periodStart = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
+            let periodEnd = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: periodStart) ?? periodStart
+            let total = countries.reduce(0.0) { partialResult, country in
+                let countryStats = sourceProfile.stats(for: country, subject: selectedSubject)
+                return partialResult + tierScoreValue(for: tier(for: countryStats, at: periodEnd))
+            }
+            return ScoreHistoryPoint(date: periodStart, score: total / Double(countries.count))
+        }
+    }
+
     func analysisPeriodStarts(range: PracticeBalanceRange, pageOffset: Int, today: Date, calendar: Calendar) -> [Date] {
         let count = range.days
-        let pageOffset = min(pageOffset, 0)
         return (0..<count).compactMap { index in
-            calendar.date(byAdding: .day, value: pageOffset * count - (count - 1 - index), to: today)
+            calendar.date(byAdding: .day, value: pageOffset - (count - 1 - index), to: today)
         }
     }
 

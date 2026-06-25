@@ -2,6 +2,26 @@ import SwiftUI
 import Foundation
 import CloudKit
 
+struct OnlineSubjectStats {
+    let totalPracticed: Int
+    let known: Int
+    let unknown: Int
+    let showmasterPlayed: Int
+    let learnedThisWeek: Int
+    let tierS: Int
+    let tierA: Int
+    let tierB: Int
+    let tierC: Int
+    let tierD: Int
+    let tierF: Int
+    let tiersByCountryCode: [String: MasteryTier]
+    let sTierHistory: [Int]
+
+    var accuracy: Double {
+        totalPracticed == 0 ? 0 : Double(known) / Double(totalPracticed)
+    }
+}
+
 struct OnlinePlayerStats: Identifiable {
     let id: String
     let playerName: String
@@ -29,6 +49,8 @@ struct OnlinePlayerStats: Identifiable {
     let leagueAverageScore: Double
     let leagueAccuracy: Double
     let bestLearningStreak: Int
+    let countryStats: OnlineSubjectStats
+    let capitalStats: OnlineSubjectStats
     let profileSnapshot: UserProfile?
     let updatedAt: Date
 
@@ -42,6 +64,10 @@ struct OnlinePlayerStats: Identifiable {
 
     var friendCode: String {
         String(id.suffix(6)).uppercased()
+    }
+
+    func stats(for subject: LearningSubject) -> OnlineSubjectStats {
+        subject == .capitals ? capitalStats : countryStats
     }
 }
 
@@ -115,8 +141,9 @@ enum OnlineStatsService {
         let record = try await fetchRecord(recordID: recordID) ?? CKRecord(recordType: recordType, recordID: recordID)
         let profileSnapshot = try profileSnapshotData(profile: profile)
         let displayName = normalizedName(name, fallback: gameCenterAlias)
-        let subjectStats = countries.map { profile.stats(for: $0, subject: subject) }
-        let counts = Dictionary(grouping: subjectStats.map(\.tier), by: { $0 }).mapValues(\.count)
+        let countrySubjectStats = subjectStats(profile: profile, countries: countries, subject: .countries)
+        let capitalSubjectStats = subjectStats(profile: profile, countries: countries, subject: .capitals)
+        let selectedSubjectStats = subject == .capitals ? capitalSubjectStats : countrySubjectStats
         if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             try await claimNickname(displayName, ownerRecordName: playerRecordName)
         }
@@ -124,11 +151,11 @@ enum OnlineStatsService {
         record["playerName"] = displayName as CKRecordValue
         record["gameCenterPlayerID"] = (gameCenterPlayerID ?? "") as CKRecordValue
         record["gameCenterAlias"] = gameCenterAlias as CKRecordValue
-        record["totalPracticed"] = subjectStats.reduce(0) { $0 + $1.cardReviews } as CKRecordValue
-        record["known"] = subjectStats.reduce(0) { $0 + $1.cardKnown } as CKRecordValue
-        record["unknown"] = subjectStats.reduce(0) { $0 + $1.cardUnknown } as CKRecordValue
-        record["showmasterPlayed"] = subjectStats.reduce(0) { $0 + $1.showmasterPlayed } as CKRecordValue
-        record["learnedThisWeek"] = profile.practiceCardsInLastSevenDays(subject: subject) as CKRecordValue
+        record["totalPracticed"] = selectedSubjectStats.totalPracticed as CKRecordValue
+        record["known"] = selectedSubjectStats.known as CKRecordValue
+        record["unknown"] = selectedSubjectStats.unknown as CKRecordValue
+        record["showmasterPlayed"] = selectedSubjectStats.showmasterPlayed as CKRecordValue
+        record["learnedThisWeek"] = selectedSubjectStats.learnedThisWeek as CKRecordValue
         record["achievementCount"] = achievementIDs.count as CKRecordValue
         record["achievementIDs"] = achievementIDs.sorted().joined(separator: "|") as CKRecordValue
         record["leagueRating"] = (profile.leagueStats?.rating ?? 1000) as CKRecordValue
@@ -138,14 +165,16 @@ enum OnlineStatsService {
         record["leagueAverageScore"] = (profile.leagueStats?.averageScore ?? 0) as CKRecordValue
         record["leagueAccuracy"] = (profile.leagueStats?.accuracy ?? 0) as CKRecordValue
         record["bestLearningStreak"] = (profile.bestLearningStreak ?? 0) as CKRecordValue
-        record["tierS"] = (counts[.s] ?? 0) as CKRecordValue
-        record["tierA"] = (counts[.a] ?? 0) as CKRecordValue
-        record["tierB"] = (counts[.b] ?? 0) as CKRecordValue
-        record["tierC"] = (counts[.c] ?? 0) as CKRecordValue
-        record["tierD"] = (counts[.d] ?? 0) as CKRecordValue
-        record["tierF"] = (counts[.f] ?? 0) as CKRecordValue
-        record["tierSnapshot"] = tierSnapshot(profile: profile, countries: countries, subject: subject) as CKRecordValue
-        record["sTierHistory"] = sTierHistorySnapshot(profile: profile, countries: countries, subject: subject) as CKRecordValue
+        record["tierS"] = selectedSubjectStats.tierS as CKRecordValue
+        record["tierA"] = selectedSubjectStats.tierA as CKRecordValue
+        record["tierB"] = selectedSubjectStats.tierB as CKRecordValue
+        record["tierC"] = selectedSubjectStats.tierC as CKRecordValue
+        record["tierD"] = selectedSubjectStats.tierD as CKRecordValue
+        record["tierF"] = selectedSubjectStats.tierF as CKRecordValue
+        record["tierSnapshot"] = tierSnapshot(from: selectedSubjectStats.tiersByCountryCode) as CKRecordValue
+        record["sTierHistory"] = selectedSubjectStats.sTierHistory.map(String.init).joined(separator: "|") as CKRecordValue
+        writeSubjectStats(countrySubjectStats, prefix: "country", to: record)
+        writeSubjectStats(capitalSubjectStats, prefix: "capital", to: record)
         record["profileSnapshot"] = profileSnapshot
         record["profileSnapshotVersion"] = 1 as CKRecordValue
         record["appDataSnapshot"] = try appDataSnapshotData(appData)
@@ -215,7 +244,50 @@ enum OnlineStatsService {
             }
             return (country.code, tier)
         }
+        let capitalTiers = countries.enumerated().map { index, country in
+            let tier: MasteryTier
+            switch (index + 2) % 6 {
+            case 0: tier = .s
+            case 1: tier = .a
+            case 2: tier = .b
+            case 3: tier = .c
+            case 4: tier = .d
+            default: tier = .f
+            }
+            return (country.code, tier)
+        }
         let tierCounts = Dictionary(grouping: tiers.map(\.1), by: { $0 }).mapValues(\.count)
+        let capitalTierCounts = Dictionary(grouping: capitalTiers.map(\.1), by: { $0 }).mapValues(\.count)
+        let countryStats = OnlineSubjectStats(
+            totalPracticed: 418,
+            known: 337,
+            unknown: 81,
+            showmasterPlayed: 12,
+            learnedThisWeek: 73,
+            tierS: tierCounts[.s] ?? 0,
+            tierA: tierCounts[.a] ?? 0,
+            tierB: tierCounts[.b] ?? 0,
+            tierC: tierCounts[.c] ?? 0,
+            tierD: tierCounts[.d] ?? 0,
+            tierF: tierCounts[.f] ?? 0,
+            tiersByCountryCode: Dictionary(uniqueKeysWithValues: tiers),
+            sTierHistory: [19, 21, 23, 24, 26, 28, 29, 31, 33, 34, 35, 37, 38, tierCounts[.s] ?? 0]
+        )
+        let capitalStats = OnlineSubjectStats(
+            totalPracticed: 266,
+            known: 198,
+            unknown: 68,
+            showmasterPlayed: 7,
+            learnedThisWeek: 41,
+            tierS: capitalTierCounts[.s] ?? 0,
+            tierA: capitalTierCounts[.a] ?? 0,
+            tierB: capitalTierCounts[.b] ?? 0,
+            tierC: capitalTierCounts[.c] ?? 0,
+            tierD: capitalTierCounts[.d] ?? 0,
+            tierF: capitalTierCounts[.f] ?? 0,
+            tiersByCountryCode: Dictionary(uniqueKeysWithValues: capitalTiers),
+            sTierHistory: [11, 12, 13, 15, 16, 17, 17, 18, 20, 21, 21, 22, 23, capitalTierCounts[.s] ?? 0]
+        )
 
         record["playerName"] = testFriendName as CKRecordValue
         record["gameCenterPlayerID"] = "test.friend.flaggenbande" as CKRecordValue
@@ -252,6 +324,8 @@ enum OnlineStatsService {
         record["tierF"] = (tierCounts[.f] ?? 0) as CKRecordValue
         record["tierSnapshot"] = tiers.map { "\($0.0):\($0.1.rawValue)" }.joined(separator: "|") as CKRecordValue
         record["sTierHistory"] = [19, 21, 23, 24, 26, 28, 29, 31, 33, 34, 35, 37, 38, tierCounts[.s] ?? 0].map(String.init).joined(separator: "|") as CKRecordValue
+        writeSubjectStats(countryStats, prefix: "country", to: record)
+        writeSubjectStats(capitalStats, prefix: "capital", to: record)
         record["profileSnapshotVersion"] = 1 as CKRecordValue
         record["updatedAt"] = Date() as CKRecordValue
         try await save(record: record)
@@ -436,10 +510,63 @@ enum OnlineStatsService {
             .joined(separator: "|")
     }
 
+    static func tierSnapshot(from tiersByCountryCode: [String: MasteryTier]) -> String {
+        tiersByCountryCode
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key):\($0.value.rawValue)" }
+            .joined(separator: "|")
+    }
+
+    static func subjectStats(profile: UserProfile, countries: [Country], subject: LearningSubject) -> OnlineSubjectStats {
+        let stats = countries.map { profile.stats(for: $0, subject: subject) }
+        let counts = Dictionary(grouping: stats.map(\.tier), by: { $0 }).mapValues(\.count)
+        let tiersByCountryCode = Dictionary(uniqueKeysWithValues: countries.map { country in
+            (country.code, profile.tier(for: country, subject: subject))
+        })
+
+        return OnlineSubjectStats(
+            totalPracticed: stats.reduce(0) { $0 + $1.cardReviews },
+            known: stats.reduce(0) { $0 + $1.cardKnown },
+            unknown: stats.reduce(0) { $0 + $1.cardUnknown },
+            showmasterPlayed: stats.reduce(0) { $0 + $1.showmasterPlayed },
+            learnedThisWeek: profile.practiceCardsInLastSevenDays(subject: subject),
+            tierS: counts[.s] ?? 0,
+            tierA: counts[.a] ?? 0,
+            tierB: counts[.b] ?? 0,
+            tierC: counts[.c] ?? 0,
+            tierD: counts[.d] ?? 0,
+            tierF: counts[.f] ?? 0,
+            tiersByCountryCode: tiersByCountryCode,
+            sTierHistory: sTierHistoryValues(profile: profile, countries: countries, subject: subject)
+        )
+    }
+
+    static func writeSubjectStats(_ stats: OnlineSubjectStats, prefix: String, to record: CKRecord) {
+        record["\(prefix)TotalPracticed"] = stats.totalPracticed as CKRecordValue
+        record["\(prefix)Known"] = stats.known as CKRecordValue
+        record["\(prefix)Unknown"] = stats.unknown as CKRecordValue
+        record["\(prefix)ShowmasterPlayed"] = stats.showmasterPlayed as CKRecordValue
+        record["\(prefix)LearnedThisWeek"] = stats.learnedThisWeek as CKRecordValue
+        record["\(prefix)TierS"] = stats.tierS as CKRecordValue
+        record["\(prefix)TierA"] = stats.tierA as CKRecordValue
+        record["\(prefix)TierB"] = stats.tierB as CKRecordValue
+        record["\(prefix)TierC"] = stats.tierC as CKRecordValue
+        record["\(prefix)TierD"] = stats.tierD as CKRecordValue
+        record["\(prefix)TierF"] = stats.tierF as CKRecordValue
+        record["\(prefix)TierSnapshot"] = tierSnapshot(from: stats.tiersByCountryCode) as CKRecordValue
+        record["\(prefix)STierHistory"] = stats.sTierHistory.map(String.init).joined(separator: "|") as CKRecordValue
+    }
+
     static func sTierHistorySnapshot(profile: UserProfile, countries: [Country], subject: LearningSubject, days: Int = 14) -> String {
+        sTierHistoryValues(profile: profile, countries: countries, subject: subject, days: days)
+            .map(String.init)
+            .joined(separator: "|")
+    }
+
+    static func sTierHistoryValues(profile: UserProfile, countries: [Country], subject: LearningSubject, days: Int = 14) -> [Int] {
         let calendar = Calendar.current
         let now = Date()
-        let values = (0..<days).reversed().map { offset in
+        return (0..<days).reversed().map { offset in
             let day = calendar.date(byAdding: .day, value: -offset, to: now) ?? now
             let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: day) ?? day
             return countries.reduce(0) { count, country in
@@ -452,7 +579,6 @@ enum OnlineStatsService {
                 return count + ((historyTier ?? stats.tier) == .s ? 1 : 0)
             }
         }
-        return values.map(String.init).joined(separator: "|")
     }
 
     static func profileSnapshotData(profile: UserProfile) throws -> CKRecordValue {
@@ -535,14 +661,49 @@ extension OnlinePlayerStats {
         leagueAverageScore = (record["leagueAverageScore"] as? NSNumber)?.doubleValue ?? 0
         leagueAccuracy = (record["leagueAccuracy"] as? NSNumber)?.doubleValue ?? 0
         bestLearningStreak = (record["bestLearningStreak"] as? NSNumber)?.intValue ?? 0
-        if let profileData = record["profileSnapshot"] as? Data {
-            profileSnapshot = try? JSONDecoder().decode(UserProfile.self, from: profileData)
-        } else if let profileData = record["profileSnapshot"] as? NSData {
-            profileSnapshot = try? JSONDecoder().decode(UserProfile.self, from: profileData as Data)
-        } else {
-            profileSnapshot = nil
-        }
+        let legacyStats = OnlineSubjectStats(
+            totalPracticed: totalPracticed,
+            known: known,
+            unknown: unknown,
+            showmasterPlayed: showmasterPlayed,
+            learnedThisWeek: learnedThisWeek,
+            tierS: tierS,
+            tierA: tierA,
+            tierB: tierB,
+            tierC: tierC,
+            tierD: tierD,
+            tierF: tierF,
+            tiersByCountryCode: tiersByCountryCode,
+            sTierHistory: sTierHistory
+        )
+        countryStats = Self.parseSubjectStats(record: record, prefix: "country", fallback: legacyStats)
+        capitalStats = Self.parseSubjectStats(record: record, prefix: "capital", fallback: legacyStats)
+        profileSnapshot = Self.decodeProfileSnapshot(from: record)
         updatedAt = (record["updatedAt"] as? Date) ?? .distantPast
+    }
+
+    private static func decodeProfileSnapshot(from record: CKRecord) -> UserProfile? {
+        if let profileData = record["profileSnapshot"] as? Data,
+           let profile = try? JSONDecoder().decode(UserProfile.self, from: profileData) {
+            return profile
+        }
+
+        if let profileData = record["profileSnapshot"] as? NSData,
+           let profile = try? JSONDecoder().decode(UserProfile.self, from: profileData as Data) {
+            return profile
+        }
+
+        if let appData = record["appDataSnapshot"] as? Data,
+           let snapshot = try? JSONDecoder().decode(AppData.self, from: appData) {
+            return snapshot.activeProfile
+        }
+
+        if let appData = record["appDataSnapshot"] as? NSData,
+           let snapshot = try? JSONDecoder().decode(AppData.self, from: appData as Data) {
+            return snapshot.activeProfile
+        }
+
+        return nil
     }
 
     private static func parseTierSnapshot(_ snapshot: String?) -> [String: MasteryTier] {
@@ -557,5 +718,30 @@ extension OnlinePlayerStats {
     private static func parseIntSnapshot(_ snapshot: String?, fallback: Int) -> [Int] {
         let values = snapshot?.split(separator: "|").compactMap { Int($0) } ?? []
         return values.isEmpty ? [fallback] : values
+    }
+
+    private static func parseSubjectStats(record: CKRecord, prefix: String, fallback: OnlineSubjectStats) -> OnlineSubjectStats {
+        guard record["\(prefix)TotalPracticed"] != nil ||
+              record["\(prefix)Known"] != nil ||
+              record["\(prefix)TierSnapshot"] != nil else {
+            return fallback
+        }
+
+        let tierS = (record["\(prefix)TierS"] as? NSNumber)?.intValue ?? fallback.tierS
+        return OnlineSubjectStats(
+            totalPracticed: (record["\(prefix)TotalPracticed"] as? NSNumber)?.intValue ?? fallback.totalPracticed,
+            known: (record["\(prefix)Known"] as? NSNumber)?.intValue ?? fallback.known,
+            unknown: (record["\(prefix)Unknown"] as? NSNumber)?.intValue ?? fallback.unknown,
+            showmasterPlayed: (record["\(prefix)ShowmasterPlayed"] as? NSNumber)?.intValue ?? fallback.showmasterPlayed,
+            learnedThisWeek: (record["\(prefix)LearnedThisWeek"] as? NSNumber)?.intValue ?? fallback.learnedThisWeek,
+            tierS: tierS,
+            tierA: (record["\(prefix)TierA"] as? NSNumber)?.intValue ?? fallback.tierA,
+            tierB: (record["\(prefix)TierB"] as? NSNumber)?.intValue ?? fallback.tierB,
+            tierC: (record["\(prefix)TierC"] as? NSNumber)?.intValue ?? fallback.tierC,
+            tierD: (record["\(prefix)TierD"] as? NSNumber)?.intValue ?? fallback.tierD,
+            tierF: (record["\(prefix)TierF"] as? NSNumber)?.intValue ?? fallback.tierF,
+            tiersByCountryCode: parseTierSnapshot(record["\(prefix)TierSnapshot"] as? String).isEmpty ? fallback.tiersByCountryCode : parseTierSnapshot(record["\(prefix)TierSnapshot"] as? String),
+            sTierHistory: parseIntSnapshot(record["\(prefix)STierHistory"] as? String, fallback: tierS)
+        )
     }
 }

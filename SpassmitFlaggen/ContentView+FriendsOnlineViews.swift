@@ -300,7 +300,8 @@ extension ContentView {
     }
 
     func onlinePlayerRow(rank: Int, player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> some View {
-        Button {
+        let playerSubjectStats = player.stats(for: selectedSubject)
+        return Button {
             Haptics.tap()
             selectedOnlineGlobePlayer = player
         } label: {
@@ -314,17 +315,22 @@ extension ContentView {
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.72)
-                        HStack(spacing: 5) {
-                            if isCurrentOnlinePlayer(player) {
-                                Image(systemName: "checkmark.seal.fill")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(tealAccentColor)
-                                    .accessibilityLabel(L("Du", "You"))
+                        let subtitle = onlineMetricSubtitle(for: player, metric: metric)
+                        if !subtitle.isEmpty || isCurrentOnlinePlayer(player) {
+                            HStack(spacing: 5) {
+                                if isCurrentOnlinePlayer(player) {
+                                    Image(systemName: "checkmark.seal.fill")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(tealAccentColor)
+                                        .accessibilityLabel(L("Du", "You"))
+                                }
+                                if !subtitle.isEmpty {
+                                    Text(subtitle)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
                             }
-                            Text(onlineMetricSubtitle(for: player, metric: metric))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -341,7 +347,7 @@ extension ContentView {
                 }
 
                 if metric == .flaggenscore {
-                    SLevelBar(value: player.tierS, total: max(availableCountries.count, 1), accentColor: tealAccentColor)
+                    SLevelBar(value: playerSubjectStats.tierS, total: max(availableCountries.count, 1), accentColor: tealAccentColor)
                         .frame(height: 10)
                         .padding(.leading, 46)
                 }
@@ -373,7 +379,7 @@ extension ContentView {
         case .flaggenrun:
             return L("Bester Run", "Best run")
         case .flaggenscore:
-            return bossTitle
+            return ""
         case .learningStreak:
             return L("10 Karten pro Tag", "10 cards per day")
         }
@@ -381,7 +387,7 @@ extension ContentView {
 
     func onlineMetricValue(for player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> String {
         switch metric {
-        case .week: return "\(player.learnedThisWeek)"
+        case .week: return "\(player.stats(for: selectedSubject).learnedThisWeek)"
         case .flaggenrun: return "\(player.leagueBestScore)"
         case .flaggenscore: return String(format: "%.1f", onlineFlaggenbossScore(for: player) * 100)
         case .learningStreak: return "\(player.bestLearningStreak)"
@@ -421,13 +427,14 @@ extension ContentView {
     }
 
     func onlineFlaggenbossScore(for player: OnlinePlayerStats) -> Double {
+        let playerSubjectStats = player.stats(for: selectedSubject)
         let weightedTotal =
-            Double(player.tierS) * tierScoreValue(for: .s) +
-            Double(player.tierA) * tierScoreValue(for: .a) +
-            Double(player.tierB) * tierScoreValue(for: .b) +
-            Double(player.tierC) * tierScoreValue(for: .c) +
-            Double(player.tierD) * tierScoreValue(for: .d) +
-            Double(player.tierF) * tierScoreValue(for: .f)
+            Double(playerSubjectStats.tierS) * tierScoreValue(for: .s) +
+            Double(playerSubjectStats.tierA) * tierScoreValue(for: .a) +
+            Double(playerSubjectStats.tierB) * tierScoreValue(for: .b) +
+            Double(playerSubjectStats.tierC) * tierScoreValue(for: .c) +
+            Double(playerSubjectStats.tierD) * tierScoreValue(for: .d) +
+            Double(playerSubjectStats.tierF) * tierScoreValue(for: .f)
         return weightedTotal / Double(max(availableCountries.count, 1))
     }
 
@@ -436,7 +443,9 @@ extension ContentView {
     }
 
     var activeProfileTotalPracticed: Int {
-        activeProfile.byCountry.values.reduce(0) { $0 + $1.cardReviews }
+        availableCountries.reduce(0) { total, country in
+            total + activeProfile.stats(for: country, subject: selectedSubject).cardReviews
+        }
     }
 
     var activeProfileCardAccuracy: Double {

@@ -27,10 +27,12 @@ extension ContentView {
         }
 
         return playersByKey.values.sorted {
-            if $0.totalPracticed == $1.totalPracticed {
-                return $0.accuracy > $1.accuracy
+            let firstStats = $0.stats(for: selectedSubject)
+            let secondStats = $1.stats(for: selectedSubject)
+            if firstStats.totalPracticed == secondStats.totalPracticed {
+                return firstStats.accuracy > secondStats.accuracy
             }
-            return $0.totalPracticed > $1.totalPracticed
+            return firstStats.totalPracticed > secondStats.totalPracticed
         }
     }
 
@@ -76,7 +78,7 @@ extension ContentView {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
             if $0.leagueBestScore == $1.leagueBestScore {
-                return $0.learnedThisWeek > $1.learnedThisWeek
+                return $0.stats(for: selectedSubject).learnedThisWeek > $1.stats(for: selectedSubject).learnedThisWeek
             }
             return $0.leagueBestScore > $1.leagueBestScore
         }
@@ -86,7 +88,7 @@ extension ContentView {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
             if $0.bestLearningStreak == $1.bestLearningStreak {
-                return $0.learnedThisWeek > $1.learnedThisWeek
+                return $0.stats(for: selectedSubject).learnedThisWeek > $1.stats(for: selectedSubject).learnedThisWeek
             }
             return $0.bestLearningStreak > $1.bestLearningStreak
         }
@@ -97,7 +99,7 @@ extension ContentView {
             let firstScore = onlineFlaggenbossScore(for: $0)
             let secondScore = onlineFlaggenbossScore(for: $1)
             if firstScore == secondScore {
-                return $0.learnedThisWeek > $1.learnedThisWeek
+                return $0.stats(for: selectedSubject).learnedThisWeek > $1.stats(for: selectedSubject).learnedThisWeek
             }
             return firstScore > secondScore
         }
@@ -106,10 +108,12 @@ extension ContentView {
     var scopedLearnedThisWeekLeaderboard: [OnlinePlayerStats] {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
-            if $0.learnedThisWeek == $1.learnedThisWeek {
-                return $0.accuracy > $1.accuracy
+            let firstStats = $0.stats(for: selectedSubject)
+            let secondStats = $1.stats(for: selectedSubject)
+            if firstStats.learnedThisWeek == secondStats.learnedThisWeek {
+                return firstStats.accuracy > secondStats.accuracy
             }
-            return $0.learnedThisWeek > $1.learnedThisWeek
+            return firstStats.learnedThisWeek > secondStats.learnedThisWeek
         }
     }
 
@@ -117,7 +121,7 @@ extension ContentView {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
             if $0.achievementCount == $1.achievementCount {
-                return $0.totalPracticed > $1.totalPracticed
+                return $0.stats(for: selectedSubject).totalPracticed > $1.stats(for: selectedSubject).totalPracticed
             }
             return $0.achievementCount > $1.achievementCount
         }
@@ -125,17 +129,19 @@ extension ContentView {
 
     var learnedThisWeekLeaderboard: [OnlinePlayerStats] {
         deduplicatedOnlineLeaderboard.sorted {
-            if $0.learnedThisWeek == $1.learnedThisWeek {
-                return $0.accuracy > $1.accuracy
+            let firstStats = $0.stats(for: selectedSubject)
+            let secondStats = $1.stats(for: selectedSubject)
+            if firstStats.learnedThisWeek == secondStats.learnedThisWeek {
+                return firstStats.accuracy > secondStats.accuracy
             }
-            return $0.learnedThisWeek > $1.learnedThisWeek
+            return firstStats.learnedThisWeek > secondStats.learnedThisWeek
         }
     }
 
     var achievementLeaderboard: [OnlinePlayerStats] {
         deduplicatedOnlineLeaderboard.sorted {
             if $0.achievementCount == $1.achievementCount {
-                return $0.totalPracticed > $1.totalPracticed
+                return $0.stats(for: selectedSubject).totalPracticed > $1.stats(for: selectedSubject).totalPracticed
             }
             return $0.achievementCount > $1.achievementCount
         }
@@ -171,7 +177,7 @@ extension ContentView {
             return first.updatedAt > second.updatedAt ? first : second
         }
 
-        return first.totalPracticed >= second.totalPracticed ? first : second
+        return first.stats(for: selectedSubject).totalPracticed >= second.stats(for: selectedSubject).totalPracticed ? first : second
     }
 
 

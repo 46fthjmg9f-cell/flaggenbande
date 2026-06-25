@@ -268,26 +268,27 @@ struct ScopeScoreBarChart: View {
 }
 
 struct PracticeBalanceChart: View {
+    var title: String? = nil
+    var primaryLabel: String? = nil
+    var showsUnknown: Bool = true
     let previousPoints: [PracticeBalanceHistoryPoint]
     let points: [PracticeBalanceHistoryPoint]
     let nextPoints: [PracticeBalanceHistoryPoint]
     let range: PracticeBalanceRange
+    let maxValue: Int
     @Binding var pageOffset: Int
     @Binding var selectedPoint: PracticeBalanceHistoryPoint?
     let language: AppLanguage
-    @GestureState private var dragOffset: CGFloat = 0
+    @State private var dragOffset: CGFloat = 0
+    @State private var residualDragOffset: CGFloat = 0
+    @State private var measuredChartWidth: CGFloat = 1
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text(localized("Trainings-Balance", "Practice balance", language: language))
+                Text(title ?? localized("Trainings-Balance", "Practice balance", language: language))
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                if let displayedPoint = selectedPoint ?? points.last {
-                    Text("\(displayedPoint.known) / \(displayedPoint.unknown)")
-                        .font(.caption.monospacedDigit().weight(.bold))
-                        .foregroundStyle(.secondary)
-                }
             }
 
             if points.isEmpty {
@@ -305,15 +306,13 @@ struct PracticeBalanceChart: View {
                         }
                         .frame(height: 178)
 
-                        ZStack {
-                            balanceBand(points: previousPoints, size: geometry.size)
-                                .offset(x: -width)
-                            balanceBand(points: points, size: geometry.size)
-                            balanceBand(points: nextPoints, size: geometry.size)
-                                .offset(x: width)
-
+                        ZStack(alignment: .topLeading) {
+                            balanceTimeline(size: geometry.size)
+                            balanceDateLabels(size: geometry.size)
+                            selectedBalanceInfo(size: geometry.size)
+                                .allowsHitTesting(false)
                             let plotRect = CGRect(x: 34, y: 10, width: max(width - 46, 1), height: max(geometry.size.height - 44, 1))
-                            ForEach(Array(zip(points.indices, xPositions(in: plotRect, count: points.count))), id: \.0) { index, x in
+                            ForEach(Array(points.indices), id: \.self) { index in
                                 Button {
                                     selectedPoint = points[index]
                                 } label: {
@@ -323,87 +322,173 @@ struct PracticeBalanceChart: View {
                                 }
                                 .buttonStyle(.plain)
                                 .frame(width: max(plotRect.width / CGFloat(max(points.count, 1)), 30), height: 178)
-                                .position(x: x, y: 89)
+                                .position(x: xPosition(for: points[index].date, segmentWidth: width), y: 89)
                                 .accessibilityLabel(pointAccessibilityLabel(points[index]))
                             }
                         }
-                        .offset(x: dragOffset)
-                        .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.86), value: dragOffset)
+                        .frame(width: width * 3, height: 178, alignment: .topLeading)
+                        .offset(x: -width + residualDragOffset + dragOffset)
+                        .animation(nil, value: dragOffset)
                         .clipped()
+                    }
+                    .clipped()
+                    .onAppear {
+                        measuredChartWidth = width
+                    }
+                    .onChange(of: width) { _, newValue in
+                        measuredChartWidth = newValue
                     }
                 }
                 .frame(height: 178)
-                .gesture(
+                .contentShape(Rectangle())
+                .highPriorityGesture(
                     DragGesture(minimumDistance: 24)
-                        .updating($dragOffset) { value, state, _ in
-                            state = value.translation.width
+                        .onChanged { value in
+                            dragOffset = displayDragOffset(for: value, chartWidth: measuredChartWidth) - residualDragOffset
                         }
                         .onEnded { value in
-                            updatePageOffset(with: value)
                             selectedPoint = nil
+                            finishDrag(with: value, chartWidth: measuredChartWidth)
                         }
                 )
 
                 HStack(spacing: 10) {
-                    Label(localized("Gewusst", "Known", language: language), systemImage: "checkmark.circle.fill")
+                    Label(primaryLabel ?? localized("Gewusst", "Known", language: language), systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                    Label(localized("Nicht gewusst", "Not known", language: language), systemImage: "xmark.circle.fill")
-                        .foregroundStyle(.red)
+                    if showsUnknown {
+                        Label(localized("Nicht gewusst", "Not known", language: language), systemImage: "xmark.circle.fill")
+                            .foregroundStyle(.red)
+                    }
                 }
                 .font(.caption2.weight(.semibold))
 
-                HStack {
-                    ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
-                        Text(shouldShowDateLabel(at: index) ? label(for: point.date) : "")
-                            .font(.caption2)
-                            .foregroundStyle(point.id == selectedPoint?.id ? .primary : .secondary)
-                            .frame(maxWidth: .infinity)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                    }
-                }
-
-                if let selectedPoint {
-                    Text("\(label(for: selectedPoint.date)): \(localized("Gewusst", "Known", language: language)) \(selectedPoint.known), \(localized("Nicht gewusst", "Not known", language: language)) \(selectedPoint.unknown)")
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
             }
         }
         .padding(.vertical, 6)
     }
 
-    var maxValue: Int {
-        let allPoints = previousPoints + points + nextPoints
-        return max(allPoints.map(\.known).max() ?? 0, allPoints.map(\.unknown).max() ?? 0, 1)
-    }
-
-    func balanceBand(points bandPoints: [PracticeBalanceHistoryPoint], size: CGSize) -> some View {
+    func balanceTimeline(size: CGSize) -> some View {
         Canvas { context, size in
-            let plotRect = CGRect(x: 34, y: 10, width: max(size.width - 46, 1), height: max(size.height - 44, 1))
-            let knownPoints = chartPoints(in: plotRect, values: bandPoints.map(\.known))
-            let unknownPoints = chartPoints(in: plotRect, values: bandPoints.map(\.unknown))
+            let segmentWidth = max(size.width / 3, 1)
+            let segmentHeight = size.height
+            let allPoints = previousPoints + points + nextPoints
+            let plotRect = CGRect(x: 34, y: 10, width: max(segmentWidth - 46, 1), height: max(segmentHeight - 44, 1))
+            let knownPoints = allPoints.map { point in
+                CGPoint(
+                    x: xPosition(for: point.date, segmentWidth: segmentWidth),
+                    y: plotRect.maxY - plotRect.height * CGFloat(point.known) / CGFloat(max(maxValue, 1))
+                )
+            }
+            let unknownPoints = allPoints.map { point in
+                CGPoint(
+                    x: xPosition(for: point.date, segmentWidth: segmentWidth),
+                    y: plotRect.maxY - plotRect.height * CGFloat(point.unknown) / CGFloat(max(maxValue, 1))
+                )
+            }
 
             if knownPoints.count > 1 {
                 context.stroke(smoothPath(for: knownPoints), with: .color(.green), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             }
-            if unknownPoints.count > 1 {
+            if showsUnknown, unknownPoints.count > 1 {
                 context.stroke(smoothPath(for: unknownPoints), with: .color(.red), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             }
 
             for (index, point) in knownPoints.enumerated() {
-                let isSelected = bandPoints[index].id == selectedPoint?.id
+                let isSelected = allPoints.indices.contains(index) && allPoints[index].id == selectedPoint?.id
                 drawDot(at: point, color: isSelected ? .primary : .green, context: &context)
             }
-            for (index, point) in unknownPoints.enumerated() {
-                let isSelected = bandPoints[index].id == selectedPoint?.id
-                drawDot(at: point, color: isSelected ? .primary : .red, context: &context)
+            if showsUnknown {
+                for (index, point) in unknownPoints.enumerated() {
+                    let isSelected = allPoints.indices.contains(index) && allPoints[index].id == selectedPoint?.id
+                    drawDot(at: point, color: isSelected ? .primary : .red, context: &context)
+                }
             }
         }
-        .frame(width: size.width, height: 178)
+        .frame(width: size.width * 3, height: 178)
+    }
+
+    func selectedBalanceInfo(size: CGSize) -> some View {
+        let segmentWidth = max(size.width, 1)
+        let segmentHeight = size.height
+
+        return ZStack(alignment: .topLeading) {
+            if let selectedPoint,
+               let marker = balanceMarker(for: selectedPoint, segmentWidth: segmentWidth, segmentHeight: segmentHeight) {
+                Text(selectedBalanceInfoText(for: selectedPoint))
+                    .font(.caption2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(.secondary.opacity(0.18), lineWidth: 1)
+                    )
+                    .position(x: marker.x, y: max(marker.y - 28, 18))
+            }
+        }
+        .frame(width: size.width * 3, height: 178)
+    }
+
+    func balanceMarker(
+        for selectedPoint: PracticeBalanceHistoryPoint,
+        segmentWidth: CGFloat,
+        segmentHeight: CGFloat
+    ) -> CGPoint? {
+        let allPoints = previousPoints + points + nextPoints
+        guard allPoints.contains(where: { $0.id == selectedPoint.id }) else { return nil }
+        let plotRect = CGRect(x: 34, y: 10, width: max(segmentWidth - 46, 1), height: max(segmentHeight - 44, 1))
+        let value = max(selectedPoint.known, selectedPoint.unknown)
+        let y = plotRect.maxY - plotRect.height * CGFloat(value) / CGFloat(max(maxValue, 1))
+        return CGPoint(x: xPosition(for: selectedPoint.date, segmentWidth: segmentWidth), y: y)
+    }
+
+    func selectedBalanceInfoText(for point: PracticeBalanceHistoryPoint) -> String {
+        if showsUnknown {
+            return "\(localized("Gewusst", "Known", language: language)) \(point.known) · \(localized("Nicht gewusst", "Not known", language: language)) \(point.unknown)"
+        }
+        return "\(primaryLabel ?? localized("Gelernt", "Learned", language: language)) \(point.known)"
+    }
+
+    func balanceDateLabels(size: CGSize) -> some View {
+        let segmentWidth = max(size.width, 1)
+        let segmentHeight = size.height
+        return ZStack(alignment: .topLeading) {
+            let allPoints = previousPoints + points + nextPoints
+            let plotRect = CGRect(x: 34, y: 10, width: max(segmentWidth - 46, 1), height: max(segmentHeight - 44, 1))
+            let labelWidth = max(chartStepWidth(chartWidth: segmentWidth) * 0.95, 22)
+            ForEach(Array(allPoints.enumerated()), id: \.element.id) { index, point in
+                Button {
+                    selectedPoint = point
+                } label: {
+                    Text(label(for: point.date))
+                        .font(.system(size: 9, weight: point.id == selectedPoint?.id ? .semibold : .regular))
+                        .foregroundStyle(point.id == selectedPoint?.id ? .primary : .secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.58)
+                        .frame(width: labelWidth)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .position(x: xPosition(for: point.date, segmentWidth: segmentWidth), y: plotRect.maxY + 20)
+            }
+        }
+        .frame(width: size.width * 3, height: 178)
+    }
+
+    func balancePoints(for segmentIndex: Int) -> [PracticeBalanceHistoryPoint] {
+        switch segmentIndex {
+        case 0: return previousPoints
+        case 1: return points
+        default: return nextPoints
+        }
     }
 
     func chartPoints(in rect: CGRect, values: [Int]) -> [CGPoint] {
+        shiftedChartPoints(in: rect, values: values)
+    }
+
+    func shiftedChartPoints(in rect: CGRect, values: [Int]) -> [CGPoint] {
         let xs = xPositions(in: rect, count: values.count)
         return values.enumerated().map { index, value in
             CGPoint(
@@ -414,10 +499,18 @@ struct PracticeBalanceChart: View {
     }
 
     func xPositions(in rect: CGRect, count: Int) -> [CGFloat] {
-        guard count > 1 else { return [rect.midX] }
+        guard count > 1 else { return [rect.minX] }
+        let denominator = max(range.days - 1, count - 1, 1)
         return (0..<count).map { index in
-            rect.minX + rect.width * CGFloat(index) / CGFloat(count - 1)
+            rect.minX + rect.width * CGFloat(index) / CGFloat(denominator)
         }
+    }
+
+    func xPosition(for date: Date, segmentWidth: CGFloat) -> CGFloat {
+        guard let firstDate = points.first?.date else { return segmentWidth + 34 }
+        let calendar = Calendar.current
+        let dayOffset = calendar.dateComponents([.day], from: calendar.startOfDay(for: firstDate), to: calendar.startOfDay(for: date)).day ?? 0
+        return segmentWidth + 34 + CGFloat(dayOffset) * chartStepWidth(chartWidth: segmentWidth)
     }
 
     func drawCountGrid(in rect: CGRect, context: inout GraphicsContext) {
@@ -474,20 +567,49 @@ struct PracticeBalanceChart: View {
         "\(label(for: point.date)), \(point.known), \(point.unknown)"
     }
 
-    func shouldShowDateLabel(at index: Int) -> Bool {
-        guard points.count > 10 else { return true }
-        let stride = max(points.count / 6, 1)
-        return index == 0 || index == points.count - 1 || index.isMultiple(of: stride)
+    func shouldShowDateLabel(at index: Int, totalCount: Int) -> Bool {
+        guard totalCount > 10 else { return true }
+        let stride = max(totalCount / 6, 1)
+        return index == 0 || index == totalCount - 1 || index.isMultiple(of: stride)
     }
 
-    func updatePageOffset(with value: DragGesture.Value) {
-        let horizontal = abs(value.predictedEndTranslation.width) > abs(value.predictedEndTranslation.height)
-        guard horizontal, abs(value.predictedEndTranslation.width) > 80 else { return }
-        if value.predictedEndTranslation.width < 0 {
-            pageOffset -= 1
-        } else if pageOffset < 0 {
-            pageOffset += 1
+    func displayDragOffset(for value: DragGesture.Value, chartWidth: CGFloat) -> CGFloat {
+        let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.35
+        guard horizontal else { return residualDragOffset }
+        return boundedViewportOffset(residualDragOffset + value.translation.width, chartWidth: chartWidth)
+    }
+
+    func boundedViewportOffset(_ offset: CGFloat, chartWidth: CGFloat) -> CGFloat {
+        let stepWidth = chartStepWidth(chartWidth: chartWidth)
+        let futureLimit = CGFloat(pageOffset) * stepWidth
+        return max(offset, futureLimit)
+    }
+
+    func finishDrag(with value: DragGesture.Value, chartWidth: CGFloat) {
+        let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.35
+        guard horizontal, abs(value.translation.width) > 18 else {
+            dragOffset = 0
+            return
         }
+        let stepWidth = chartStepWidth(chartWidth: chartWidth)
+        let totalOffset = boundedViewportOffset(residualDragOffset + value.translation.width, chartWidth: chartWidth)
+        let wholeSteps = Int((totalOffset / stepWidth).rounded(.towardZero))
+        let proposedOffset = pageOffset - wholeSteps
+        let finalOffset = min(proposedOffset, 0)
+        let effectiveSteps = pageOffset - finalOffset
+        let newResidualOffset = totalOffset - CGFloat(effectiveSteps) * stepWidth
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            pageOffset = finalOffset
+            residualDragOffset = newResidualOffset
+            dragOffset = 0
+        }
+    }
+
+    func chartStepWidth(chartWidth: CGFloat) -> CGFloat {
+        max((chartWidth - 46) / CGFloat(max(range.days - 1, 1)), 8)
     }
 }
 
@@ -501,7 +623,9 @@ struct FlaggenbossScoreChart: View {
     @Binding var selectedPoint: ScoreHistoryPoint?
     let language: AppLanguage
     let accentColor: Color
-    @GestureState private var dragOffset: CGFloat = 0
+    @State private var dragOffset: CGFloat = 0
+    @State private var residualDragOffset: CGFloat = 0
+    @State private var measuredChartWidth: CGFloat = 1
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -509,11 +633,6 @@ struct FlaggenbossScoreChart: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                if let displayedPoint = selectedPoint ?? points.last {
-                    Text(String(format: "%.1f", displayedPoint.score * 100))
-                        .font(.caption.monospacedDigit().weight(.bold))
-                        .foregroundStyle(accentColor)
-                }
             }
             if points.isEmpty {
                 Text(localized("Noch keine Verlaufspunkte.", "No history points yet.", language: language))
@@ -530,15 +649,13 @@ struct FlaggenbossScoreChart: View {
                         }
                         .frame(height: 178)
 
-                        ZStack {
-                            scoreBand(points: previousPoints, size: geometry.size)
-                                .offset(x: -width)
-                            scoreBand(points: points, size: geometry.size)
-                            scoreBand(points: nextPoints, size: geometry.size)
-                                .offset(x: width)
-
+                        ZStack(alignment: .topLeading) {
+                            scoreTimeline(size: geometry.size)
+                            scoreDateLabels(size: geometry.size)
+                            selectedScoreInfo(size: geometry.size)
+                                .allowsHitTesting(false)
                             let plotRect = CGRect(x: 34, y: 10, width: max(width - 46, 1), height: max(geometry.size.height - 44, 1))
-                            ForEach(Array(zip(points.indices, chartPoints(in: plotRect, points: points))), id: \.0) { index, point in
+                            ForEach(Array(zip(points.indices, chartPoints(in: plotRect, points: points, segmentWidth: width))), id: \.0) { index, point in
                                 Button {
                                     selectedPoint = points[index]
                                 } label: {
@@ -548,88 +665,158 @@ struct FlaggenbossScoreChart: View {
                                 }
                                 .buttonStyle(.plain)
                                 .frame(width: 34, height: 34)
-                                .position(point)
+                                .position(x: point.x, y: point.y)
                                 .accessibilityLabel(pointAccessibilityLabel(points[index]))
                             }
                         }
-                        .offset(x: dragOffset)
-                        .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.86), value: dragOffset)
+                        .frame(width: width * 3, height: 178, alignment: .topLeading)
+                        .offset(x: -width + residualDragOffset + dragOffset)
+                        .animation(nil, value: dragOffset)
                         .clipped()
+                    }
+                    .clipped()
+                    .onAppear {
+                        measuredChartWidth = width
+                    }
+                    .onChange(of: width) { _, newValue in
+                        measuredChartWidth = newValue
                     }
                 }
                 .frame(height: 178)
-                .gesture(
+                .contentShape(Rectangle())
+                .highPriorityGesture(
                     DragGesture(minimumDistance: 24)
-                        .updating($dragOffset) { value, state, _ in
-                            state = value.translation.width
+                        .onChanged { value in
+                            dragOffset = displayDragOffset(for: value, chartWidth: measuredChartWidth) - residualDragOffset
                         }
                         .onEnded { value in
-                            updatePageOffset(with: value)
                             selectedPoint = nil
+                            finishDrag(with: value, chartWidth: measuredChartWidth)
                         }
                 )
-
-                HStack {
-                    ForEach(Array(points.enumerated()), id: \.element.id) { index, point in
-                        Text(shouldShowDateLabel(at: index) ? label(for: point.date) : "")
-                            .font(.caption2)
-                            .foregroundStyle(point.id == selectedPoint?.id ? accentColor : .secondary)
-                            .frame(maxWidth: .infinity)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                    }
-                }
-
-                if let selectedPoint {
-                    Text("\(label(for: selectedPoint.date)): \(String(format: "%.1f", selectedPoint.score * 100))")
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(accentColor)
-                }
             }
         }
         .padding(.vertical, 6)
     }
 
-    func scoreBand(points bandPoints: [ScoreHistoryPoint], size: CGSize) -> some View {
+    func scoreTimeline(size: CGSize) -> some View {
         Canvas { context, size in
-            let plotRect = CGRect(x: 34, y: 10, width: max(size.width - 46, 1), height: max(size.height - 44, 1))
-            let resolvedPoints = chartPoints(in: plotRect, points: bandPoints)
+            let segmentWidth = max(size.width / 3, 1)
+            let segmentHeight = size.height
+            let allPoints = previousPoints + points + nextPoints
+            let plotRect = CGRect(x: 34, y: 10, width: max(segmentWidth - 46, 1), height: max(segmentHeight - 44, 1))
+            let resolvedPoints = chartPoints(in: plotRect, points: allPoints, segmentWidth: segmentWidth)
             guard let first = resolvedPoints.first, let last = resolvedPoints.last else { return }
             let smoothLine = smoothPath(for: resolvedPoints)
+            let timelineRect = CGRect(x: 34, y: 10, width: max(size.width - 46, 1), height: max(size.height - 44, 1))
 
             var areaPath = smoothLine
-            areaPath.addLine(to: CGPoint(x: last.x, y: plotRect.maxY))
-            areaPath.addLine(to: CGPoint(x: first.x, y: plotRect.maxY))
+            areaPath.addLine(to: CGPoint(x: last.x, y: timelineRect.maxY))
+            areaPath.addLine(to: CGPoint(x: first.x, y: timelineRect.maxY))
             areaPath.closeSubpath()
             context.fill(areaPath, with: .linearGradient(
                 Gradient(colors: [accentColor.opacity(0.34), accentColor.opacity(0.07)]),
-                startPoint: CGPoint(x: plotRect.midX, y: plotRect.minY),
-                endPoint: CGPoint(x: plotRect.midX, y: plotRect.maxY)
+                startPoint: CGPoint(x: timelineRect.midX, y: timelineRect.minY),
+                endPoint: CGPoint(x: timelineRect.midX, y: timelineRect.maxY)
             ))
             context.stroke(smoothLine, with: .color(accentColor), style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round))
 
             for (index, point) in resolvedPoints.enumerated() {
-                let isSelected = bandPoints[index].id == selectedPoint?.id
+                let isSelected = allPoints.indices.contains(index) && allPoints[index].id == selectedPoint?.id
                 let radius: CGFloat = isSelected ? 5 : 3.5
                 let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
                 context.fill(Path(ellipseIn: rect), with: .color(isSelected ? .primary : accentColor))
             }
         }
-        .frame(width: size.width, height: 178)
+        .frame(width: size.width * 3, height: 178)
     }
 
-    func chartPoints(in rect: CGRect, points bandPoints: [ScoreHistoryPoint]) -> [CGPoint] {
-        guard !bandPoints.isEmpty else { return [] }
-        guard let firstDate = bandPoints.first?.date, let lastDate = bandPoints.last?.date else { return [] }
-        let totalInterval = max(lastDate.timeIntervalSince(firstDate), 1)
-        return bandPoints.map { point in
-            let xFraction = bandPoints.count == 1 ? 1 : point.date.timeIntervalSince(firstDate) / totalInterval
-            let yFraction = min(max(point.score, 0), 1)
-            return CGPoint(
-                x: rect.minX + rect.width * xFraction,
-                y: rect.maxY - rect.height * yFraction
-            )
+    func selectedScoreInfo(size: CGSize) -> some View {
+        let segmentWidth = max(size.width, 1)
+        let segmentHeight = size.height
+
+        return ZStack(alignment: .topLeading) {
+            if let selectedPoint,
+               let marker = scoreMarker(for: selectedPoint, segmentWidth: segmentWidth, segmentHeight: segmentHeight) {
+                Text(String(format: "%.1f", selectedPoint.score * 100))
+                    .font(.caption2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(accentColor.opacity(0.24), lineWidth: 1)
+                    )
+                    .position(x: marker.x, y: max(marker.y - 28, 18))
+            }
         }
+        .frame(width: size.width * 3, height: 178)
+    }
+
+    func scoreMarker(
+        for selectedPoint: ScoreHistoryPoint,
+        segmentWidth: CGFloat,
+        segmentHeight: CGFloat
+    ) -> CGPoint? {
+        let allPoints = previousPoints + points + nextPoints
+        guard allPoints.contains(where: { $0.id == selectedPoint.id }) else { return nil }
+        let plotRect = CGRect(x: 34, y: 10, width: max(segmentWidth - 46, 1), height: max(segmentHeight - 44, 1))
+        return chartPoint(in: plotRect, point: selectedPoint, segmentWidth: segmentWidth)
+    }
+
+    func scoreDateLabels(size: CGSize) -> some View {
+        let segmentWidth = max(size.width, 1)
+        let segmentHeight = size.height
+        return ZStack(alignment: .topLeading) {
+            let allPoints = previousPoints + points + nextPoints
+            let plotRect = CGRect(x: 34, y: 10, width: max(segmentWidth - 46, 1), height: max(segmentHeight - 44, 1))
+            let labelWidth = max(chartStepWidth(chartWidth: segmentWidth) * 0.95, 22)
+            ForEach(Array(zip(allPoints.indices, chartPoints(in: plotRect, points: allPoints, segmentWidth: segmentWidth))), id: \.0) { index, point in
+                Button {
+                    selectedPoint = allPoints[index]
+                } label: {
+                    Text(label(for: allPoints[index].date))
+                        .font(.system(size: 9, weight: allPoints[index].id == selectedPoint?.id ? .semibold : .regular))
+                        .foregroundStyle(allPoints[index].id == selectedPoint?.id ? accentColor : .secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.58)
+                        .frame(width: labelWidth)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .position(x: point.x, y: plotRect.maxY + 20)
+            }
+        }
+        .frame(width: size.width * 3, height: 178)
+    }
+
+    func scorePoints(for segmentIndex: Int) -> [ScoreHistoryPoint] {
+        switch segmentIndex {
+        case 0: return previousPoints
+        case 1: return points
+        default: return nextPoints
+        }
+    }
+
+    func chartPoints(in rect: CGRect, points bandPoints: [ScoreHistoryPoint], segmentWidth: CGFloat) -> [CGPoint] {
+        guard !bandPoints.isEmpty else { return [] }
+        return bandPoints.map { chartPoint(in: rect, point: $0, segmentWidth: segmentWidth) }
+    }
+
+    func chartPoint(in rect: CGRect, point: ScoreHistoryPoint, segmentWidth: CGFloat) -> CGPoint {
+        let yFraction = min(max(point.score, 0), 1)
+        return CGPoint(
+            x: xPosition(for: point.date, segmentWidth: segmentWidth),
+            y: rect.maxY - rect.height * yFraction
+        )
+    }
+
+    func xPosition(for date: Date, segmentWidth: CGFloat) -> CGFloat {
+        guard let firstDate = points.first?.date else { return segmentWidth + 34 }
+        let calendar = Calendar.current
+        let dayOffset = calendar.dateComponents([.day], from: calendar.startOfDay(for: firstDate), to: calendar.startOfDay(for: date)).day ?? 0
+        return segmentWidth + 34 + CGFloat(dayOffset) * chartStepWidth(chartWidth: segmentWidth)
     }
 
     func drawScoreGrid(in rect: CGRect, context: inout GraphicsContext) {
@@ -695,20 +882,49 @@ struct FlaggenbossScoreChart: View {
         "\(label(for: point.date)), \(String(format: "%.1f", point.score * 100))"
     }
 
-    func shouldShowDateLabel(at index: Int) -> Bool {
-        guard points.count > 10 else { return true }
-        let stride = max(points.count / 6, 1)
-        return index == 0 || index == points.count - 1 || index.isMultiple(of: stride)
+    func shouldShowDateLabel(at index: Int, totalCount: Int) -> Bool {
+        guard totalCount > 10 else { return true }
+        let stride = max(totalCount / 6, 1)
+        return index == 0 || index == totalCount - 1 || index.isMultiple(of: stride)
     }
 
-    func updatePageOffset(with value: DragGesture.Value) {
-        let horizontal = abs(value.predictedEndTranslation.width) > abs(value.predictedEndTranslation.height)
-        guard horizontal, abs(value.predictedEndTranslation.width) > 80 else { return }
-        if value.predictedEndTranslation.width < 0 {
-            pageOffset -= 1
-        } else if pageOffset < 0 {
-            pageOffset += 1
+    func displayDragOffset(for value: DragGesture.Value, chartWidth: CGFloat) -> CGFloat {
+        let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.35
+        guard horizontal else { return residualDragOffset }
+        return boundedViewportOffset(residualDragOffset + value.translation.width, chartWidth: chartWidth)
+    }
+
+    func boundedViewportOffset(_ offset: CGFloat, chartWidth: CGFloat) -> CGFloat {
+        let stepWidth = chartStepWidth(chartWidth: chartWidth)
+        let futureLimit = CGFloat(pageOffset) * stepWidth
+        return max(offset, futureLimit)
+    }
+
+    func finishDrag(with value: DragGesture.Value, chartWidth: CGFloat) {
+        let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.35
+        guard horizontal, abs(value.translation.width) > 18 else {
+            dragOffset = 0
+            return
         }
+        let stepWidth = chartStepWidth(chartWidth: chartWidth)
+        let totalOffset = boundedViewportOffset(residualDragOffset + value.translation.width, chartWidth: chartWidth)
+        let wholeSteps = Int((totalOffset / stepWidth).rounded(.towardZero))
+        let proposedOffset = pageOffset - wholeSteps
+        let finalOffset = min(proposedOffset, 0)
+        let effectiveSteps = pageOffset - finalOffset
+        let newResidualOffset = totalOffset - CGFloat(effectiveSteps) * stepWidth
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            pageOffset = finalOffset
+            residualDragOffset = newResidualOffset
+            dragOffset = 0
+        }
+    }
+
+    func chartStepWidth(chartWidth: CGFloat) -> CGFloat {
+        max((chartWidth - 46) / CGFloat(max(range.days - 1, 1)), 8)
     }
 }
 
@@ -798,4 +1014,3 @@ struct TierSummaryGrid: View {
         String(format: "%.1f %%", value * 100)
     }
 }
-

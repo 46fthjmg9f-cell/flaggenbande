@@ -220,6 +220,7 @@ extension ContentView {
                         language: appLanguage,
                         accentColor: tealAccentColor
                     )
+                    .padding(.bottom, 10)
 
                     Picker(L("Zeitraum", "Range"), selection: $selectedPracticeBalanceRange) {
                         ForEach(PracticeBalanceRange.allCases) { range in
@@ -230,35 +231,55 @@ extension ContentView {
                     .onChange(of: selectedPracticeBalanceRange) { _, _ in
                         scoreHistoryPageOffset = 0
                         practiceBalancePageOffset = 0
+                        learnedHistoryPageOffset = 0
                         selectedScoreHistoryPoint = nil
                         selectedPracticeBalancePoint = nil
+                        selectedLearnedHistoryPoint = nil
                     }
 
                     PracticeBalanceChart(
-                        previousPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: min(practiceBalancePageOffset + 1, 0)),
-                        points: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
-                        nextPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - 1),
+                        title: selectedSubject == .capitals ? L("Gelernte Städte", "Learned cities") : L("Gelernte Flaggen", "Learned flags"),
+                        primaryLabel: L("Gelernt", "Learned"),
+                        showsUnknown: false,
+                        previousPoints: learnedPracticePoints(range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset - selectedPracticeBalanceRange.days),
+                        points: learnedPracticePoints(range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
+                        nextPoints: nextLearnedPracticePoints(range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
                         range: selectedPracticeBalanceRange,
+                        maxValue: learnedPracticeMaxValue(),
+                        pageOffset: $learnedHistoryPageOffset,
+                        selectedPoint: $selectedLearnedHistoryPoint,
+                        language: appLanguage
+                    )
+                    .padding(.bottom, 12)
+
+                    PracticeBalanceChart(
+                        previousPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - selectedPracticeBalanceRange.days),
+                        points: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                        nextPoints: nextPracticeBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                        range: selectedPracticeBalanceRange,
+                        maxValue: practiceBalanceMaxValue(),
                         pageOffset: $practiceBalancePageOffset,
                         selectedPoint: $selectedPracticeBalancePoint,
                         language: appLanguage
                     )
+                    .padding(.bottom, 12)
 
                     FlaggenbossScoreChart(
                         title: bossTitle,
-                        previousPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: min(scoreHistoryPageOffset + 1, 0)),
+                        previousPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - selectedPracticeBalanceRange.days),
                         points: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
-                        nextPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - 1),
+                        nextPoints: nextFlaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
                         range: selectedPracticeBalanceRange,
                         pageOffset: $scoreHistoryPageOffset,
                         selectedPoint: $selectedScoreHistoryPoint,
                         language: appLanguage,
                         accentColor: tealAccentColor
                     )
+                    .padding(.bottom, 8)
                 } else {
                     premiumFeatureNotice(feature: L("Premium-Statistiken", "Premium statistics"))
                     ZStack {
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 18) {
                             ScopeScoreBarChart(
                                 rows: scopeScoreRows(in: availableCountries),
                                 language: appLanguage,
@@ -271,19 +292,33 @@ extension ContentView {
                             }
                             .pickerStyle(.segmented)
                             PracticeBalanceChart(
-                                previousPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: min(practiceBalancePageOffset + 1, 0)),
-                                points: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
-                                nextPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - 1),
+                                title: selectedSubject == .capitals ? L("Gelernte Städte", "Learned cities") : L("Gelernte Flaggen", "Learned flags"),
+                                primaryLabel: L("Gelernt", "Learned"),
+                                showsUnknown: false,
+                                previousPoints: learnedPracticePoints(range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset - selectedPracticeBalanceRange.days),
+                                points: learnedPracticePoints(range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
+                                nextPoints: nextLearnedPracticePoints(range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
                                 range: selectedPracticeBalanceRange,
+                                maxValue: learnedPracticeMaxValue(),
+                                pageOffset: $learnedHistoryPageOffset,
+                                selectedPoint: $selectedLearnedHistoryPoint,
+                                language: appLanguage
+                            )
+                            PracticeBalanceChart(
+                                previousPoints: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - selectedPracticeBalanceRange.days),
+                                points: practiceBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                                nextPoints: nextPracticeBalancePoints(range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                                range: selectedPracticeBalanceRange,
+                                maxValue: practiceBalanceMaxValue(),
                                 pageOffset: $practiceBalancePageOffset,
                                 selectedPoint: $selectedPracticeBalancePoint,
                                 language: appLanguage
                             )
                             FlaggenbossScoreChart(
                                 title: bossTitle,
-                                previousPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: min(scoreHistoryPageOffset + 1, 0)),
+                                previousPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - selectedPracticeBalanceRange.days),
                                 points: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
-                                nextPoints: flaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - 1),
+                                nextPoints: nextFlaggenbossPoints(in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
                                 range: selectedPracticeBalanceRange,
                                 pageOffset: $scoreHistoryPageOffset,
                                 selectedPoint: $selectedScoreHistoryPoint,
@@ -396,6 +431,60 @@ extension ContentView {
             if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 selectedStatisticsTier = nil
                 expandedStatisticsCountryCodes = []
+            }
+        }
+    }
+
+    func closeStatisticsView() {
+        guard !navigationPath.isEmpty else { return }
+        navigationPath.removeLast()
+    }
+
+    var statisticsGraphHintPopup: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "hand.draw.fill")
+                .foregroundStyle(tealAccentColor)
+            Text(L("Graph nach rechts ziehen: Vergangenheit. Nach links: Zukunft.", "Drag charts right for the past. Left for the future."))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button {
+                Haptics.tap()
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                    statisticsGraphHintIsVisible = false
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(tealAccentColor.opacity(0.24), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.14), radius: 16, y: 8)
+    }
+
+    func showStatisticsGraphHint() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+            statisticsGraphHintIsVisible = true
+        }
+
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            await MainActor.run {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                    statisticsGraphHintIsVisible = false
+                }
             }
         }
     }
