@@ -3,20 +3,34 @@ import SwiftUI
 // MARK: - Practice And Show Views
 
 extension ContentView {
+    func adaptiveModeLayout<Content: View>(maxWidth: CGFloat = 560, @ViewBuilder content: @escaping () -> Content) -> some View {
+        GeometryReader { geometry in
+            ViewThatFits(in: .vertical) {
+                content()
+                    .padding()
+                    .frame(maxWidth: maxWidth)
+                    .frame(width: geometry.size.width, alignment: .top)
+
+                ScrollView {
+                    content()
+                        .padding()
+                        .frame(maxWidth: maxWidth)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
     var practiceView: some View {
         ZStack {
             appBackgroundGradient
                 .ignoresSafeArea()
-            ScrollView {
+            adaptiveModeLayout {
                 VStack(spacing: 18) {
                 modeHeader(title: L("Üben", "Practice"), subtitle: "")
                 if !practiceSessionActive {
                     subjectModePickerCard()
                 }
-                if practiceSessionActive {
-                    Spacer(minLength: 42)
-                }
-
                 if practiceSessionActive {
                     PracticeHistoryBar(
                         results: practiceSessionResults,
@@ -114,22 +128,42 @@ extension ContentView {
                     }
                 }
             }
-            .padding()
         }
+
             if let practiceHistoryPreview {
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        dismissPracticeHistoryPreview()
+                        if practiceHistoryGlobeCountry != nil {
+                            dismissPracticeHistoryGlobePreview()
+                        } else {
+                            dismissPracticeHistoryPreview()
+                        }
                     }
                     .zIndex(1)
 
-                practiceHistoryPreviewBubble(for: practiceHistoryPreview)
+                practiceHistoryFloatingPreview(for: practiceHistoryPreview)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.top, practiceHistoryBarMinY + 38)
-                    .transition(.scale(scale: 0.25, anchor: .top).combined(with: .opacity))
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                     .zIndex(2)
+
+                if let practiceHistoryGlobeCountry {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            dismissPracticeHistoryGlobePreview()
+                        }
+                        .zIndex(3)
+
+                    practiceHistoryGlobePopup(for: practiceHistoryGlobeCountry)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .padding(.top, practiceHistoryBarMinY + 238)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                        .zIndex(4)
+                }
             }
         }
         .coordinateSpace(name: "practicePreviewSpace")
@@ -144,32 +178,29 @@ extension ContentView {
         .onChange(of: selectedPracticeContinents) { _, _ in
             withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
                 practiceSessionActive = false
+                practiceHistoryGlobeCountry = nil
                 practiceHistoryPreview = nil
             }
         }
     }
 
-    func practiceHistoryPreviewBubble(for preview: PracticeHistoryPreview) -> some View {
+    func practiceHistoryFloatingPreview(for preview: PracticeHistoryPreview) -> some View {
         GeometryReader { geometry in
             let screenWidth = geometry.size.width
-            let horizontalMargin: CGFloat = 12
-            let outerPadding: CGFloat = 16
-            let barInnerPadding: CGFloat = 10
+            let bubbleWidth = min(max(screenWidth - 20, 300), 410)
+            let popupHeight: CGFloat = selectedSubject == .capitals ? 204 : 188
+            let barHorizontalPadding: CGFloat = 10
             let pillWidth: CGFloat = 28
             let pillSpacing: CGFloat = 7
-            let bubbleWidth = min(max(screenWidth - horizontalMargin * 2, 260), 360)
-            let contentMaxWidth = min(screenWidth - outerPadding * 2, 520)
-            let contentStart = (screenWidth - contentMaxWidth) / 2
-            let barContentWidth = max(contentMaxWidth - barInnerPadding * 2, 1)
             let entriesWidth = CGFloat(preview.total) * pillWidth + CGFloat(max(preview.total - 1, 0)) * pillSpacing
-            let entriesStart = contentStart + barInnerPadding + max((barContentWidth - entriesWidth) / 2, 0)
+            let entriesStart = (screenWidth - entriesWidth) / 2
             let selectedCenterX = entriesStart + CGFloat(preview.index) * (pillWidth + pillSpacing) + pillWidth / 2
-            let bubbleLeft = min(max(selectedCenterX - bubbleWidth / 2, horizontalMargin), screenWidth - bubbleWidth - horizontalMargin)
+            let bubbleLeft = min(max(selectedCenterX - bubbleWidth / 2, barHorizontalPadding), screenWidth - bubbleWidth - barHorizontalPadding)
             let arrowX = min(max(selectedCenterX - bubbleLeft, 24), bubbleWidth - 24)
 
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    Spacer()
+                    Spacer(minLength: 0)
                         .frame(width: arrowX - 13)
                     Triangle()
                         .fill(.ultraThinMaterial)
@@ -183,28 +214,101 @@ extension ContentView {
                 .frame(width: bubbleWidth)
 
                 practiceHistoryPreview(for: preview.change)
+                    .overlay(alignment: .topTrailing) {
+                        Button {
+                            Haptics.tap()
+                            dismissPracticeHistoryPreview()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, height: 28)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(8)
+                    }
             }
             .frame(width: bubbleWidth)
-            .position(x: bubbleLeft + bubbleWidth / 2, y: (selectedSubject == .capitals ? 164 : 146) / 2)
+            .position(x: bubbleLeft + bubbleWidth / 2, y: popupHeight / 2)
         }
-        .frame(height: selectedSubject == .capitals ? 164 : 146)
-        .onTapGesture {
-            dismissPracticeHistoryPreview()
+        .frame(height: selectedSubject == .capitals ? 204 : 188)
+    }
+
+    func practiceHistoryGlobePopup(for country: Country) -> some View {
+        GeometryReader { geometry in
+            let width = min(max(geometry.size.width - 28, 300), 390)
+
+            VStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Text(countryName(for: country))
+                        .font(.headline.weight(.bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+
+                    Spacer(minLength: 0)
+
+                    Text(country.code)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(tealAccentColor, in: Capsule())
+                }
+
+                GlobeSceneView(
+                    countries: [country],
+                    tiersByCountryCode: [country.code: .s],
+                    resetToken: 0,
+                    focusCountryCode: country.code,
+                    persistsViewState: false,
+                    onSelectCountryCode: { _ in }
+                )
+                .frame(height: min(width * 0.82, 300))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                )
+            }
+            .padding(12)
+            .frame(width: width)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+            .position(x: geometry.size.width / 2, y: 180)
         }
+        .frame(height: 360)
     }
 
     func practiceHistoryPreview(for change: PracticeSessionChange) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
-                FlagImage(country: change.country, width: 74, height: 50)
+                FlagImage(country: change.country, width: 82, height: 56, isZoomEnabled: false)
                     .clipShape(RoundedRectangle(cornerRadius: 7))
                     .overlay(
                         RoundedRectangle(cornerRadius: 7)
                             .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
                     )
 
-                MiniLocationGlobe(country: change.country, accentColor: tealAccentColor)
-                    .frame(width: 50, height: 50)
+                Button {
+                    showPracticeHistoryGlobePreview(for: change.country)
+                } label: {
+                    VStack(spacing: 5) {
+                        MiniLocationGlobe(country: change.country, accentColor: tealAccentColor)
+                            .frame(width: 94, height: 94)
+                        Text(change.country.code)
+                            .font(.system(size: 10, weight: .black))
+                            .foregroundStyle(tealAccentColor)
+                    }
+                    .frame(width: 98)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(countryName(for: change.country))
@@ -254,9 +358,6 @@ extension ContentView {
         )
         .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         .contentShape(RoundedRectangle(cornerRadius: 12))
-        .onTapGesture {
-            dismissPracticeHistoryPreview()
-        }
     }
 
     func tierMiniBadge(_ tier: MasteryTier) -> some View {
@@ -270,13 +371,28 @@ extension ContentView {
     func showPracticeHistoryPreview(_ preview: PracticeHistoryPreview) {
         Haptics.tap()
         withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+            practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = preview
         }
     }
 
     func dismissPracticeHistoryPreview() {
         withAnimation(.easeOut(duration: 0.16)) {
+            practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = nil
+        }
+    }
+
+    func showPracticeHistoryGlobePreview(for country: Country) {
+        Haptics.tap()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
+            practiceHistoryGlobeCountry = country
+        }
+    }
+
+    func dismissPracticeHistoryGlobePreview() {
+        withAnimation(.easeOut(duration: 0.16)) {
+            practiceHistoryGlobeCountry = nil
         }
     }
 
@@ -428,9 +544,17 @@ extension ContentView {
                     DragGesture(minimumDistance: 8)
                         .onChanged { value in
                             guard !isFinishingPracticeSwipe else { return }
+                            guard !FlagZoomInteractionState.isPinching else {
+                                practiceCardDragOffset = 0
+                                return
+                            }
                             practiceCardDragOffset = max(min(value.translation.width, 220), -220)
                         }
                         .onEnded { value in
+                            guard !FlagZoomInteractionState.isPinching else {
+                                practiceCardDragOffset = 0
+                                return
+                            }
                             finishPracticeSwipe(translation: value.translation, predictedTranslation: value.predictedEndTranslation)
                         }
                 )
@@ -450,7 +574,7 @@ extension ContentView {
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .onTapGesture {
-            guard !isFinishingPracticeSwipe else { return }
+            guard !isFinishingPracticeSwipe && !FlagZoomInteractionState.isPinching else { return }
             Haptics.tap()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 cardIsFlipped.toggle()
@@ -528,7 +652,7 @@ extension ContentView {
         ZStack {
             appBackgroundGradient
                 .ignoresSafeArea()
-            ScrollView {
+            adaptiveModeLayout {
                 VStack(spacing: 18) {
                 modeHeader(title: "Showmaster", subtitle: "")
                 subjectModePickerCard()
@@ -614,7 +738,6 @@ extension ContentView {
                     .padding(.top, 8)
                 }
             }
-            .padding()
         }
             if let showHistoryPreview {
                 Color.black.opacity(0.001)

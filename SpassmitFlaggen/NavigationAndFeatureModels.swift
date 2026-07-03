@@ -71,7 +71,7 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
         case .friends:
             return localized("Online bündelt Cloud-Sync, Bestenlisten und Vergleiche. Du kannst deinen Spitznamen nutzen, Highscores vergleichen und sehen, wie andere bei Flaggen oder Hauptstädten stehen.", "Online collects cloud sync, leaderboards, and comparisons. You can use your nickname, compare high scores, and see how others are doing with flags or capitals.", language: language)
         case .options:
-            return localized("In den Optionen stellst du Sprache, Design, Vibration, Spitznamen, Daten und Vollversion ein. Debug-Hilfen sind nur für Entwicklung und Balancing gedacht.", "Options control language, design, haptics, nickname, data, and full version. Debug tools are only intended for development and balancing.", language: language)
+            return localized("In den Optionen stellst du Sprache, Design, Vibration, Spitznamen, Daten und Vollversion ein.", "Options control language, design, haptics, nickname, data, and full version.", language: language)
         }
     }
 }

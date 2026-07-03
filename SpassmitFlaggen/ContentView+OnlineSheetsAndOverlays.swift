@@ -4,7 +4,7 @@ import Foundation
 extension ContentView {
     func onlineGlobeSheet(for player: OnlinePlayerStats) -> some View {
         NavigationStack {
-            let playerSubjectStats = player.stats(for: selectedSubject)
+            let playerSubjectStats = displayedOnlineSubjectStats(for: player)
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 6) {

@@ -439,16 +439,24 @@ extension ContentView {
                     DragGesture(minimumDistance: 8)
                         .onChanged { value in
                             guard miniWorldCupAnswerFeedback == nil else { return }
+                            guard !FlagZoomInteractionState.isPinching else {
+                                miniWorldCupCardDragOffset = .zero
+                                return
+                            }
                             miniWorldCupCardDragOffset = value.translation
                         }
                         .onEnded { value in
-                            guard miniWorldCupAnswerFeedback == nil else { return }
+                            guard miniWorldCupAnswerFeedback == nil && !FlagZoomInteractionState.isPinching else {
+                                miniWorldCupCardDragOffset = .zero
+                                return
+                            }
                             finishMiniWorldCupSwipe(width: value.predictedEndTranslation.width)
                         }
                 )
             }
             .contentShape(RoundedRectangle(cornerRadius: 12))
             .onTapGesture {
+                guard !FlagZoomInteractionState.isPinching else { return }
                 revealMiniWorldCupCard()
             }
             .overlay(

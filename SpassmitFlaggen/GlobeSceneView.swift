@@ -9,10 +9,11 @@ struct GlobeSceneView: UIViewRepresentable {
     let tiersByCountryCode: [String: MasteryTier]
     let resetToken: Int
     let focusCountryCode: String?
+    var persistsViewState: Bool = true
     let onSelectCountryCode: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onSelectCountryCode: onSelectCountryCode)
+        Coordinator(persistsViewState: persistsViewState, onSelectCountryCode: onSelectCountryCode)
     }
 
     func makeUIView(context: Context) -> SCNView {
@@ -33,6 +34,7 @@ struct GlobeSceneView: UIViewRepresentable {
     }
 
     func updateUIView(_ sceneView: SCNView, context: Context) {
+        context.coordinator.persistsViewState = persistsViewState
         context.coordinator.onSelectCountryCode = onSelectCountryCode
         context.coordinator.resetIfNeeded(token: resetToken)
         context.coordinator.updateCountries(countries, tiersByCountryCode: tiersByCountryCode)
@@ -40,6 +42,7 @@ struct GlobeSceneView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject {
+        var persistsViewState: Bool
         var onSelectCountryCode: (String) -> Void
         private weak var sceneView: SCNView?
         private let globeNode = SCNNode()
@@ -64,7 +67,8 @@ struct GlobeSceneView: UIViewRepresentable {
         private var lastPanTimestamp: TimeInterval?
         private var inertiaDisplayLink: CADisplayLink?
 
-        init(onSelectCountryCode: @escaping (String) -> Void) {
+        init(persistsViewState: Bool, onSelectCountryCode: @escaping (String) -> Void) {
+            self.persistsViewState = persistsViewState
             self.onSelectCountryCode = onSelectCountryCode
         }
 
@@ -79,7 +83,9 @@ struct GlobeSceneView: UIViewRepresentable {
             cameraNode.camera?.zFar = 100
             scene.rootNode.addChildNode(cameraNode)
             sceneView.pointOfView = cameraNode
-            applyGermanyFocus(animated: false)
+            if !(persistsViewState && applyPersistedViewStateIfAvailable()) {
+                applyGermanyFocus(animated: false)
+            }
 
             let ambientLight = SCNNode()
             ambientLight.light = SCNLight()
@@ -142,6 +148,7 @@ struct GlobeSceneView: UIViewRepresentable {
             previousTrackballVector = nil
             cameraDistance = 3.2
             applyGermanyFocus(animated: true)
+            persistViewState()
         }
 
         func focusIfNeeded(countryCode: String?) {
@@ -196,7 +203,11 @@ struct GlobeSceneView: UIViewRepresentable {
             case .ended, .cancelled, .failed:
                 previousTrackballVector = nil
                 lastPanTimestamp = nil
-                startInertiaIfNeeded()
+                if inertiaAngularVelocity > 1.2 {
+                    startInertiaIfNeeded()
+                } else {
+                    persistViewState()
+                }
             default:
                 break
             }
@@ -208,6 +219,9 @@ struct GlobeSceneView: UIViewRepresentable {
             cameraDistance = min(max(cameraDistance / scale, minimumCameraDistance), maximumCameraDistance)
             cameraNode.position = SCNVector3(0, 0, cameraDistance)
             gesture.scale = 1
+            if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
+                persistViewState()
+            }
         }
 
         @objc private func handleInertiaFrame(_ displayLink: CADisplayLink) {
@@ -220,6 +234,7 @@ struct GlobeSceneView: UIViewRepresentable {
             inertiaAngularVelocity *= pow(0.92, deltaTime * 60)
             if inertiaAngularVelocity < 0.08 {
                 stopInertia()
+                persistViewState()
             }
         }
 
@@ -316,6 +331,23 @@ struct GlobeSceneView: UIViewRepresentable {
             } else {
                 changes()
             }
+            persistViewState()
+        }
+
+        private func applyPersistedViewStateIfAvailable() -> Bool {
+            guard let state = GlobeScenePersistedViewState.load() else { return false }
+            cameraDistance = min(max(state.cameraDistance, minimumCameraDistance), maximumCameraDistance)
+            globeOrientation = simd_quatf(vector: SIMD4<Float>(state.imaginaryX, state.imaginaryY, state.imaginaryZ, state.real))
+            globeNode.simdOrientation = globeOrientation
+            cameraNode.position = SCNVector3(0, 0, cameraDistance)
+            cameraNode.eulerAngles = SCNVector3Zero
+            sceneView?.pointOfView = cameraNode
+            return true
+        }
+
+        private func persistViewState() {
+            guard persistsViewState else { return }
+            GlobeScenePersistedViewState.save(orientation: globeOrientation, cameraDistance: cameraDistance)
         }
 
         private func loadBoundariesIfNeeded() {
@@ -330,10 +362,21 @@ struct GlobeSceneView: UIViewRepresentable {
                 return
             }
 
+            if let localData = GlobeBoundaryCache.loadLocalData(), let boundaryData = GlobeBoundaryData.parse(data: localData) {
+                GlobeBoundaryCache.source = globeBoundarySource
+                GlobeBoundaryCache.data = boundaryData
+                self.boundaryData = boundaryData
+                rebuildGlobeTexture()
+                rebuildBoundaries()
+                focusIfNeeded(countryCode: pendingFocusCountryCode)
+                return
+            }
+
             guard let url = URL(string: globeBoundaryURLString) else { return }
 
             URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
                 guard let self, let data, let boundaryData = GlobeBoundaryData.parse(data: data) else { return }
+                GlobeBoundaryCache.storeLocalData(data)
                 DispatchQueue.main.async {
                     GlobeBoundaryCache.source = globeBoundarySource
                     GlobeBoundaryCache.data = boundaryData
@@ -487,9 +530,52 @@ let globeMainlandFocusByCountryCode: [String: GlobeCoordinate] = [
 enum GlobeBoundaryCache {
     static var source: String?
     static var data: GlobeBoundaryData?
+
+    private static var localCacheURL: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("globe-boundaries-\(globeBoundarySource).geojson")
+    }
+
+    static func loadLocalData() -> Data? {
+        guard let localCacheURL else { return nil }
+        return try? Data(contentsOf: localCacheURL)
+    }
+
+    static func storeLocalData(_ newData: Data) {
+        guard let localCacheURL else { return }
+        try? newData.write(to: localCacheURL, options: .atomic)
+    }
 }
 
-struct GlobeCoordinate {
+private struct GlobeScenePersistedViewState: Codable {
+    static let storageKey = "globeScenePersistedViewStateV1"
+
+    let imaginaryX: Float
+    let imaginaryY: Float
+    let imaginaryZ: Float
+    let real: Float
+    let cameraDistance: Float
+
+    static func load() -> GlobeScenePersistedViewState? {
+        guard let data = UserDefaults.standard.data(forKey: storageKey) else { return nil }
+        return try? JSONDecoder().decode(GlobeScenePersistedViewState.self, from: data)
+    }
+
+    static func save(orientation: simd_quatf, cameraDistance: Float) {
+        let vector = orientation.vector
+        let state = GlobeScenePersistedViewState(
+            imaginaryX: vector.x,
+            imaginaryY: vector.y,
+            imaginaryZ: vector.z,
+            real: vector.w,
+            cameraDistance: cameraDistance
+        )
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        UserDefaults.standard.set(data, forKey: storageKey)
+    }
+}
+
+struct GlobeCoordinate: Codable {
     let latitude: Double
     let longitude: Double
 }

@@ -16,13 +16,15 @@ struct ContentView: View {
     @AppStorage("includePartiallyRecognizedFlags") var includePartiallyRecognizedFlags: Bool = false
     @AppStorage("onlineFeaturesEnabled") var onlineFeaturesEnabled: Bool = true
     @AppStorage("didEnableOnlineByDefault") var didEnableOnlineByDefault: Bool = false
-    @AppStorage("debugToolsEnabled") var debugToolsEnabled: Bool = false
-    @AppStorage("fullVersionUnlocked") var fullVersionUnlocked: Bool = false
     @AppStorage("hapticsEnabled") var hapticsEnabled: Bool = true
+    #if DEBUG
+    @AppStorage("debugToolsEnabled") var debugToolsEnabled: Bool = false
+    #endif
 
     // MARK: - App State
 
     @StateObject var storeKit = StoreKitManager()
+    @State var fullVersionUnlocked: Bool = false
     @State var appData: AppData = AppStorageService.load()
     @State var onlineLeaderboard: [OnlinePlayerStats] = []
     @State var onlineLeaderboardRefreshID: Int = 0
@@ -108,6 +110,7 @@ struct ContentView: View {
     @State var practiceSessionResults: [Bool] = []
     @State var practiceSessionChanges: [PracticeSessionChange] = []
     @State var practiceHistoryPreview: PracticeHistoryPreview?
+    @State var practiceHistoryGlobeCountry: Country?
     @State var practiceHistoryBarMinY: CGFloat = 150
     @State var practiceForcedNextCountry: Country?
     @State var practiceUndoSnapshot: PracticeUndoSnapshot?
@@ -169,6 +172,8 @@ struct ContentView: View {
     @State var selectedTierDecayChangeID: String?
     @State var tierDecayShowsAllChanges: Bool = false
     @State var achievementPopupItem: AchievementItem?
+    @State var achievementPopupDragOffset: CGFloat = 0
+    @State var expandedOnlineLeaderboardSections: Set<String> = []
     @State var achievementSortMode: AchievementSortMode = .category
     @State var selectedMenuInfoScreen: AppScreen?
     @State var isShowingResetConfirmation: Bool = false
@@ -230,6 +235,26 @@ struct ContentView: View {
                     .padding(.horizontal, 18)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.top, 18)
+                    .offset(y: achievementPopupDragOffset)
+                    .gesture(
+                        DragGesture(minimumDistance: 12)
+                            .onChanged { value in
+                                achievementPopupDragOffset = min(max(value.translation.height, -120), 80)
+                            }
+                            .onEnded { value in
+                                if value.translation.height < -34 || value.predictedEndTranslation.height < -70 {
+                                    Haptics.tap()
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        achievementPopupDragOffset = -140
+                                        self.achievementPopupItem = nil
+                                    }
+                                } else {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                        achievementPopupDragOffset = 0
+                                    }
+                                }
+                            }
+                    )
                     .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96)))
                     .zIndex(2)
             }
@@ -279,6 +304,7 @@ struct ContentView: View {
             showDeckCountryCodes = []
             showRecap = false
             statisticsSearchText = ""
+            expandedOnlineLeaderboardSections = []
             cardIsFlipped = false
             resetCurrentCardHint()
             currentCountry = nextRandomCountry(excluding: currentCountry)

@@ -20,7 +20,7 @@ struct FreeTierCountryRow: View {
                     if subject == .capitals {
                         Text(capital)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(.secondary)
                     }
                 }
 
@@ -194,10 +194,13 @@ struct TierHistoryView: View {
                     gridPath.addLine(to: CGPoint(x: size.width - rightPadding, y: y))
                     context.stroke(gridPath, with: .color(.secondary.opacity(0.16)), lineWidth: 1)
 
-                    let label = Text(tier.rawValue)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(tier.color)
-                    context.draw(label, at: CGPoint(x: 9, y: y), anchor: .center)
+                    context.draw(
+                        Text(tier.rawValue)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(tier.color),
+                        at: CGPoint(x: 9, y: y),
+                        anchor: .center
+                    )
 
                     if index == tierOrder.count - 1 {
                         var axisPath = Path()
@@ -230,10 +233,13 @@ struct TierHistoryView: View {
                     context.fill(Path(ellipseIn: rect), with: .color(entry.tier.color))
 
                     if index == 0 || index == entries.count - 1 || entries.count <= 4 {
-                        let dateLabel = Text(shortDate(entry.date))
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        context.draw(dateLabel, at: CGPoint(x: point.x, y: size.height - 6), anchor: .center)
+                        context.draw(
+                            Text(shortDate(entry.date))
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(.secondary),
+                            at: CGPoint(x: point.x, y: size.height - 6),
+                            anchor: .center
+                        )
                     }
                 }
             }

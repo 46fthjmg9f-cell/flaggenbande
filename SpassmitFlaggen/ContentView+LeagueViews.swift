@@ -340,9 +340,7 @@ extension ContentView {
             ZStack {
                 Group {
                     if let leaguePreloadedFlagImage {
-                        Image(uiImage: leaguePreloadedFlagImage)
-                            .resizable()
-                            .scaledToFit()
+                        ZoomableFlagImageView(image: leaguePreloadedFlagImage)
                             .frame(width: 280, height: 170)
                     } else {
                         FlagImage(country: leagueCurrentCountry, width: 280, height: 170)

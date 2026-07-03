@@ -7,6 +7,10 @@ import GameKit
 extension ContentView {
     func runStartupWorkAfterFirstRender() async {
         await Task.yield()
+        UserDefaults.standard.removeObject(forKey: "fullVersionUnlocked")
+        fullVersionUnlocked = false
+        await storeKit.loadProducts()
+        fullVersionUnlocked = storeKit.purchasedFullVersion
         ensureTrainerProfile()
         if !didEnableOnlineByDefault {
             didEnableOnlineByDefault = true
@@ -80,6 +84,7 @@ extension ContentView {
     func showAchievementPopup(_ item: AchievementItem) {
         Haptics.notify(.success)
         withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
+            achievementPopupDragOffset = 0
             achievementPopupItem = item
         }
 
@@ -355,6 +360,7 @@ extension ContentView {
         practiceSessionImproved = 0
         practiceSessionResults = []
         practiceSessionChanges = []
+        practiceHistoryGlobeCountry = nil
         practiceHistoryPreview = nil
         practiceForcedNextCountry = nil
         practiceUndoSnapshot = nil
@@ -389,6 +395,7 @@ extension ContentView {
             currentCountry = nextCountry
             cardIsFlipped = false
             resetCurrentCardHint()
+            practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = nil
             practiceCardDragOffset = 0
             isFinishingPracticeSwipe = false
@@ -412,6 +419,7 @@ extension ContentView {
         practiceSessionImproved = 0
         practiceSessionResults = []
         practiceSessionChanges = []
+        practiceHistoryGlobeCountry = nil
         practiceHistoryPreview = nil
         practiceForcedNextCountry = nil
         practiceUndoSnapshot = nil
@@ -422,6 +430,7 @@ extension ContentView {
         currentCountry = nextPracticeCountry()
         cardIsFlipped = false
         resetCurrentCardHint()
+        practiceHistoryGlobeCountry = nil
         practiceHistoryPreview = nil
         practiceCardDragOffset = 0
         practiceCardEntryOffset = 0
@@ -464,6 +473,7 @@ extension ContentView {
             isFinishingPracticeSwipe = false
             recapEndCounts = activeProfile.tierCounts(in: availableCountries)
             showRecap = showSummary && practiceSessionCount > 0
+            practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = nil
         }
     }
@@ -482,6 +492,7 @@ extension ContentView {
             practiceSessionImproved = snapshot.practiceSessionImproved
             practiceSessionResults = snapshot.practiceSessionResults
             practiceSessionChanges = snapshot.practiceSessionChanges
+            practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = nil
             practiceSessionSeenCountryCodes = snapshot.practiceSessionSeenCountryCodes
             practiceForcedNextCountry = nextCountryAfterUndo

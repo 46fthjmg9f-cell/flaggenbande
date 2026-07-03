@@ -75,8 +75,10 @@ enum OnlineStatsService {
     static let recordType = "PlayerStats"
     static let nicknameRecordType = "NicknameClaim"
     static let playerIDKey = "onlinePlayerID"
+    #if DEBUG
     static let testFriendName = "FlaggenTest"
     static let testFriendRecordName = "test_friend_flaggenbande"
+    #endif
     static let containerIdentifier = "iCloud.de.phil.SpassmitFlaggen"
     static let container = CKContainer(identifier: containerIdentifier)
     static let database = container.publicCloudDatabase
@@ -229,6 +231,7 @@ enum OnlineStatsService {
             }
     }
 
+    #if DEBUG
     static func createTestFriend(countries: [Country]) async throws {
         try await ensureAccountAvailable()
         let record = CKRecord(recordType: recordType, recordID: CKRecord.ID(recordName: testFriendRecordName))
@@ -330,6 +333,7 @@ enum OnlineStatsService {
         record["updatedAt"] = Date() as CKRecordValue
         try await save(record: record)
     }
+    #endif
 
     static func fetchRecord(recordID: CKRecord.ID) async throws -> CKRecord? {
         try await withTimeout {

@@ -9,26 +9,34 @@ extension ContentView {
                 if fullVersionUnlocked {
                     Label(L("Du hast die Vollversion, Dankeschön!", "You have the full version, thank you!"), systemImage: "checkmark.seal.fill")
                         .foregroundStyle(tealAccentColor)
-                } else if let product = storeKit.fullVersionProduct {
+                } else {
                     Button {
                         Haptics.tap()
                         Task {
-                            await storeKit.purchase(product)
-                            fullVersionUnlocked = storeKit.purchasedFullVersion
+                            if storeKit.fullVersionProduct == nil {
+                                await storeKit.loadProducts()
+                            }
+                            if let product = storeKit.fullVersionProduct {
+                                await storeKit.purchase(product)
+                                fullVersionUnlocked = storeKit.purchasedFullVersion
+                            }
                         }
                     } label: {
                         HStack(spacing: 12) {
-                            Label(L("Vollversion freischalten", "Unlock full version"), systemImage: "lock.open.fill")
+                            Label(L("Vollversion kaufen", "Buy full version"), systemImage: "lock.open.fill")
                             Spacer()
-                            Text(product.displayPrice)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(tealAccentColor)
+                            if let product = storeKit.fullVersionProduct {
+                                Text(product.displayPrice)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(tealAccentColor)
+                            } else {
+                                Text(L("Preis lädt", "Loading price"))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     .disabled(storeKit.isLoading)
-                } else {
-                    Label(L("Vollversion lädt", "Loading full version"), systemImage: "clock")
-                        .foregroundStyle(.secondary)
                 }
 
                 if !fullVersionUnlocked {
@@ -154,6 +162,7 @@ extension ContentView {
                 }
             }
 
+            #if DEBUG
             Section("Debug") {
                 Toggle(isOn: $debugToolsEnabled) {
                     Label(L("Debug-Werkzeuge", "Debug tools"), systemImage: "ladybug.fill")
@@ -195,12 +204,14 @@ extension ContentView {
                     } label: {
                         Label(L("Testfreund erstellen/aktualisieren", "Create/update test friend"), systemImage: "person.crop.circle.badge.plus")
                     }
+                    .disabled(isSyncingOnlineStats)
 
-                    Text(L("Diese Werkzeuge sind nur für Entwicklung und Balancing gedacht und können vor dem Release komplett entfernt werden.", "These tools are only for development and balancing and can be removed before release."))
+                    Text(L("Diese Werkzeuge sind nur in Debug-Builds sichtbar und werden im Release nicht kompiliert.", "These tools are only visible in Debug builds and are not compiled into Release."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
+            #endif
 
             Section(L("Daten", "Data")) {
                 Button(role: .destructive) {

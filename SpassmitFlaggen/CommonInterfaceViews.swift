@@ -6,6 +6,9 @@ struct MiniLocationGlobe: View {
     let country: Country
     let accentColor: Color
     @State private var boundaryData: GlobeBoundaryData?
+    @State private var localSnapshot: MiniLocationSnapshot?
+    @State private var isLoadingBoundaries = false
+    @State private var loadingPulse = false
 
     var body: some View {
         Canvas { context, size in
@@ -29,32 +32,60 @@ struct MiniLocationGlobe: View {
             drawGrid(in: &context, size: size)
 
             guard let boundaryData else {
+                if let localSnapshot {
+                    drawLocalSnapshot(localSnapshot, in: &context, size: size)
+                } else {
+                    drawFallbackFocus(in: &context, size: size)
+                }
+                return
+            }
+
+            let availableCodes = Set(allPracticeCountries.map(\.code))
+            let selectedRings = boundaryData.ringsByCountryCode[country.code] ?? []
+            guard let focusBounds = miniGlobeFocusBounds(for: selectedRings, fallbackCenter: boundaryData.centroidsByCountryCode[country.code] ?? fallbackCoordinate) else {
                 drawFallbackFocus(in: &context, size: size)
                 return
             }
 
-            let center = boundaryData.centroidsByCountryCode[country.code] ?? fallbackCoordinate
-            let availableCodes = Set(allPracticeCountries.map(\.code))
-            let selectedRings = boundaryData.ringsByCountryCode[country.code] ?? []
-
             for code in availableCodes where code != country.code {
                 guard let rings = boundaryData.ringsByCountryCode[code] else { continue }
                 for ring in rings {
-                    let path = globePath(for: ring, center: center, size: size)
-                    context.fill(path, with: .color(Color.white.opacity(0.20)))
-                    context.stroke(path, with: .color(Color.white.opacity(0.22)), lineWidth: 0.45)
+                    let path = mapPath(for: ring, in: focusBounds, size: size)
+                    guard !path.boundingRect.isNull, path.boundingRect.intersects(rect.insetBy(dx: -8, dy: -8)) else { continue }
+                    context.fill(path, with: .color(Color.white.opacity(0.15)))
+                    context.stroke(path, with: .color(Color.white.opacity(0.18)), lineWidth: 0.35)
                 }
             }
 
-            for ring in selectedRings {
-                let path = globePath(for: ring, center: center, size: size)
-                context.fill(path, with: .color(accentColor.opacity(0.94)))
-                context.stroke(path, with: .color(.white), lineWidth: 1.65)
-                context.stroke(path, with: .color(accentColor), lineWidth: 0.75)
+            let selectedPaths = selectedRings.map { mapPath(for: $0, in: focusBounds, size: size) }
+            let selectedBounds = selectedPaths.reduce(CGRect.null) { $0.union($1.boundingRect) }
+
+            for path in selectedPaths {
+                context.fill(path, with: .color(accentColor.opacity(0.97)))
+                context.stroke(path, with: .color(.white), lineWidth: 2.2)
+                context.stroke(path, with: .color(accentColor), lineWidth: 0.9)
             }
 
-            context.stroke(circlePath, with: .color(Color.white.opacity(0.46)), lineWidth: 1)
-            context.stroke(circlePath, with: .color(accentColor.opacity(0.30)), lineWidth: 2)
+            if selectedBounds.isNull || min(selectedBounds.width, selectedBounds.height) < min(size.width, size.height) * 0.14 {
+                drawFocusBeacon(in: &context, size: size)
+            }
+
+            context.stroke(circlePath, with: .color(Color.white.opacity(0.52)), lineWidth: 1)
+            context.stroke(circlePath, with: .color(accentColor.opacity(0.36)), lineWidth: 2)
+        }
+        .overlay {
+            if isLoadingBoundaries && boundaryData == nil && localSnapshot == nil {
+                ZStack {
+                    Circle()
+                        .stroke(accentColor.opacity(loadingPulse ? 0.18 : 0.52), lineWidth: 2)
+                        .scaleEffect(loadingPulse ? 1.18 : 0.82)
+                    ProgressView()
+                        .scaleEffect(0.62)
+                        .tint(.white)
+                }
+                .padding(8)
+                .transition(.opacity)
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             Text(country.code)
@@ -69,8 +100,14 @@ struct MiniLocationGlobe: View {
                 )
                 .offset(x: 3, y: 3)
         }
-        .onAppear(perform: loadBoundariesIfNeeded)
+        .onAppear {
+            startLoadingPulse()
+            loadBoundariesIfNeeded()
+        }
         .onChange(of: country.code) { _, _ in
+            boundaryData = nil
+            localSnapshot = nil
+            startLoadingPulse()
             loadBoundariesIfNeeded()
         }
     }
@@ -89,26 +126,136 @@ struct MiniLocationGlobe: View {
     }
 
     private func loadBoundariesIfNeeded() {
+        localSnapshot = MiniLocationSnapshotStore.snapshot(for: country.code)
+        if localSnapshot != nil {
+            isLoadingBoundaries = false
+        }
+
         if let cachedData = GlobeBoundaryCache.data, GlobeBoundaryCache.source == globeBoundarySource {
             boundaryData = cachedData
+            cacheSnapshot(from: cachedData)
+            isLoadingBoundaries = false
+            return
+        }
+
+        if let localData = GlobeBoundaryCache.loadLocalData(), let parsedData = GlobeBoundaryData.parse(data: localData) {
+            GlobeBoundaryCache.source = globeBoundarySource
+            GlobeBoundaryCache.data = parsedData
+            boundaryData = parsedData
+            cacheSnapshot(from: parsedData)
+            isLoadingBoundaries = false
             return
         }
 
         guard boundaryData == nil, let url = URL(string: globeBoundaryURLString) else { return }
+        isLoadingBoundaries = true
         URLSession.shared.dataTask(with: url) { data, _, _ in
-            guard let data, let parsedData = GlobeBoundaryData.parse(data: data) else { return }
+            guard let data, let parsedData = GlobeBoundaryData.parse(data: data) else {
+                DispatchQueue.main.async {
+                    isLoadingBoundaries = false
+                }
+                return
+            }
+            GlobeBoundaryCache.storeLocalData(data)
             DispatchQueue.main.async {
                 GlobeBoundaryCache.source = globeBoundarySource
                 GlobeBoundaryCache.data = parsedData
                 boundaryData = parsedData
+                cacheSnapshot(from: parsedData)
+                isLoadingBoundaries = false
             }
         }.resume()
     }
 
+    private func startLoadingPulse() {
+        guard boundaryData == nil && localSnapshot == nil else { return }
+        isLoadingBoundaries = true
+        loadingPulse = false
+        withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
+            loadingPulse = true
+        }
+    }
+
+    private func cacheSnapshot(from boundaryData: GlobeBoundaryData) {
+        let rings = boundaryData.ringsByCountryCode[country.code] ?? []
+        guard let focusBounds = miniGlobeFocusBounds(for: rings, fallbackCenter: boundaryData.centroidsByCountryCode[country.code] ?? fallbackCoordinate) else { return }
+        let snapshot = MiniLocationSnapshot(countryCode: country.code, rings: rings, bounds: MiniLocationSnapshotBounds(focusBounds))
+        MiniLocationSnapshotStore.store(snapshot)
+        localSnapshot = snapshot
+    }
+
     private func drawFallbackFocus(in context: inout GraphicsContext, size: CGSize) {
+        drawFocusBeacon(in: &context, size: size)
+    }
+
+    private func drawFocusBeacon(in context: inout GraphicsContext, size: CGSize) {
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        context.fill(Path(ellipseIn: CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 14)), with: .color(accentColor.opacity(0.28)))
         context.fill(Path(ellipseIn: CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8)), with: .color(accentColor))
-        context.stroke(Path(ellipseIn: CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)), with: .color(.white), lineWidth: 1.4)
+        context.stroke(Path(ellipseIn: CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18)), with: .color(.white.opacity(0.92)), lineWidth: 1.6)
+        context.stroke(Path(ellipseIn: CGRect(x: center.x - 13, y: center.y - 13, width: 26, height: 26)), with: .color(accentColor.opacity(0.5)), lineWidth: 1)
+    }
+
+    private func drawLocalSnapshot(_ snapshot: MiniLocationSnapshot, in context: inout GraphicsContext, size: CGSize) {
+        let bounds = snapshot.bounds.cgRect
+        let selectedPaths = snapshot.rings.map { mapPath(for: $0, in: bounds, size: size) }
+        let selectedBounds = selectedPaths.reduce(CGRect.null) { $0.union($1.boundingRect) }
+
+        for path in selectedPaths {
+            context.fill(path, with: .color(accentColor.opacity(0.97)))
+            context.stroke(path, with: .color(.white), lineWidth: 2.2)
+            context.stroke(path, with: .color(accentColor), lineWidth: 0.9)
+        }
+
+        if selectedBounds.isNull || min(selectedBounds.width, selectedBounds.height) < min(size.width, size.height) * 0.14 {
+            drawFocusBeacon(in: &context, size: size)
+        }
+    }
+
+    private func miniGlobeFocusBounds(for rings: [[GlobeCoordinate]], fallbackCenter: GlobeCoordinate) -> CGRect? {
+        let coordinates = rings.flatMap { $0 }
+        guard !coordinates.isEmpty else {
+            return CGRect(x: fallbackCenter.longitude - 9, y: fallbackCenter.latitude - 9, width: 18, height: 18)
+        }
+
+        let latitudes = coordinates.map(\.latitude)
+        let longitudes = coordinates.map(\.longitude)
+        let minimumLatitude = latitudes.min() ?? fallbackCenter.latitude
+        let maximumLatitude = latitudes.max() ?? fallbackCenter.latitude
+        let minimumLongitude = longitudes.min() ?? fallbackCenter.longitude
+        let maximumLongitude = longitudes.max() ?? fallbackCenter.longitude
+        let centerLatitude = (minimumLatitude + maximumLatitude) / 2
+        let centerLongitude = (minimumLongitude + maximumLongitude) / 2
+        let latitudeSpan = max(maximumLatitude - minimumLatitude, 0.6)
+        let longitudeSpan = max(maximumLongitude - minimumLongitude, 0.6)
+        let span = min(max(max(latitudeSpan, longitudeSpan) * 2.45, 16), 130)
+
+        return CGRect(
+            x: centerLongitude - span / 2,
+            y: centerLatitude - span / 2,
+            width: span,
+            height: span
+        )
+    }
+
+    private func mapPath(for ring: [GlobeCoordinate], in bounds: CGRect, size: CGSize) -> Path {
+        var path = Path()
+        guard bounds.width > 0, bounds.height > 0 else { return path }
+        let mapRect = CGRect(origin: .zero, size: size).insetBy(dx: size.width * 0.08, dy: size.height * 0.08)
+
+        for (index, coordinate) in ring.enumerated() {
+            let point = CGPoint(
+                x: mapRect.minX + CGFloat((coordinate.longitude - bounds.minX) / bounds.width) * mapRect.width,
+                y: mapRect.minY + CGFloat((bounds.maxY - coordinate.latitude) / bounds.height) * mapRect.height
+            )
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        path.closeSubpath()
+        return path
     }
 
     private func drawGrid(in context: inout GraphicsContext, size: CGSize) {
@@ -135,12 +282,12 @@ struct MiniLocationGlobe: View {
         }
     }
 
-    private func globePath(for ring: [GlobeCoordinate], center: GlobeCoordinate, size: CGSize) -> Path {
+    private func globePath(for ring: [GlobeCoordinate], center: GlobeCoordinate, size: CGSize, focusScale: CGFloat) -> Path {
         var path = Path()
         var isDrawing = false
 
         for coordinate in ring {
-            guard let point = projectedPoint(for: coordinate, center: center, size: size) else {
+            guard let point = projectedPoint(for: coordinate, center: center, size: size, focusScale: focusScale) else {
                 isDrawing = false
                 continue
             }
@@ -157,7 +304,7 @@ struct MiniLocationGlobe: View {
         return path
     }
 
-    private func projectedPoint(for coordinate: GlobeCoordinate, center: GlobeCoordinate, size: CGSize) -> CGPoint? {
+    private func projectedPoint(for coordinate: GlobeCoordinate, center: GlobeCoordinate, size: CGSize, focusScale: CGFloat) -> CGPoint? {
         let latitude = coordinate.latitude * .pi / 180
         let longitude = coordinate.longitude * .pi / 180
         let centerLatitude = center.latitude * .pi / 180
@@ -165,13 +312,60 @@ struct MiniLocationGlobe: View {
         let deltaLongitude = longitude - centerLongitude
         let visible = sin(centerLatitude) * sin(latitude) + cos(centerLatitude) * cos(latitude) * cos(deltaLongitude)
 
-        guard visible >= -0.03 else { return nil }
+        guard visible >= -0.08 else { return nil }
 
-        let radius = min(size.width, size.height) * 0.43
+        let radius = min(size.width, size.height) * 0.43 * focusScale
         let x = radius * cos(latitude) * sin(deltaLongitude)
         let y = -radius * (cos(centerLatitude) * sin(latitude) - sin(centerLatitude) * cos(latitude) * cos(deltaLongitude))
 
         return CGPoint(x: size.width / 2 + x, y: size.height / 2 + y)
+    }
+}
+
+struct MiniLocationSnapshot: Codable {
+    let countryCode: String
+    let rings: [[GlobeCoordinate]]
+    let bounds: MiniLocationSnapshotBounds
+}
+
+struct MiniLocationSnapshotBounds: Codable {
+    let minX: Double
+    let minY: Double
+    let width: Double
+    let height: Double
+
+    init(_ rect: CGRect) {
+        minX = Double(rect.minX)
+        minY = Double(rect.minY)
+        width = Double(rect.width)
+        height = Double(rect.height)
+    }
+
+    var cgRect: CGRect {
+        CGRect(x: minX, y: minY, width: width, height: height)
+    }
+}
+
+enum MiniLocationSnapshotStore {
+    private static let storageKey = "miniLocationSnapshotsV1"
+
+    static func snapshot(for countryCode: String) -> MiniLocationSnapshot? {
+        snapshots()[countryCode]
+    }
+
+    static func store(_ snapshot: MiniLocationSnapshot) {
+        var currentSnapshots = snapshots()
+        currentSnapshots[snapshot.countryCode] = snapshot
+        guard let data = try? JSONEncoder().encode(currentSnapshots) else { return }
+        UserDefaults.standard.set(data, forKey: storageKey)
+    }
+
+    private static func snapshots() -> [String: MiniLocationSnapshot] {
+        guard let data = UserDefaults.standard.data(forKey: storageKey),
+              let decoded = try? JSONDecoder().decode([String: MiniLocationSnapshot].self, from: data) else {
+            return [:]
+        }
+        return decoded
     }
 }
 
@@ -541,15 +735,21 @@ struct FlagImage: View {
     let country: Country
     let width: CGFloat
     let height: CGFloat
+    var isZoomEnabled: Bool = true
     @State private var image: UIImage?
     @State private var didFailLoading = false
 
     var body: some View {
         Group {
             if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
+                if isZoomEnabled {
+                    ZoomableFlagImageView(image: image)
+                } else {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .clipped()
+                }
             } else if didFailLoading {
                 Image(systemName: "flag.slash")
                     .font(.system(size: min(width, height) * 0.45))
@@ -559,7 +759,6 @@ struct FlagImage: View {
             }
         }
         .frame(width: width, height: height)
-        .clipped()
         .task(id: country.code) {
             await loadImage()
         }
@@ -588,6 +787,198 @@ struct FlagImage: View {
         } catch {
             guard !Task.isCancelled else { return }
             didFailLoading = true
+        }
+    }
+}
+
+enum FlagZoomInteractionState {
+    static var isPinching = false
+}
+
+struct ZoomableFlagImageView: View {
+    let image: UIImage
+
+    var body: some View {
+        Image(uiImage: image)
+            .resizable()
+            .scaledToFit()
+            .background {
+                WindowPinchGestureReader(image: image)
+            }
+    }
+}
+
+private struct WindowPinchGestureReader: UIViewRepresentable {
+    let image: UIImage
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(image: image)
+    }
+
+    func makeUIView(context: Context) -> PinchMarkerView {
+        let view = PinchMarkerView(frame: .zero)
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        view.onMoveToWindow = { [weak coordinator = context.coordinator] in
+            coordinator?.attachIfPossible()
+        }
+        context.coordinator.markerView = view
+        return view
+    }
+
+    func updateUIView(_ uiView: PinchMarkerView, context: Context) {
+        context.coordinator.markerView = uiView
+        context.coordinator.updateImage(image)
+        uiView.onMoveToWindow = { [weak coordinator = context.coordinator] in
+            coordinator?.attachIfPossible()
+        }
+        context.coordinator.attachIfPossible()
+    }
+
+    final class PinchMarkerView: UIView {
+        var onMoveToWindow: (() -> Void)?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            onMoveToWindow?()
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var image: UIImage
+        weak var markerView: UIView?
+        private weak var attachedView: UIView?
+        private var overlayImageView: UIImageView?
+        private var initialOverlayFrame: CGRect = .zero
+        private var initialPinchLocation: CGPoint = .zero
+        private var isHandlingPinch = false
+        private let hitSlop: CGFloat = 24
+
+        private lazy var pinchGesture: UIPinchGestureRecognizer = {
+            let gesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+            gesture.cancelsTouchesInView = true
+            gesture.delaysTouchesBegan = true
+            gesture.delaysTouchesEnded = true
+            gesture.delegate = self
+            return gesture
+        }()
+
+        init(image: UIImage) {
+            self.image = image
+        }
+
+        func updateImage(_ newImage: UIImage) {
+            guard image !== newImage else { return }
+            image = newImage
+            overlayImageView?.removeFromSuperview()
+            overlayImageView = nil
+            isHandlingPinch = false
+            FlagZoomInteractionState.isPinching = false
+        }
+
+        func attachIfPossible() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let markerView = self.markerView, let targetView = markerView.window else { return }
+                guard self.attachedView !== targetView else { return }
+                self.attachedView?.removeGestureRecognizer(self.pinchGesture)
+                targetView.addGestureRecognizer(self.pinchGesture)
+                self.attachedView = targetView
+            }
+        }
+
+        @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+            guard let markerView, let window = markerView.window else { return }
+            let markerLocation = gesture.location(in: markerView)
+
+            switch gesture.state {
+            case .began:
+                guard expandedHitRect(for: markerView).contains(markerLocation) else { return }
+                isHandlingPinch = true
+                FlagZoomInteractionState.isPinching = true
+                initialPinchLocation = gesture.location(in: window)
+                beginOverlay(in: window, from: markerView)
+                gesture.scale = 1
+            case .changed:
+                guard isHandlingPinch, let overlayImageView else { return }
+                let scale = min(max(gesture.scale, 1), 4.8)
+                let windowLocation = gesture.location(in: window)
+                overlayImageView.center = CGPoint(
+                    x: initialOverlayFrame.midX + (windowLocation.x - initialPinchLocation.x),
+                    y: initialOverlayFrame.midY + (windowLocation.y - initialPinchLocation.y)
+                )
+                overlayImageView.transform = CGAffineTransform(scaleX: scale, y: scale)
+            case .ended, .cancelled, .failed:
+                guard isHandlingPinch else { return }
+                endOverlay()
+                isHandlingPinch = false
+                gesture.scale = 1
+            default:
+                break
+            }
+        }
+
+        private func beginOverlay(in window: UIView, from markerView: UIView) {
+            overlayImageView?.removeFromSuperview()
+            let markerFrame = markerView.convert(markerView.bounds, to: window)
+            initialOverlayFrame = aspectFitRect(imageSize: image.size, in: markerFrame)
+
+            let imageView = UIImageView(image: image)
+            imageView.contentMode = .scaleAspectFit
+            imageView.frame = initialOverlayFrame
+            imageView.clipsToBounds = false
+            imageView.layer.shadowColor = UIColor.black.cgColor
+            imageView.layer.shadowOpacity = 0.18
+            imageView.layer.shadowRadius = 14
+            imageView.layer.shadowOffset = CGSize(width: 0, height: 6)
+            window.addSubview(imageView)
+            overlayImageView = imageView
+        }
+
+        private func endOverlay() {
+            guard let overlayImageView else {
+                FlagZoomInteractionState.isPinching = false
+                return
+            }
+
+            UIView.animate(
+                withDuration: 0.28,
+                delay: 0,
+                usingSpringWithDamping: 0.94,
+                initialSpringVelocity: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction]
+            ) {
+                overlayImageView.transform = .identity
+                overlayImageView.center = CGPoint(x: self.initialOverlayFrame.midX, y: self.initialOverlayFrame.midY)
+            } completion: { _ in
+                overlayImageView.removeFromSuperview()
+                self.overlayImageView = nil
+                FlagZoomInteractionState.isPinching = false
+            }
+        }
+
+        private func aspectFitRect(imageSize: CGSize, in rect: CGRect) -> CGRect {
+            guard imageSize.width > 0, imageSize.height > 0, rect.width > 0, rect.height > 0 else { return rect }
+            let scale = min(rect.width / imageSize.width, rect.height / imageSize.height)
+            let width = imageSize.width * scale
+            let height = imageSize.height * scale
+            return CGRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height)
+        }
+
+        private func expandedHitRect(for markerView: UIView) -> CGRect {
+            markerView.bounds.insetBy(dx: -hitSlop, dy: -hitSlop)
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard gestureRecognizer === pinchGesture, let markerView else { return true }
+            let shouldBegin = expandedHitRect(for: markerView).contains(gestureRecognizer.location(in: markerView))
+            if shouldBegin {
+                FlagZoomInteractionState.isPinching = true
+            }
+            return shouldBegin
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            false
         }
     }
 }

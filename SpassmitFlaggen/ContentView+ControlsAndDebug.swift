@@ -163,6 +163,7 @@ extension ContentView {
         friendNamesRawValue = names.joined(separator: "|")
     }
 
+    #if DEBUG
     @MainActor
     func createTestFriend() async {
         guard onlineFeaturesEnabled else { return }
@@ -218,6 +219,7 @@ extension ContentView {
             }
         }
     }
+    #endif
 
     func modeHeader(title: String, subtitle: String) -> some View {
         VStack(spacing: 6) {

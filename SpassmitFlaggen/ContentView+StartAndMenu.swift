@@ -8,10 +8,8 @@ extension ContentView {
             appBackgroundGradient
                 .ignoresSafeArea()
 
-            ScrollView {
+            fixedMenuLayout(maxWidth: 520) {
                 VStack(spacing: 22) {
-                    Spacer(minLength: 18)
-
                     VStack(spacing: 12) {
                         Image(systemName: "map.fill")
                             .font(.system(size: 76, weight: .regular))
@@ -51,12 +49,7 @@ extension ContentView {
                     }
                     .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                     .buttonStyle(.plain)
-
-                    Spacer(minLength: 18)
                 }
-                .padding()
-                .frame(maxWidth: 520)
-                .frame(maxWidth: .infinity)
             }
 
             if let leagueSummaryResult {
@@ -71,6 +64,22 @@ extension ContentView {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    func fixedMenuLayout<Content: View>(maxWidth: CGFloat, @ViewBuilder content: @escaping () -> Content) -> some View {
+        GeometryReader { geometry in
+            let baseHeight: CGFloat = maxWidth <= 520 ? 650 : 430
+            let availableHeight = max(geometry.size.height - 28, 1)
+            let scale = min(1, availableHeight / baseHeight)
+
+            content()
+                .padding()
+                .frame(maxWidth: maxWidth)
+                .frame(maxWidth: .infinity)
+                .scaleEffect(scale, anchor: .top)
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
+                .allowsHitTesting(true)
+        }
     }
 
     var mainMenuScreens: [AppScreen] {
@@ -129,7 +138,7 @@ extension ContentView {
         ZStack {
             appBackgroundGradient
                 .ignoresSafeArea()
-            ScrollView {
+            fixedMenuLayout(maxWidth: 620) {
                 VStack(spacing: 18) {
                     modeHeader(title: L("Spielen", "Play"), subtitle: L("Wähle einen Spielmodus.", "Choose a game mode."))
                     subjectModePickerCard()
@@ -139,9 +148,6 @@ extension ContentView {
                         }
                     }
                 }
-                .padding()
-                .frame(maxWidth: 620)
-                .frame(maxWidth: .infinity)
             }
         }
         .navigationTitle(L("Spielen", "Play"))

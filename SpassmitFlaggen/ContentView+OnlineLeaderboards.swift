@@ -27,8 +27,8 @@ extension ContentView {
         }
 
         return playersByKey.values.sorted {
-            let firstStats = $0.stats(for: selectedSubject)
-            let secondStats = $1.stats(for: selectedSubject)
+            let firstStats = displayedOnlineSubjectStats(for: $0)
+            let secondStats = displayedOnlineSubjectStats(for: $1)
             if firstStats.totalPracticed == secondStats.totalPracticed {
                 return firstStats.accuracy > secondStats.accuracy
             }
@@ -78,7 +78,7 @@ extension ContentView {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
             if $0.leagueBestScore == $1.leagueBestScore {
-                return $0.stats(for: selectedSubject).learnedThisWeek > $1.stats(for: selectedSubject).learnedThisWeek
+                return displayedOnlineSubjectStats(for: $0).learnedThisWeek > displayedOnlineSubjectStats(for: $1).learnedThisWeek
             }
             return $0.leagueBestScore > $1.leagueBestScore
         }
@@ -87,10 +87,12 @@ extension ContentView {
     var scopedBestLearningStreakLeaderboard: [OnlinePlayerStats] {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
-            if $0.bestLearningStreak == $1.bestLearningStreak {
-                return $0.stats(for: selectedSubject).learnedThisWeek > $1.stats(for: selectedSubject).learnedThisWeek
+            let firstStreak = onlineLearningStreak(for: $0)
+            let secondStreak = onlineLearningStreak(for: $1)
+            if firstStreak == secondStreak {
+                return displayedOnlineSubjectStats(for: $0).learnedThisWeek > displayedOnlineSubjectStats(for: $1).learnedThisWeek
             }
-            return $0.bestLearningStreak > $1.bestLearningStreak
+            return firstStreak > secondStreak
         }
     }
 
@@ -99,7 +101,7 @@ extension ContentView {
             let firstScore = onlineFlaggenbossScore(for: $0)
             let secondScore = onlineFlaggenbossScore(for: $1)
             if firstScore == secondScore {
-                return $0.stats(for: selectedSubject).learnedThisWeek > $1.stats(for: selectedSubject).learnedThisWeek
+                return displayedOnlineSubjectStats(for: $0).learnedThisWeek > displayedOnlineSubjectStats(for: $1).learnedThisWeek
             }
             return firstScore > secondScore
         }
@@ -108,8 +110,8 @@ extension ContentView {
     var scopedLearnedThisWeekLeaderboard: [OnlinePlayerStats] {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
-            let firstStats = $0.stats(for: selectedSubject)
-            let secondStats = $1.stats(for: selectedSubject)
+            let firstStats = displayedOnlineSubjectStats(for: $0)
+            let secondStats = displayedOnlineSubjectStats(for: $1)
             if firstStats.learnedThisWeek == secondStats.learnedThisWeek {
                 return firstStats.accuracy > secondStats.accuracy
             }
@@ -121,7 +123,7 @@ extension ContentView {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
             if $0.achievementCount == $1.achievementCount {
-                return $0.stats(for: selectedSubject).totalPracticed > $1.stats(for: selectedSubject).totalPracticed
+                return displayedOnlineSubjectStats(for: $0).totalPracticed > displayedOnlineSubjectStats(for: $1).totalPracticed
             }
             return $0.achievementCount > $1.achievementCount
         }
@@ -129,8 +131,8 @@ extension ContentView {
 
     var learnedThisWeekLeaderboard: [OnlinePlayerStats] {
         deduplicatedOnlineLeaderboard.sorted {
-            let firstStats = $0.stats(for: selectedSubject)
-            let secondStats = $1.stats(for: selectedSubject)
+            let firstStats = displayedOnlineSubjectStats(for: $0)
+            let secondStats = displayedOnlineSubjectStats(for: $1)
             if firstStats.learnedThisWeek == secondStats.learnedThisWeek {
                 return firstStats.accuracy > secondStats.accuracy
             }
@@ -141,7 +143,7 @@ extension ContentView {
     var achievementLeaderboard: [OnlinePlayerStats] {
         deduplicatedOnlineLeaderboard.sorted {
             if $0.achievementCount == $1.achievementCount {
-                return $0.stats(for: selectedSubject).totalPracticed > $1.stats(for: selectedSubject).totalPracticed
+                return displayedOnlineSubjectStats(for: $0).totalPracticed > displayedOnlineSubjectStats(for: $1).totalPracticed
             }
             return $0.achievementCount > $1.achievementCount
         }
@@ -177,8 +179,52 @@ extension ContentView {
             return first.updatedAt > second.updatedAt ? first : second
         }
 
-        return first.stats(for: selectedSubject).totalPracticed >= second.stats(for: selectedSubject).totalPracticed ? first : second
+        return displayedOnlineSubjectStats(for: first).totalPracticed >= displayedOnlineSubjectStats(for: second).totalPracticed ? first : second
     }
 
+    func displayedOnlineSubjectStats(for player: OnlinePlayerStats) -> OnlineSubjectStats {
+        if let profile = player.profileSnapshot {
+            return OnlineStatsService.subjectStats(profile: profile, countries: availableCountries, subject: selectedSubject)
+        }
+        return player.stats(for: selectedSubject)
+    }
 
+    func onlineLearningStreak(for player: OnlinePlayerStats) -> Int {
+        guard let profile = player.profileSnapshot else {
+            return player.bestLearningStreak
+        }
+        return maxLearningStreak(profile: profile, subject: selectedSubject)
+    }
+
+    func maxLearningStreak(profile: UserProfile, subject: LearningSubject) -> Int {
+        let prefix = "\(subject.rawValue)|"
+        let countsByDay = profile.practiceKnownCardsByDay ?? [:]
+        let dayKeys = Set<String>(countsByDay.compactMap { key, value in
+            guard key.hasPrefix(prefix), value >= 10 else { return nil }
+            return String(key.dropFirst(prefix.count))
+        })
+        guard !dayKeys.isEmpty else { return 0 }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = Calendar.current.timeZone
+        let days = dayKeys.compactMap { formatter.date(from: $0) }.sorted()
+        guard !days.isEmpty else { return 0 }
+
+        var best = 1
+        var current = 1
+        for index in 1..<days.count {
+            let previous = Calendar.current.startOfDay(for: days[index - 1])
+            let currentDay = Calendar.current.startOfDay(for: days[index])
+            let distance = Calendar.current.dateComponents([.day], from: previous, to: currentDay).day ?? 0
+            if distance == 1 {
+                current += 1
+            } else if distance > 1 {
+                current = 1
+            }
+            best = max(best, current)
+        }
+        return best
+    }
 }

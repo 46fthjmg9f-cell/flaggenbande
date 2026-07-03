@@ -115,9 +115,11 @@ extension ContentView {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(Array(friendFlaggenscoreLeaderboard.enumerated()), id: \.element.id) { index, player in
-                    onlinePlayerRow(rank: index + 1, player: player, metric: .flaggenscore)
-                }
+                onlineLeaderboardRows(
+                    players: friendFlaggenscoreLeaderboard,
+                    metric: .flaggenscore,
+                    sectionID: "friends-comparison-boss"
+                )
             }
         }
     }
@@ -144,6 +146,7 @@ extension ContentView {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    #if DEBUG
                     Button {
                         Haptics.tap()
                         Task { await createTestFriend() }
@@ -151,6 +154,7 @@ extension ContentView {
                         Label(L("Testfreund erstellen", "Create test friend"), systemImage: "person.crop.circle.badge.plus")
                     }
                     .disabled(isSyncingOnlineStats)
+                    #endif
                 }
 
                 Section(L("Meine Freunde", "My friends")) {
@@ -269,9 +273,11 @@ extension ContentView {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(Array(friendFlaggenscoreLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
-                        onlinePlayerRow(rank: index + 1, player: player, metric: .flaggenscore)
-                    }
+                    onlineLeaderboardRows(
+                        players: friendFlaggenscoreLeaderboard,
+                        metric: .flaggenscore,
+                        sectionID: "friends-boss"
+                    )
                 }
             }
         }
@@ -280,27 +286,70 @@ extension ContentView {
             EmptyView()
         } else {
             Section(selectedSubject == .capitals ? L("Hauptstädte gelernt - 7 Tage", "Capitals learned - 7 days") : L("Flaggen gelernt - 7 Tage", "Flags learned - 7 days")) {
-                ForEach(Array(scopedLearnedThisWeekLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
-                    onlinePlayerRow(rank: index + 1, player: player, metric: .week)
-                }
+                onlineLeaderboardRows(
+                    players: scopedLearnedThisWeekLeaderboard,
+                    metric: .week,
+                    sectionID: "week"
+                )
             }
 
             Section(L("Längste Lernstreak", "Longest learning streak")) {
-                ForEach(Array(scopedBestLearningStreakLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
-                    onlinePlayerRow(rank: index + 1, player: player, metric: .learningStreak)
-                }
+                onlineLeaderboardRows(
+                    players: scopedBestLearningStreakLeaderboard,
+                    metric: .learningStreak,
+                    sectionID: "streak"
+                )
             }
 
             Section(runHighscoreTitle) {
-                ForEach(Array(scopedFlaggenrunLeaderboard.prefix(10).enumerated()), id: \.element.id) { index, player in
-                    onlinePlayerRow(rank: index + 1, player: player, metric: .flaggenrun)
-                }
+                onlineLeaderboardRows(
+                    players: scopedFlaggenrunLeaderboard,
+                    metric: .flaggenrun,
+                    sectionID: "run"
+                )
             }
         }
     }
 
+    @ViewBuilder
+    func onlineLeaderboardRows(players: [OnlinePlayerStats], metric: OnlineLeaderboardMetric, sectionID: String) -> some View {
+        let key = "\(selectedOnlineScope.rawValue)-\(selectedSubject.rawValue)-\(sectionID)"
+        let isExpanded = expandedOnlineLeaderboardSections.contains(key)
+        let visiblePlayers = isExpanded ? players : Array(players.prefix(5))
+
+        ForEach(Array(visiblePlayers.enumerated()), id: \.element.id) { index, player in
+            onlinePlayerRow(rank: index + 1, player: player, metric: metric)
+        }
+
+        if players.count > 5 {
+            Button {
+                Haptics.tap()
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    if isExpanded {
+                        expandedOnlineLeaderboardSections.remove(key)
+                    } else {
+                        expandedOnlineLeaderboardSections.insert(key)
+                    }
+                }
+            } label: {
+                HStack {
+                    Text(isExpanded ? L("Weniger anzeigen", "Show less") : L("Alle anzeigen", "Show all"))
+                    Spacer()
+                    Text(isExpanded ? "5" : "+\(players.count - 5)")
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     func onlinePlayerRow(rank: Int, player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> some View {
-        let playerSubjectStats = player.stats(for: selectedSubject)
+        let playerSubjectStats = displayedOnlineSubjectStats(for: player)
         return Button {
             Haptics.tap()
             selectedOnlineGlobePlayer = player
@@ -387,10 +436,10 @@ extension ContentView {
 
     func onlineMetricValue(for player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> String {
         switch metric {
-        case .week: return "\(player.stats(for: selectedSubject).learnedThisWeek)"
+        case .week: return "\(displayedOnlineSubjectStats(for: player).learnedThisWeek)"
         case .flaggenrun: return "\(player.leagueBestScore)"
         case .flaggenscore: return String(format: "%.1f", onlineFlaggenbossScore(for: player) * 100)
-        case .learningStreak: return "\(player.bestLearningStreak)"
+        case .learningStreak: return "\(onlineLearningStreak(for: player))"
         }
     }
 
