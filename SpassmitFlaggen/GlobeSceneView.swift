@@ -336,8 +336,15 @@ struct GlobeSceneView: UIViewRepresentable {
 
         private func applyPersistedViewStateIfAvailable() -> Bool {
             guard let state = GlobeScenePersistedViewState.load() else { return false }
+            let orientationVector = SIMD4<Float>(state.imaginaryX, state.imaginaryY, state.imaginaryZ, state.real)
+            let orientationLength = simd_length(orientationVector)
+            guard state.cameraDistance.isFinite, orientationLength.isFinite, orientationLength > 0.0001 else {
+                GlobeScenePersistedViewState.clear()
+                return false
+            }
+
             cameraDistance = min(max(state.cameraDistance, minimumCameraDistance), maximumCameraDistance)
-            globeOrientation = simd_quatf(vector: SIMD4<Float>(state.imaginaryX, state.imaginaryY, state.imaginaryZ, state.real))
+            globeOrientation = simd_quatf(vector: orientationVector / orientationLength)
             globeNode.simdOrientation = globeOrientation
             cameraNode.position = SCNVector3(0, 0, cameraDistance)
             cameraNode.eulerAngles = SCNVector3Zero
@@ -347,6 +354,11 @@ struct GlobeSceneView: UIViewRepresentable {
 
         private func persistViewState() {
             guard persistsViewState else { return }
+            let orientationVector = globeOrientation.vector
+            guard cameraDistance.isFinite, orientationVector.x.isFinite, orientationVector.y.isFinite, orientationVector.z.isFinite, orientationVector.w.isFinite else {
+                GlobeScenePersistedViewState.clear()
+                return
+            }
             GlobeScenePersistedViewState.save(orientation: globeOrientation, cameraDistance: cameraDistance)
         }
 
@@ -415,8 +427,10 @@ struct GlobeSceneView: UIViewRepresentable {
 
         private func rebuildGlobeTexture() {
             guard let boundaryData else { return }
-            let size = CGSize(width: 4096, height: 2048)
-            let renderer = UIGraphicsImageRenderer(size: size)
+            let size = CGSize(width: 2048, height: 1024)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let renderer = UIGraphicsImageRenderer(size: size, format: format)
 
             let image = renderer.image { context in
                 UIColor(red: 0.03, green: 0.19, blue: 0.32, alpha: 1).setFill()
@@ -563,6 +577,11 @@ private struct GlobeScenePersistedViewState: Codable {
 
     static func save(orientation: simd_quatf, cameraDistance: Float) {
         let vector = orientation.vector
+        guard cameraDistance.isFinite, vector.x.isFinite, vector.y.isFinite, vector.z.isFinite, vector.w.isFinite else {
+            clear()
+            return
+        }
+
         let state = GlobeScenePersistedViewState(
             imaginaryX: vector.x,
             imaginaryY: vector.y,
@@ -572,6 +591,10 @@ private struct GlobeScenePersistedViewState: Codable {
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: storageKey)
     }
 }
 

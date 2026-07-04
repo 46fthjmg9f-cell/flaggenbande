@@ -499,9 +499,9 @@ extension ContentView {
     }
 
     var globeTierByCountryCode: [String: MasteryTier] {
-        Dictionary(uniqueKeysWithValues: globeCountries.map { country in
-            (country.code, activeProfile.tier(for: country, subject: selectedSubject))
-        })
+        globeCountries.reduce(into: [String: MasteryTier]()) { tiersByCode, country in
+            tiersByCode[country.code] = activeProfile.tier(for: country, subject: selectedSubject)
+        }
     }
 
     func focusGlobeSearchResult() {

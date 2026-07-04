@@ -39,7 +39,7 @@ final class StoreKitManager: ObservableObject {
         }
     }
 
-    func loadProducts() async {
+    func loadProducts(reportErrors: Bool = false) async {
         startObservingTransactionsIfNeeded()
         isLoading = true
         defer { isLoading = false }
@@ -47,9 +47,13 @@ final class StoreKitManager: ObservableObject {
         do {
             mergeProducts(try await Product.products(for: StoreProductID.allIDs))
             await refreshEntitlements()
-            statusText = fullVersionProduct == nil ? missingFullVersionProductMessage : nil
+            if reportErrors {
+                statusText = fullVersionProduct == nil ? missingFullVersionProductMessage : nil
+            }
         } catch {
-            statusText = "Store konnte nicht geladen werden: \(error.localizedDescription)"
+            if reportErrors {
+                statusText = "Store konnte nicht geladen werden: \(error.localizedDescription)"
+            }
         }
     }
 
