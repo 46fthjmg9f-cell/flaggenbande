@@ -47,9 +47,9 @@ struct ContentView: View {
     @State var isShowingFriendList: Bool = false
     @State var friendPendingRemoval: String?
     @State var selectedSubject: LearningSubject = .countries
-    @State var selectedPracticeContinents: Set<String> = [CountryScope.worldwide]
-    @State var selectedShowContinents: Set<String> = [CountryScope.worldwide]
-    @State var selectedStatisticsContinents: Set<String> = [CountryScope.worldwide]
+    @State var selectedPracticeContinents: Set<String> = ["Europa"]
+    @State var selectedShowContinents: Set<String> = ["Europa"]
+    @State var selectedStatisticsContinents: Set<String> = ["Europa"]
     @State var selectedStatisticsTier: MasteryTier?
     @State var isTierExplanationExpanded: Bool = false
     @State var isMasteryScoreInfoExpanded: Bool = false
@@ -163,6 +163,7 @@ struct ContentView: View {
     @State var recapStartCounts: [MasteryTier: Int] = [:]
     @State var recapEndCounts: [MasteryTier: Int] = [:]
     @State var showRecap: Bool = false
+    @State var practiceRecapPromptIsVisible: Bool = false
     @State var isShowingStartupScreen: Bool = true
     @State var selectedGlobeCountry: Country?
     @State var globeResetToken: Int = 0
@@ -178,6 +179,7 @@ struct ContentView: View {
     @State var selectedMenuInfoScreen: AppScreen?
     @State var isShowingResetConfirmation: Bool = false
     @State var isShowingShowCancelConfirmation: Bool = false
+    @State var isShowingFullVersionSheet: Bool = false
     @State var navigationPath: [AppScreen] = []
 
     var body: some View {
@@ -271,6 +273,9 @@ struct ContentView: View {
         .sheet(item: $selectedMenuInfoScreen) { screen in
             menuInfoSheet(for: screen)
         }
+        .sheet(isPresented: $isShowingFullVersionSheet) {
+            fullVersionUpsellSheet
+        }
         .sheet(isPresented: $isShowingFriendList) {
             friendListSheet
         }
@@ -303,6 +308,7 @@ struct ContentView: View {
             showRecentCountryCodes = []
             showDeckCountryCodes = []
             showRecap = false
+            practiceRecapPromptIsVisible = false
             statisticsSearchText = ""
             expandedOnlineLeaderboardSections = []
             cardIsFlipped = false
@@ -313,6 +319,7 @@ struct ContentView: View {
             practiceSessionActive = false
             showSessionActive = false
             showRecap = false
+            practiceRecapPromptIsVisible = false
             showSessionCount = 0
             showSessionEntries = []
             showHistoryPreview = nil
@@ -338,9 +345,10 @@ struct ContentView: View {
         .onChange(of: fullVersionUnlocked) { _, isUnlocked in
             if !isUnlocked {
                 appAccentRawValue = AppAccent.teal.rawValue
-                selectedPracticeContinents = [CountryScope.worldwide]
-                selectedShowContinents = [CountryScope.worldwide]
-                selectedStatisticsContinents = [CountryScope.worldwide]
+                selectedSubject = .countries
+                selectedPracticeContinents = ["Europa"]
+                selectedShowContinents = ["Europa"]
+                selectedStatisticsContinents = ["Europa"]
                 selectedStatisticsTier = nil
                 expandedStatisticsCountryCodes = []
                 statisticsSearchText = ""

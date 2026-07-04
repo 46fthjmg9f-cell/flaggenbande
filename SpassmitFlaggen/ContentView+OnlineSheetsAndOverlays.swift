@@ -32,58 +32,64 @@ extension ContentView {
 
 
                 if let onlineProfile = player.profileSnapshot {
-                    Section(L("Online-Verlauf", "Online history")) {
-                        Picker(L("Zeitraum", "Range"), selection: $selectedPracticeBalanceRange) {
-                            ForEach(PracticeBalanceRange.allCases) { range in
-                                Text(range.title(language: appLanguage)).tag(range)
+                    if fullVersionUnlocked {
+                        Section(L("Online-Verlauf", "Online history")) {
+                            Picker(L("Zeitraum", "Range"), selection: $selectedPracticeBalanceRange) {
+                                ForEach(PracticeBalanceRange.allCases) { range in
+                                    Text(range.title(language: appLanguage)).tag(range)
+                                }
                             }
+                            .pickerStyle(.segmented)
+                            .onChange(of: selectedPracticeBalanceRange) { _, _ in
+                                scoreHistoryPageOffset = 0
+                                practiceBalancePageOffset = 0
+                                learnedHistoryPageOffset = 0
+                                selectedScoreHistoryPoint = nil
+                                selectedPracticeBalancePoint = nil
+                                selectedLearnedHistoryPoint = nil
+                            }
+
+                            PracticeBalanceChart(
+                                title: selectedSubject == .capitals ? L("Gelernte Städte", "Learned cities") : L("Gelernte Flaggen", "Learned flags"),
+                                primaryLabel: L("Gelernt", "Learned"),
+                                showsUnknown: false,
+                                previousPoints: learnedPracticePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset - selectedPracticeBalanceRange.days),
+                                points: learnedPracticePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
+                                nextPoints: nextLearnedPracticePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
+                                range: selectedPracticeBalanceRange,
+                                maxValue: learnedPracticeMaxValue(profile: onlineProfile),
+                                pageOffset: $learnedHistoryPageOffset,
+                                selectedPoint: $selectedLearnedHistoryPoint,
+                                language: appLanguage
+                            )
+
+                            PracticeBalanceChart(
+                                previousPoints: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - selectedPracticeBalanceRange.days),
+                                points: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                                nextPoints: nextPracticeBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
+                                range: selectedPracticeBalanceRange,
+                                maxValue: practiceBalanceMaxValue(profile: onlineProfile),
+                                pageOffset: $practiceBalancePageOffset,
+                                selectedPoint: $selectedPracticeBalancePoint,
+                                language: appLanguage
+                            )
+
+                            FlaggenbossScoreChart(
+                                title: bossTitle,
+                                previousPoints: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - selectedPracticeBalanceRange.days),
+                                points: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
+                                nextPoints: nextFlaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
+                                range: selectedPracticeBalanceRange,
+                                pageOffset: $scoreHistoryPageOffset,
+                                selectedPoint: $selectedScoreHistoryPoint,
+                                language: appLanguage,
+                                accentColor: tealAccentColor
+                            )
                         }
-                        .pickerStyle(.segmented)
-                        .onChange(of: selectedPracticeBalanceRange) { _, _ in
-                            scoreHistoryPageOffset = 0
-                            practiceBalancePageOffset = 0
-                            learnedHistoryPageOffset = 0
-                            selectedScoreHistoryPoint = nil
-                            selectedPracticeBalancePoint = nil
-                            selectedLearnedHistoryPoint = nil
+                    } else {
+                        Section(L("Online-Verlauf", "Online history")) {
+                            premiumFeatureNotice(feature: L("Online-Verlauf und Graphen", "Online history and charts"))
                         }
-
-                        PracticeBalanceChart(
-                            title: selectedSubject == .capitals ? L("Gelernte Städte", "Learned cities") : L("Gelernte Flaggen", "Learned flags"),
-                            primaryLabel: L("Gelernt", "Learned"),
-                            showsUnknown: false,
-                            previousPoints: learnedPracticePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset - selectedPracticeBalanceRange.days),
-                            points: learnedPracticePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
-                            nextPoints: nextLearnedPracticePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: learnedHistoryPageOffset),
-                            range: selectedPracticeBalanceRange,
-                            maxValue: learnedPracticeMaxValue(profile: onlineProfile),
-                            pageOffset: $learnedHistoryPageOffset,
-                            selectedPoint: $selectedLearnedHistoryPoint,
-                            language: appLanguage
-                        )
-
-                        PracticeBalanceChart(
-                            previousPoints: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset - selectedPracticeBalanceRange.days),
-                            points: practiceBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
-                            nextPoints: nextPracticeBalancePoints(profile: onlineProfile, range: selectedPracticeBalanceRange, pageOffset: practiceBalancePageOffset),
-                            range: selectedPracticeBalanceRange,
-                            maxValue: practiceBalanceMaxValue(profile: onlineProfile),
-                            pageOffset: $practiceBalancePageOffset,
-                            selectedPoint: $selectedPracticeBalancePoint,
-                            language: appLanguage
-                        )
-
-                        FlaggenbossScoreChart(
-                            title: bossTitle,
-                            previousPoints: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset - selectedPracticeBalanceRange.days),
-                            points: flaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
-                            nextPoints: nextFlaggenbossPoints(profile: onlineProfile, in: availableCountries, range: selectedPracticeBalanceRange, pageOffset: scoreHistoryPageOffset),
-                            range: selectedPracticeBalanceRange,
-                            pageOffset: $scoreHistoryPageOffset,
-                            selectedPoint: $selectedScoreHistoryPoint,
-                            language: appLanguage,
-                            accentColor: tealAccentColor
-                        )
                     }
                 }
 
@@ -211,7 +217,10 @@ extension ContentView {
                 Text(feature)
                     .font(.title2.bold())
 
-                NavigationLink(value: AppScreen.options) {
+                Button {
+                    Haptics.tap()
+                    isShowingFullVersionSheet = true
+                } label: {
                     Label(L("Vollversion ansehen", "View full version"), systemImage: "sparkles")
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
@@ -230,10 +239,12 @@ extension ContentView {
             GlobeSceneView(
                 countries: availableCountries,
                 tiersByCountryCode: tiersByCountryCode,
-                resetToken: globeResetToken,
-                focusCountryCode: nil,
+                resetToken: 0,
+                focusCountryCode: "DE",
+                persistsViewState: false,
                 onSelectCountryCode: { _ in }
             )
+            .allowsHitTesting(false)
             .blur(radius: 6)
             .saturation(0.72)
             .opacity(0.72)

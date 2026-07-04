@@ -6,8 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A3F445AB2FF93E1D002A0E1C /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3F445AA2FF93E1D002A0E1C /* StoreKit.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		A32CF1E52FD0CC35003E4B1D /* Flaggenbande.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Flaggenbande.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A3F445AA2FF93E1D002A0E1C /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A3F445AB2FF93E1D002A0E1C /* StoreKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -49,6 +55,7 @@
 		A32CF2212FD17DDE003E4B1D /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				A3F445AA2FF93E1D002A0E1C /* StoreKit.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -261,7 +268,7 @@
 				CODE_SIGN_ENTITLEMENTS = SpassmitFlaggen.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 99;
 				DEVELOPMENT_TEAM = 6T3J9T2ZJ8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -300,7 +307,7 @@
 				CODE_SIGN_ENTITLEMENTS = SpassmitFlaggen.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 99;
 				DEVELOPMENT_TEAM = 6T3J9T2ZJ8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

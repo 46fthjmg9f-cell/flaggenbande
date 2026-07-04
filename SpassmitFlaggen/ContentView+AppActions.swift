@@ -8,9 +8,29 @@ extension ContentView {
     func runStartupWorkAfterFirstRender() async {
         await Task.yield()
         UserDefaults.standard.removeObject(forKey: "fullVersionUnlocked")
+        if !UserDefaults.standard.bool(forKey: "didApplyGermanDefaultLanguage") {
+            appLanguageRawValue = AppLanguage.german.rawValue
+            UserDefaults.standard.set(true, forKey: "didApplyGermanDefaultLanguage")
+        }
+
         fullVersionUnlocked = false
+        #if DEBUG
+        await storeKit.loadProducts(refreshPurchasedEntitlements: false)
+        #else
         await storeKit.loadProducts()
         fullVersionUnlocked = storeKit.purchasedFullVersion
+        #endif
+        if !fullVersionUnlocked {
+            selectedSubject = .countries
+            selectedPracticeContinents = ["Europa"]
+            selectedShowContinents = ["Europa"]
+            selectedStatisticsContinents = ["Europa"]
+        }
+        if !availableCountries.contains(currentCountry) {
+            currentCountry = nextRandomCountry(excluding: currentCountry, from: availableCountries)
+            leagueCurrentCountry = currentCountry
+            miniWorldCupCurrentCountry = currentCountry
+        }
         ensureTrainerProfile()
         if !didEnableOnlineByDefault {
             didEnableOnlineByDefault = true
@@ -19,7 +39,11 @@ extension ContentView {
             disableOnlineRuntimeState()
         }
         await hideStartupScreenAfterDelay()
+        #if DEBUG
+        applyWeeklyTierDecay(showPopup: false)
+        #else
         applyWeeklyTierDecay(showPopup: true)
+        #endif
     }
 
     func ensureTrainerProfile() {
@@ -372,6 +396,7 @@ extension ContentView {
         showSessionActive = false
         showSessionCount = 0
         showRecap = false
+        practiceRecapPromptIsVisible = false
         achievementPopupItem = nil
         tierDecayPopup = nil
         selectedTierDecayChangeID = nil
@@ -413,6 +438,7 @@ extension ContentView {
     func startPracticeSession() {
         applyWeeklyTierDecay()
         showRecap = false
+        practiceRecapPromptIsVisible = false
         practiceSessionCount = 0
         practiceSessionKnown = 0
         practiceSessionUnknown = 0
@@ -472,7 +498,12 @@ extension ContentView {
             practiceCardEntryOpacity = 1
             isFinishingPracticeSwipe = false
             recapEndCounts = activeProfile.tierCounts(in: availableCountries)
+            #if DEBUG
+            showRecap = showSummary && practiceSessionCount > 0 && practiceRecapPromptIsVisible
+            #else
             showRecap = showSummary && practiceSessionCount > 0
+            #endif
+            practiceRecapPromptIsVisible = false
             practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = nil
         }
@@ -506,6 +537,7 @@ extension ContentView {
             practiceCardEntryOpacity = 1
             isFinishingPracticeSwipe = false
             showRecap = false
+            practiceRecapPromptIsVisible = false
             practiceSessionActive = true
             practiceUndoSnapshot = nil
         }

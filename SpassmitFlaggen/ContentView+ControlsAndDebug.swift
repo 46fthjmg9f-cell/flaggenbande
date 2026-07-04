@@ -11,6 +11,7 @@ extension ContentView {
         return Button {
             guard !isLocked else {
                 Haptics.notify(.warning)
+                isShowingFullVersionSheet = true
                 return
             }
             Haptics.tap()
@@ -80,11 +81,12 @@ extension ContentView {
 
     func categoryButton(for continent: String, selection: Binding<Set<String>>, isWide: Bool = false) -> some View {
         let isSelected = selection.wrappedValue.contains(continent)
-        let isLocked = !fullVersionUnlocked && continent != CountryScope.worldwide
+        let isLocked = !fullVersionUnlocked && continent != "Europa"
 
         return Button {
             guard !isLocked else {
                 Haptics.notify(.warning)
+                isShowingFullVersionSheet = true
                 return
             }
             Haptics.tap()
@@ -252,7 +254,13 @@ extension ContentView {
 
     func subjectModeButton(for subject: LearningSubject) -> some View {
         let isSelected = selectedSubject == subject
+        let isLocked = subject == .capitals && !fullVersionUnlocked
         return Button {
+            guard !isLocked else {
+                Haptics.notify(.warning)
+                isShowingFullVersionSheet = true
+                return
+            }
             guard selectedSubject != subject else { return }
             Haptics.tap()
             withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
@@ -266,7 +274,10 @@ extension ContentView {
                     .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
-                if isSelected {
+                if isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.caption.weight(.bold))
+                } else if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.caption.weight(.bold))
                         .transition(.scale.combined(with: .opacity))
@@ -274,16 +285,17 @@ extension ContentView {
             }
             .frame(maxWidth: .infinity, minHeight: 46)
             .padding(.horizontal, 10)
-            .background(isSelected ? tealAccentColor : Color.clear)
-            .foregroundStyle(isSelected ? .white : .primary)
+            .background(isSelected && !isLocked ? tealAccentColor : Color.clear)
+            .foregroundStyle(isSelected && !isLocked ? .white : .primary)
             .clipShape(RoundedRectangle(cornerRadius: 11))
             .overlay(
                 RoundedRectangle(cornerRadius: 11)
-                    .stroke(isSelected ? Color.white.opacity(0.22) : tealAccentColor.opacity(0.28), lineWidth: 1)
+                    .stroke(isSelected && !isLocked ? Color.white.opacity(0.22) : tealAccentColor.opacity(0.28), lineWidth: 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: 11))
         }
         .buttonStyle(.plain)
+        .opacity(isLocked ? 0.55 : 1)
     }
 
     @ViewBuilder
@@ -332,7 +344,13 @@ extension ContentView {
 
     func subjectGlassSwitcherButton(for subject: LearningSubject) -> some View {
         let isSelected = selectedSubject == subject
+        let isLocked = subject == .capitals && !fullVersionUnlocked
         return Button {
+            guard !isLocked else {
+                Haptics.notify(.warning)
+                isShowingFullVersionSheet = true
+                return
+            }
             guard selectedSubject != subject else { return }
             dismissStatisticsSearchKeyboard()
             Haptics.tap()
@@ -347,12 +365,17 @@ extension ContentView {
                     .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                if isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.caption.weight(.bold))
+                }
             }
             .frame(maxWidth: .infinity, minHeight: 46)
-            .foregroundStyle(isSelected ? .white : .primary)
+            .foregroundStyle(isSelected && !isLocked ? .white : .primary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .opacity(isLocked ? 0.55 : 1)
     }
 
     @ViewBuilder

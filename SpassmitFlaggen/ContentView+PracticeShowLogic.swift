@@ -233,7 +233,11 @@ extension ContentView {
     }
 
     var availableCountries: [Country] {
-        includePartiallyRecognizedFlags ? allPracticeCountries : allCountries
+        let countries = includePartiallyRecognizedFlags ? allPracticeCountries : allCountries
+        guard fullVersionUnlocked else {
+            return countries.filter { $0.continent == "Europa" }
+        }
+        return countries
     }
 
     func countries(inContinent continent: String) -> [Country] {
@@ -381,10 +385,16 @@ extension ContentView {
     }
 
     func recordPracticeCard(isKnown: Bool) {
-        guard practiceSessionActive, !practiceLimitReached else { return }
+        guard practiceSessionActive, !practiceLimitReached, !practiceRecapPromptIsVisible else { return }
         let reviewedCountry = currentCountry
         let tierBefore = tier(for: reviewedCountry)
         let tierAfter = isKnown ? tierBefore.promoted : tierBefore.demoted
+        let sessionChange = PracticeSessionChange(
+            country: reviewedCountry,
+            wasKnown: isKnown,
+            fromTier: tierBefore,
+            toTier: tierAfter
+        )
         practiceUndoSnapshot = PracticeUndoSnapshot(
             appData: appData,
             currentCountry: reviewedCountry,
@@ -407,14 +417,7 @@ extension ContentView {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.78)) {
             practiceSessionCount += 1
             practiceSessionResults.append(isKnown)
-            practiceSessionChanges.append(
-                PracticeSessionChange(
-                    country: reviewedCountry,
-                    wasKnown: isKnown,
-                    fromTier: tierBefore,
-                    toTier: tierAfter
-                )
-            )
+            practiceSessionChanges.append(sessionChange)
 
             if isKnown {
                 practiceSessionKnown += 1
@@ -429,7 +432,16 @@ extension ContentView {
         checkForUnlockedAchievements()
 
         if practiceLimitReached {
-            finishPracticeSession(showSummary: true)
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                practiceCardDragOffset = 0
+                practiceCardEntryOffset = 0
+                practiceCardEntryOpacity = 1
+                isFinishingPracticeSwipe = false
+                recapEndCounts = activeProfile.tierCounts(in: availableCountries)
+                practiceHistoryGlobeCountry = nil
+                practiceHistoryPreview = PracticeHistoryPreview(change: sessionChange, index: max(practiceSessionCount - 1, 0), total: max(selectedPracticeCardLimit, practiceSessionCount))
+                practiceRecapPromptIsVisible = true
+            }
         } else {
             nextPracticeCard(entryDirection: isKnown ? 1 : -1)
         }

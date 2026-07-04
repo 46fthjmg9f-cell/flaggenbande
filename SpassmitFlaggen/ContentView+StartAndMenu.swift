@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 
 // MARK: - Start And Menu Views
 
@@ -35,9 +36,13 @@ extension ContentView {
                         }
                     }
 
-                    NavigationLink(value: AppScreen.options) {
+                    Button {
+                        Haptics.tap()
+                        guard !fullVersionUnlocked else { return }
+                        isShowingFullVersionSheet = true
+                    } label: {
                         Label(
-                            fullVersionUnlocked ? L("Du hast die Vollversion, Dankeschön!", "You have the full version, thank you!") : L("Vollversion freischalten", "Unlock full version"),
+                            fullVersionUnlocked ? L("Vollversion freigeschaltet", "Full version unlocked") : L("Vollversion freischalten", "Unlock full version"),
                             systemImage: fullVersionUnlocked ? "checkmark.seal.fill" : "lock.open.fill"
                         )
                             .font(.subheadline.weight(.semibold))
@@ -47,7 +52,7 @@ extension ContentView {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .contentShape(RoundedRectangle(cornerRadius: 10))
                     }
-                    .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                    .disabled(storeKit.isPurchasing)
                     .buttonStyle(.plain)
                 }
             }
@@ -64,6 +69,137 @@ extension ContentView {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    var fullVersionUpsellSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 18) {
+                    VStack(spacing: 10) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 42, weight: .bold))
+                            .foregroundStyle(tealAccentColor)
+                            .frame(width: 72, height: 72)
+                            .background(tealAccentColor.opacity(0.14), in: Circle())
+
+                        Text(L("Schalte die ganze Flaggenbande frei", "Unlock all of Flaggenbande"))
+                            .font(.title2.bold())
+                            .multilineTextAlignment(.center)
+
+                        Text(L("Kostenlos lernst du die Flaggen Europas. Mit der Vollversion wird daraus dein kompletter Welttrainer - mit allen Ländern, Hauptstädten, Globus und deutlich mehr Auswertung.", "The free version lets you learn Europe's flags. The full version turns it into your complete world trainer with every country, capitals, the globe, and much deeper stats."))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 8)
+
+                    VStack(spacing: 10) {
+                        fullVersionFeatureRow(icon: "globe.europe.africa.fill", title: L("Alle Länder der Welt", "Every country in the world"), text: L("Lerne nicht nur Europa, sondern Afrika, Asien, Amerika, Ozeanien und optionale Zusatzgebiete.", "Go beyond Europe with Africa, Asia, the Americas, Oceania, and optional extra territories."))
+                        fullVersionFeatureRow(icon: "building.columns.fill", title: L("Hauptstädte-Modus", "Capitals mode"), text: L("Trainiere zu jeder Flagge auch die passende Hauptstadt - perfekt, wenn du wirklich sicher werden willst.", "Train the matching capital for every flag - ideal when you want real confidence."))
+                        fullVersionFeatureRow(icon: "globe", title: L("Interaktiver Globus", "Interactive globe"), text: L("Sieh deinen Fortschritt direkt auf der Weltkarte und springe gezielt zu Ländern, die noch offen sind.", "See your progress directly on the world map and jump to countries that still need work."))
+                        fullVersionFeatureRow(icon: "chart.line.uptrend.xyaxis", title: L("Premium-Statistiken", "Premium statistics"), text: L("Verfolge Stufen, Lernkurven, Tagesleistung und Fortschritt pro Region viel genauer.", "Track levels, learning curves, daily performance, and regional progress in much more detail."))
+                        fullVersionFeatureRow(icon: "paintpalette.fill", title: L("Mehr Anpassung", "More customization"), text: L("Schalte Akzentfarben und erweiterte Lernbereiche frei, damit sich die App nach deinem Trainer anfühlt.", "Unlock accent colors and expanded study scopes so the app feels like your own trainer."))
+                        fullVersionFeatureRow(icon: "hand.raised.fill", title: L("Werbefrei. Immer.", "Ad-free. Always."), text: L("Niemand mag Werbung beim Lernen. Deshalb zeigt Flaggenbande bewusst weder in der kostenlosen Version noch in der Vollversion jemals Werbung.", "Nobody likes ads while learning. That's why Flaggenbande intentionally never shows ads, neither in the free version nor in the full version."))
+                    }
+
+                    if let statusText = storeKit.statusText {
+                        Text(statusText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 6)
+                    }
+
+                    Button(L("Später", "Later")) {
+                        Haptics.tap()
+                        isShowingFullVersionSheet = false
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+                }
+                .padding(18)
+            }
+            .background(appBackgroundGradient.ignoresSafeArea())
+            .navigationTitle(L("Vollversion", "Full version"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(L("Schließen", "Close")) {
+                        isShowingFullVersionSheet = false
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                fullVersionPurchaseButton
+                    .padding(.horizontal, 18)
+                    .padding(.top, 10)
+                    .padding(.bottom, 8)
+                    .background(.ultraThinMaterial)
+            }
+            .task {
+                if storeKit.fullVersionProduct == nil {
+                    await storeKit.loadProducts(reportErrors: true, refreshPurchasedEntitlements: false)
+                }
+            }
+        }
+    }
+
+    var fullVersionPurchaseTitle: String {
+        if let product = storeKit.fullVersionProduct {
+            return L("Jetzt für \(product.displayPrice) freischalten", "Unlock now for \(product.displayPrice)")
+        }
+        return L("Vollversion kaufen", "Buy full version")
+    }
+
+    var fullVersionPurchaseButton: some View {
+        Button {
+            Haptics.tap()
+            Task {
+                await storeKit.purchaseFullVersion()
+                fullVersionUnlocked = storeKit.purchasedFullVersion
+                if fullVersionUnlocked {
+                    isShowingFullVersionSheet = false
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                if storeKit.isPurchasing {
+                    ProgressView()
+                } else {
+                    Image(systemName: "lock.open.fill")
+                }
+                Text(fullVersionPurchaseTitle)
+                    .font(.headline.weight(.bold))
+            }
+            .frame(maxWidth: .infinity, minHeight: 50)
+        }
+        .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+        .disabled(storeKit.isPurchasing)
+    }
+
+    func fullVersionFeatureRow(icon: String, title: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(tealAccentColor)
+                .frame(width: 34, height: 34)
+                .background(tealAccentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.bold))
+                Text(text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
     }
 
     func fixedMenuLayout<Content: View>(maxWidth: CGFloat, @ViewBuilder content: @escaping () -> Content) -> some View {

@@ -12,10 +12,7 @@ extension ContentView {
                 } else {
                     Button {
                         Haptics.tap()
-                        Task {
-                            await storeKit.purchaseFullVersion()
-                            fullVersionUnlocked = storeKit.purchasedFullVersion
-                        }
+                        isShowingFullVersionSheet = true
                     } label: {
                         HStack(spacing: 12) {
                             Label(L("Vollversion kaufen", "Buy full version"), systemImage: "lock.open.fill")
@@ -128,25 +125,18 @@ extension ContentView {
 
             Section(L("Spenden", "Tips")) {
                 if storeKit.donationProducts.isEmpty {
-                    Label(L("Spenden laden", "Loading tips"), systemImage: "heart")
+                    Label(L("Spenden bald verfügbar", "Tips coming soon"), systemImage: "heart")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(storeKit.donationProducts, id: \.id) { product in
-                        Button {
-                            Haptics.tap()
-                            Task {
-                                await storeKit.purchase(product)
-                            }
-                        } label: {
-                            HStack(spacing: 12) {
-                                Label(product.displayName, systemImage: "heart.fill")
-                                Spacer()
-                                Text(product.displayPrice)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.pink)
-                            }
+                        HStack(spacing: 12) {
+                            Label(product.displayName, systemImage: "heart.fill")
+                            Spacer()
+                            Text(product.displayPrice)
+                                .font(.subheadline.weight(.semibold))
                         }
-                        .disabled(storeKit.isLoading)
+                        .foregroundStyle(.secondary)
+                        .opacity(0.55)
                     }
                 }
             }
@@ -166,7 +156,19 @@ extension ContentView {
                 }
 
                 if debugToolsEnabled {
-                    Toggle(isOn: $fullVersionUnlocked) {
+                    Toggle(isOn: Binding(
+                        get: { fullVersionUnlocked },
+                        set: { isUnlocked in
+                            if isUnlocked {
+                                fullVersionUnlocked = true
+                            } else {
+                                Task {
+                                    await storeKit.resetFullVersionPurchaseForDebugTesting()
+                                    fullVersionUnlocked = false
+                                }
+                            }
+                        }
+                    )) {
                         Label(L("Vollversion freischalten", "Unlock full version"), systemImage: "lock.open.fill")
                     }
 
@@ -240,8 +242,12 @@ extension ContentView {
         }
         .task {
             guard !fullVersionUnlocked else { return }
+            #if DEBUG
+            await storeKit.loadProducts(refreshPurchasedEntitlements: false)
+            #else
             await storeKit.loadProducts()
             fullVersionUnlocked = storeKit.purchasedFullVersion
+            #endif
         }
     }
 

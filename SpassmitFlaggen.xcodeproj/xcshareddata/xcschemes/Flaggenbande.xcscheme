@@ -51,6 +51,9 @@
             ReferencedContainer = "container:SpassmitFlaggen.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <StoreKitConfigurationFileReference
+         identifier = "../../SpassmitFlaggen/Flaggenbande.storekit">
+      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
