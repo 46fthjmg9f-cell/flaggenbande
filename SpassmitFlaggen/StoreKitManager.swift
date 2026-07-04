@@ -8,9 +8,11 @@ final class StoreKitManager: ObservableObject {
     @Published private(set) var products: [Product] = []
     @Published private(set) var purchasedFullVersion: Bool = false
     @Published private(set) var isLoading: Bool = false
+    @Published private(set) var isPurchasing: Bool = false
     @Published var statusText: String?
 
     private var updatesTask: Task<Void, Never>?
+    private let missingFullVersionProductMessage = "Vollversion-Kauf nicht gefunden. Prüfe die Product ID in App Store Connect."
 
     init() {}
 
@@ -43,12 +45,54 @@ final class StoreKitManager: ObservableObject {
         defer { isLoading = false }
 
         do {
-            products = try await Product.products(for: StoreProductID.allIDs)
+            mergeProducts(try await Product.products(for: StoreProductID.allIDs))
             await refreshEntitlements()
-            statusText = nil
+            statusText = fullVersionProduct == nil ? missingFullVersionProductMessage : nil
         } catch {
-            statusText = "Store konnte nicht geladen werden."
+            statusText = "Store konnte nicht geladen werden: \(error.localizedDescription)"
         }
+    }
+
+    func purchaseFullVersion() async {
+        guard !isPurchasing else { return }
+        isPurchasing = true
+        defer { isPurchasing = false }
+
+        if fullVersionProduct == nil {
+            await loadFullVersionProduct()
+        }
+
+        guard let product = fullVersionProduct else {
+            statusText = missingFullVersionProductMessage
+            return
+        }
+
+        await purchase(product)
+    }
+
+    private func loadFullVersionProduct() async {
+        startObservingTransactionsIfNeeded()
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let fetchedProducts = try await Product.products(for: [StoreProductID.fullVersion.rawValue])
+            mergeProducts(fetchedProducts)
+            await refreshEntitlements()
+            if fullVersionProduct == nil {
+                statusText = missingFullVersionProductMessage
+            }
+        } catch {
+            statusText = "Store konnte nicht geladen werden: \(error.localizedDescription)"
+        }
+    }
+
+    private func mergeProducts(_ fetchedProducts: [Product]) {
+        var productsByID = Dictionary(uniqueKeysWithValues: products.map { ($0.id, $0) })
+        for product in fetchedProducts {
+            productsByID[product.id] = product
+        }
+        products = StoreProductID.allIDs.compactMap { productsByID[$0] }
     }
 
     func purchase(_ product: Product) async {

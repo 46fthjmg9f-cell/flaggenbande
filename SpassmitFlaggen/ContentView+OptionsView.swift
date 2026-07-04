@@ -13,19 +13,16 @@ extension ContentView {
                     Button {
                         Haptics.tap()
                         Task {
-                            if storeKit.fullVersionProduct == nil {
-                                await storeKit.loadProducts()
-                            }
-                            if let product = storeKit.fullVersionProduct {
-                                await storeKit.purchase(product)
-                                fullVersionUnlocked = storeKit.purchasedFullVersion
-                            }
+                            await storeKit.purchaseFullVersion()
+                            fullVersionUnlocked = storeKit.purchasedFullVersion
                         }
                     } label: {
                         HStack(spacing: 12) {
                             Label(L("Vollversion kaufen", "Buy full version"), systemImage: "lock.open.fill")
                             Spacer()
-                            if let product = storeKit.fullVersionProduct {
+                            if storeKit.isPurchasing {
+                                ProgressView()
+                            } else if let product = storeKit.fullVersionProduct {
                                 Text(product.displayPrice)
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(tealAccentColor)
@@ -36,7 +33,7 @@ extension ContentView {
                             }
                         }
                     }
-                    .disabled(storeKit.isLoading)
+                    .disabled(storeKit.isPurchasing)
                 }
 
                 if !fullVersionUnlocked {
@@ -227,6 +224,20 @@ extension ContentView {
         .scrollContentBackground(.hidden)
         .background(appBackgroundGradient.ignoresSafeArea())
         .navigationTitle(L("Optionen", "Options"))
+        .alert(L("Store", "Store"), isPresented: Binding(
+            get: { storeKit.statusText != nil },
+            set: { isPresented in
+                if !isPresented {
+                    storeKit.statusText = nil
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {
+                storeKit.statusText = nil
+            }
+        } message: {
+            Text(storeKit.statusText ?? "")
+        }
         .task {
             guard !fullVersionUnlocked else { return }
             await storeKit.loadProducts()
