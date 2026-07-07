@@ -8,7 +8,11 @@ extension ContentView {
     }
 
     var appLanguage: AppLanguage {
-        AppLanguage(rawValue: appLanguageRawValue) ?? .german
+        #if DEBUG
+        return .german
+        #else
+        return AppLanguage(rawValue: appLanguageRawValue) ?? .german
+        #endif
     }
 
     var appTheme: AppTheme {
@@ -36,6 +40,7 @@ extension ContentView {
         case "Ozeanien": return L("Ozeanien", "Oceania")
         case "Südamerika": return L("Südamerika", "South America")
         case partiallyRecognizedCategory: return L("Teilweise anerkannt", "Partly recognized")
+        case dependentTerritoriesCategory: return L("Abhängige Gebiete", "Dependent territories")
         default: return scope
         }
     }
@@ -45,7 +50,7 @@ extension ContentView {
     }
 
     var continents: [String] {
-        Array(Set(allCountries.map { $0.continent })).sorted()
+        Array(Set(availableCountries.map { $0.continent })).sorted()
     }
 
     var continentOptions: [String] {
@@ -64,6 +69,10 @@ extension ContentView {
     }
 
     var appBackgroundGradient: LinearGradient {
+        if appAccent == .champion {
+            return LinearGradient(colors: appAccent.gradientColors.map { $0.opacity(0.72) }, startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+
         let colors: [Color]
         if selectedSubject == .capitals {
             colors = [

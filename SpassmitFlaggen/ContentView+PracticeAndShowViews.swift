@@ -5,20 +5,35 @@ import SwiftUI
 extension ContentView {
     func adaptiveModeLayout<Content: View>(maxWidth: CGFloat = 560, @ViewBuilder content: @escaping () -> Content) -> some View {
         GeometryReader { geometry in
+            let horizontalPadding: CGFloat = geometry.size.width < 360 ? 10 : 16
             ViewThatFits(in: .vertical) {
                 content()
-                    .padding()
+                    .padding(horizontalPadding)
                     .frame(maxWidth: maxWidth)
                     .frame(width: geometry.size.width, alignment: .top)
 
                 ScrollView {
                     content()
-                        .padding()
+                        .padding(horizontalPadding)
                         .frame(maxWidth: maxWidth)
                         .frame(maxWidth: .infinity)
                 }
             }
         }
+    }
+
+    var freeDailyFlagLimitInfo: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tealAccentColor)
+            Text(L("Heute noch \(freeDailyFlagCardsRemaining) von \(FreeVersionLimits.dailyFlagCards) freien Flaggen", "\(freeDailyFlagCardsRemaining) of \(FreeVersionLimits.dailyFlagCards) free flags left today"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
     }
 
     var practiceView: some View {
@@ -47,41 +62,63 @@ extension ContentView {
                     )
 
                     VStack(spacing: 8) {
-                        practiceSwipeCard
-                        Text(L("Wischen!", "Swipe!"))
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(.secondary)
+                        if practiceRecapPromptIsVisible, let practiceHistoryPreview {
+                            practiceHistoryReviewCard(for: practiceHistoryPreview.change)
+                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                        } else {
+                            practiceSwipeCard
+                            Text(L("Wischen!", "Swipe!"))
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
-                    HStack(spacing: 10) {
+                    if practiceRecapPromptIsVisible {
                         Button {
                             Haptics.tap()
-                            undoLastPracticeSwipe()
+                            finishPracticeSession(showSummary: true)
                         } label: {
-                            Label(L("Rückgängig", "Undo"), systemImage: "arrow.uturn.backward")
+                            Text(L("Weiter", "Continue"))
                                 .frame(maxWidth: .infinity, minHeight: 44)
                                 .contentShape(RoundedRectangle(cornerRadius: 12))
                         }
                         .buttonStyle(ActionButtonStyle(color: tealAccentColor))
-                        .disabled(practiceUndoSnapshot == nil)
+                    } else {
+                        HStack(spacing: 10) {
+                            Button {
+                                Haptics.tap()
+                                undoLastPracticeSwipe()
+                            } label: {
+                                Label(L("Rückgängig", "Undo"), systemImage: "arrow.uturn.backward")
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .contentShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+                            .disabled(practiceUndoSnapshot == nil)
 
-                        Button {
-                            Haptics.tap()
-                            finishPracticeSession(showSummary: practiceSessionCount > 0)
-                        } label: {
-                            Text(L("Session abbrechen", "Cancel session"))
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .contentShape(RoundedRectangle(cornerRadius: 12))
+                            Button {
+                                Haptics.tap()
+                                finishPracticeSession(showSummary: practiceSessionCount > 0)
+                            } label: {
+                                Text(L("Session abbrechen", "Cancel session"))
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                                    .contentShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
                         }
-                        .buttonStyle(ActionButtonStyle(color: tealAccentColor))
                     }
 
-                    hintControl
+                    if !practiceRecapPromptIsVisible {
+                        hintControl
+                    }
                 } else {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(L("Kategorie", "Category"))
                             .font(.headline)
                         continentButtonGrid(selection: $selectedPracticeContinents)
+                        if selectedSubject == .countries && !fullVersionUnlocked {
+                            freeDailyFlagLimitInfo
+                        }
                     }
 
                     if showRecap {
@@ -130,7 +167,7 @@ extension ContentView {
             }
         }
 
-            if let practiceHistoryPreview {
+            if let practiceHistoryPreview, !practiceRecapPromptIsVisible {
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
@@ -148,22 +185,22 @@ extension ContentView {
                     .padding(.top, practiceHistoryBarMinY + 38)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                     .zIndex(2)
+            }
 
-                if let practiceHistoryGlobeCountry {
-                    Color.black.opacity(0.001)
-                        .ignoresSafeArea()
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            dismissPracticeHistoryGlobePreview()
-                        }
-                        .zIndex(3)
+            if let practiceHistoryGlobeCountry, !practiceRecapPromptIsVisible {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        dismissPracticeHistoryGlobePreview()
+                    }
+                    .zIndex(3)
 
-                    practiceHistoryGlobePopup(for: practiceHistoryGlobeCountry)
-                        .frame(maxHeight: .infinity, alignment: .top)
-                        .padding(.top, practiceHistoryBarMinY + 238)
-                        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-                        .zIndex(4)
-                }
+                practiceHistoryGlobePopup(for: practiceHistoryGlobeCountry)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, practiceHistoryBarMinY + 238)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    .zIndex(4)
             }
         }
         .coordinateSpace(name: "practicePreviewSpace")
@@ -182,6 +219,56 @@ extension ContentView {
                 practiceHistoryPreview = nil
             }
         }
+    }
+
+    func practiceHistoryReviewCard(for change: PracticeSessionChange) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Text(countryName(for: change.country))
+                    .font(.headline.weight(.bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Spacer(minLength: 0)
+                Text(change.country.code)
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(tealAccentColor)
+            }
+
+            FlagImage(country: change.country, width: 320, height: selectedSubject == .capitals ? 160 : 178, isZoomEnabled: false)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                )
+
+            HStack(spacing: 12) {
+                MiniLocationGlobe(country: change.country, accentColor: tealAccentColor)
+                    .frame(width: 76, height: 76)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(localizedScope(change.country.continent))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    if selectedSubject == .capitals {
+                        Text(capitalName(for: change.country))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(tealAccentColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                    }
+                    Text(change.wasKnown ? L("Gewusst", "Known") : L("Nicht gewusst", "Not known"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(change.wasKnown ? .green : .red)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(12)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(change.wasKnown ? Color.green.opacity(0.28) : Color.red.opacity(0.28), lineWidth: 1)
+        )
     }
 
     func practiceHistoryFloatingPreview(for preview: PracticeHistoryPreview) -> some View {
@@ -262,6 +349,7 @@ extension ContentView {
                     tiersByCountryCode: [country.code: .s],
                     resetToken: 0,
                     focusCountryCode: country.code,
+                    highlightCountryCode: country.code,
                     persistsViewState: false,
                     onSelectCountryCode: { _ in }
                 )
@@ -543,7 +631,7 @@ extension ContentView {
                 .gesture(
                     DragGesture(minimumDistance: 8)
                         .onChanged { value in
-                            guard !isFinishingPracticeSwipe else { return }
+                            guard !isFinishingPracticeSwipe, !practiceRecapPromptIsVisible else { return }
                             guard !FlagZoomInteractionState.isPinching else {
                                 practiceCardDragOffset = 0
                                 return
@@ -551,6 +639,10 @@ extension ContentView {
                             practiceCardDragOffset = max(min(value.translation.width, 220), -220)
                         }
                         .onEnded { value in
+                            guard !practiceRecapPromptIsVisible else {
+                                practiceCardDragOffset = 0
+                                return
+                            }
                             guard !FlagZoomInteractionState.isPinching else {
                                 practiceCardDragOffset = 0
                                 return
@@ -574,7 +666,7 @@ extension ContentView {
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .onTapGesture {
-            guard !isFinishingPracticeSwipe && !FlagZoomInteractionState.isPinching else { return }
+            guard !isFinishingPracticeSwipe, !practiceRecapPromptIsVisible, !FlagZoomInteractionState.isPinching else { return }
             Haptics.tap()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 cardIsFlipped.toggle()
@@ -594,6 +686,7 @@ extension ContentView {
                     .contentShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
+            .disabled(practiceRecapPromptIsVisible)
             .background(Color(.secondarySystemFill).opacity(cardHintIsVisible ? 0.45 : 0.32), in: RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
@@ -713,6 +806,9 @@ extension ContentView {
                         Text(L("Kategorie", "Category"))
                             .font(.headline)
                         continentButtonGrid(selection: $selectedShowContinents)
+                        if selectedSubject == .countries && !fullVersionUnlocked {
+                            freeDailyFlagLimitInfo
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 8) {

@@ -358,6 +358,10 @@ extension ContentView {
         achievementItems.filter(\.isUnlocked).count
     }
 
+    var allAchievementsUnlocked: Bool {
+        !achievementItems.isEmpty && achievementItems.allSatisfy(\.isUnlocked)
+    }
+
     var bossScoreTitle: String {
         selectedSubject == .capitals ? L("Städteboss-Score", "City boss score") : L("Flaggenboss-Score", "Flaggenboss score")
     }

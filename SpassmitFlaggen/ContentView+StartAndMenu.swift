@@ -17,11 +17,51 @@ extension ContentView {
                             .foregroundStyle(tealAccentColor.opacity(0.42))
                             .padding(.bottom, 2)
 
-                        Text("Flaggenbande")
-                            .font(.largeTitle.bold())
-                            .multilineTextAlignment(.center)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
+                        HStack(spacing: 8) {
+                            Text("Flaggenbande")
+                                .font(.largeTitle.bold())
+                                .multilineTextAlignment(.center)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+
+                            if tierDecayPopup != nil {
+                                Button {
+                                    Haptics.tap()
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                        tierDecayInfoPopup = tierDecayPopup
+                                        tierDecayInfoIsExpanded = true
+                                        tierDecayPopup = nil
+                                        selectedTierDecayChangeID = nil
+                                        tierDecayShowsAllChanges = false
+                                    }
+                                } label: {
+                                    ZStack {
+                                        Circle()
+                                            .stroke(Color.red.opacity(tierDecayInfoPulse ? 0.08 : 0.42), lineWidth: 2)
+                                            .frame(width: 36, height: 36)
+                                            .scaleEffect(tierDecayInfoPulse ? 1.55 : 0.8)
+                                        Circle()
+                                            .fill(Color.red.opacity(0.14))
+                                            .frame(width: 28, height: 28)
+                                        Image(systemName: "info.circle.fill")
+                                            .font(.title2.weight(.black))
+                                            .foregroundStyle(.red)
+                                            .scaleEffect(tierDecayInfoPulse ? 1.22 : 0.9)
+                                            .rotationEffect(.degrees(tierDecayInfoWiggle ? 8 : -8))
+                                    }
+                                    .frame(width: 38, height: 38)
+                                    .animation(.easeInOut(duration: 0.58).repeatForever(autoreverses: true), value: tierDecayInfoPulse)
+                                    .animation(.easeInOut(duration: 0.18).repeatForever(autoreverses: true), value: tierDecayInfoWiggle)
+                                    .accessibilityLabel(L("Stufeninfo", "Level info"))
+                                }
+                                .buttonStyle(.plain)
+                                .onAppear {
+                                    tierDecayInfoPulse = true
+                                    tierDecayInfoWiggle = true
+                                }
+                            }
+                        }
+
 
                         Label(L("Streak: \(currentLearningStreak) Tage", "Streak: \(currentLearningStreak) days"), systemImage: "flame.fill")
                             .font(.subheadline.weight(.semibold))
@@ -86,7 +126,7 @@ extension ContentView {
                             .font(.title2.bold())
                             .multilineTextAlignment(.center)
 
-                        Text(L("Kostenlos lernst du die Flaggen Europas. Mit der Vollversion wird daraus dein kompletter Welttrainer - mit allen Ländern, Hauptstädten, Globus und deutlich mehr Auswertung.", "The free version lets you learn Europe's flags. The full version turns it into your complete world trainer with every country, capitals, the globe, and much deeper stats."))
+                        Text(L("Kostenlos lernst du Flaggen und Hauptstädte mit Tageslimits. Mit der Vollversion wird daraus dein unbegrenzter Welttrainer - mit Globus, mehr Auswertung und ohne tägliche Rundenbegrenzung.", "The free version lets you learn flags and capitals with daily limits. The full version turns it into your unlimited world trainer with the globe, deeper stats, and no daily round caps."))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -95,21 +135,11 @@ extension ContentView {
                     .padding(.top, 8)
 
                     VStack(spacing: 10) {
-                        fullVersionFeatureRow(icon: "globe.europe.africa.fill", title: L("Alle Länder der Welt", "Every country in the world"), text: L("Lerne nicht nur Europa, sondern Afrika, Asien, Amerika, Ozeanien und optionale Zusatzgebiete.", "Go beyond Europe with Africa, Asia, the Americas, Oceania, and optional extra territories."))
-                        fullVersionFeatureRow(icon: "building.columns.fill", title: L("Hauptstädte-Modus", "Capitals mode"), text: L("Trainiere zu jeder Flagge auch die passende Hauptstadt - perfekt, wenn du wirklich sicher werden willst.", "Train the matching capital for every flag - ideal when you want real confidence."))
+                        fullVersionFeatureRow(icon: "infinity", title: L("Keine Tageslimits", "No daily limits"), text: L("Trainiere Karten, Flaggenrun und Partymodus so oft, wie du möchtest.", "Train cards, Flag Run, and Party Mode as often as you want."))
                         fullVersionFeatureRow(icon: "globe", title: L("Interaktiver Globus", "Interactive globe"), text: L("Sieh deinen Fortschritt direkt auf der Weltkarte und springe gezielt zu Ländern, die noch offen sind.", "See your progress directly on the world map and jump to countries that still need work."))
                         fullVersionFeatureRow(icon: "chart.line.uptrend.xyaxis", title: L("Premium-Statistiken", "Premium statistics"), text: L("Verfolge Stufen, Lernkurven, Tagesleistung und Fortschritt pro Region viel genauer.", "Track levels, learning curves, daily performance, and regional progress in much more detail."))
                         fullVersionFeatureRow(icon: "paintpalette.fill", title: L("Mehr Anpassung", "More customization"), text: L("Schalte Akzentfarben und erweiterte Lernbereiche frei, damit sich die App nach deinem Trainer anfühlt.", "Unlock accent colors and expanded study scopes so the app feels like your own trainer."))
                         fullVersionFeatureRow(icon: "hand.raised.fill", title: L("Werbefrei. Immer.", "Ad-free. Always."), text: L("Niemand mag Werbung beim Lernen. Deshalb zeigt Flaggenbande bewusst weder in der kostenlosen Version noch in der Vollversion jemals Werbung.", "Nobody likes ads while learning. That's why Flaggenbande intentionally never shows ads, neither in the free version nor in the full version."))
-                    }
-
-                    if let statusText = storeKit.statusText {
-                        Text(statusText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 6)
                     }
 
                     Button(L("Später", "Later")) {
@@ -155,29 +185,39 @@ extension ContentView {
     }
 
     var fullVersionPurchaseButton: some View {
-        Button {
-            Haptics.tap()
-            Task {
-                await storeKit.purchaseFullVersion()
-                fullVersionUnlocked = storeKit.purchasedFullVersion
-                if fullVersionUnlocked {
-                    isShowingFullVersionSheet = false
+        VStack(spacing: 8) {
+            Button {
+                Haptics.tap()
+                Task {
+                    let purchaseSucceeded = await storeKit.purchaseFullVersion()
+                    fullVersionUnlocked = storeKit.purchasedFullVersion
+                    if purchaseSucceeded && fullVersionUnlocked {
+                        isShowingFullVersionSheet = false
+                    }
                 }
-            }
-        } label: {
-            HStack(spacing: 10) {
-                if storeKit.isPurchasing {
-                    ProgressView()
-                } else {
-                    Image(systemName: "lock.open.fill")
+            } label: {
+                HStack(spacing: 10) {
+                    if storeKit.isPurchasing || storeKit.isLoading || storeKit.isRefreshingEntitlements {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "lock.open.fill")
+                    }
+                    Text(storeKit.isLoading ? L("Store lädt ...", "Loading store ...") : fullVersionPurchaseTitle)
+                        .font(.headline.weight(.bold))
                 }
-                Text(fullVersionPurchaseTitle)
-                    .font(.headline.weight(.bold))
+                .frame(maxWidth: .infinity, minHeight: 50)
             }
-            .frame(maxWidth: .infinity, minHeight: 50)
+            .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+            .disabled(storeKit.isPurchasing || storeKit.isLoading || storeKit.isRefreshingEntitlements || fullVersionUnlocked)
+
+            if let statusText = storeKit.statusText {
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .buttonStyle(ActionButtonStyle(color: tealAccentColor))
-        .disabled(storeKit.isPurchasing)
     }
 
     func fullVersionFeatureRow(icon: String, title: String, text: String) -> some View {

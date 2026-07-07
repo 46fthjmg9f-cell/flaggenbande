@@ -301,15 +301,8 @@ struct PracticeUndoSnapshot {
 
 enum StoreProductID: String, CaseIterable {
     case fullVersion = "de.phil.SpassmitFlaggen.fullversion"
-    case donationSmall = "de.phil.SpassmitFlaggen.donation.small"
-    case donationMedium = "de.phil.SpassmitFlaggen.donation.medium"
-    case donationLarge = "de.phil.SpassmitFlaggen.donation.large"
 
     static var allIDs: [String] {
         allCases.map(\.rawValue)
-    }
-
-    static var donationIDs: Set<String> {
-        [donationSmall.rawValue, donationMedium.rawValue, donationLarge.rawValue]
     }
 }

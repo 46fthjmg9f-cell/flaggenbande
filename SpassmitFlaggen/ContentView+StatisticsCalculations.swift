@@ -3,11 +3,93 @@ import Foundation
 
 extension ContentView {
     var practiceLimitReached: Bool {
-        selectedPracticeCardLimit > 0 && practiceSessionCount >= selectedPracticeCardLimit
+        (selectedPracticeCardLimit > 0 && practiceSessionCount >= selectedPracticeCardLimit) || freeDailyFlagLimitReached
     }
 
     var showLimitReached: Bool {
-        selectedShowCardLimit > 0 && showSessionCount >= selectedShowCardLimit
+        (selectedShowCardLimit > 0 && showSessionCount >= selectedShowCardLimit) || freeDailyFlagLimitReached
+    }
+
+    var freeDailyFlagCardsSeenToday: Int {
+        let dayKey = UserProfile.practiceDayKey(for: Date(), subject: .countries)
+        let practiceCards = activeProfile.practiceCardsByDay?[dayKey] ?? 0
+        let showmasterCards = activeProfile.showmasterCardsByDay?[dayKey] ?? 0
+        return practiceCards + showmasterCards
+    }
+
+    var freeDailyFlagCardsRemaining: Int {
+        fullVersionUnlocked ? Int.max : max(FreeVersionLimits.dailyFlagCards - freeDailyFlagCardsSeenToday, 0)
+    }
+
+    var freeDailyFlagLimitReached: Bool {
+        selectedSubject == .countries && !fullVersionUnlocked && freeDailyFlagCardsRemaining == 0
+    }
+
+    func showFreeDailyFlagLimitUpsell() {
+        Haptics.notify(.warning)
+        storeKit.statusText = L("Du hast heute \(FreeVersionLimits.dailyFlagCards) Flaggen gesehen. Mit der Vollversion ist das Tageslimit aufgehoben.", "You have viewed \(FreeVersionLimits.dailyFlagCards) flags today. The full version removes the daily limit.")
+        isShowingFullVersionSheet = true
+    }
+
+    var freeDailyLeagueRunsRemaining: Int {
+        fullVersionUnlocked ? Int.max : max(FreeVersionLimits.dailyFlaggenrunRounds - activeProfile.leagueRunsToday(), 0)
+    }
+
+    var freeDailyPartyModeRunsRemaining: Int {
+        fullVersionUnlocked ? Int.max : max(FreeVersionLimits.dailyPartyModeRounds - activeProfile.partyModeRunsToday(), 0)
+    }
+
+    var freeDailyLeagueLimitReached: Bool {
+        !fullVersionUnlocked && freeDailyLeagueRunsRemaining == 0
+    }
+
+    var freeDailyPartyModeLimitReached: Bool {
+        !fullVersionUnlocked && freeDailyPartyModeRunsRemaining == 0
+    }
+
+    func freeDailyGameModeLimitInfo(title: String, remaining: Int, total: Int) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tealAccentColor)
+            Text(L("Heute noch \(remaining) von \(total) freien \(title)-Runden", "\(remaining) of \(total) free \(title) rounds left today"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    func showFreeDailyGameModeLimitUpsell(modeTitle: String, total: Int) {
+        Haptics.notify(.warning)
+        storeKit.statusText = L("Du hast heute \(total) \(modeTitle)-Runden gespielt. Mit der Vollversion ist das Tageslimit aufgehoben.", "You have played \(total) \(modeTitle) rounds today. The full version removes the daily limit.")
+        isShowingFullVersionSheet = true
+    }
+
+    func consumeFreeDailyLeagueRunIfAllowed() -> Bool {
+        guard !fullVersionUnlocked else { return true }
+        guard !freeDailyLeagueLimitReached else {
+            showFreeDailyGameModeLimitUpsell(modeTitle: runTitle, total: FreeVersionLimits.dailyFlaggenrunRounds)
+            return false
+        }
+        updateActiveProfile { profile in
+            profile.recordLeagueRunStart()
+        }
+        return true
+    }
+
+    func consumeFreeDailyPartyModeRunIfAllowed() -> Bool {
+        guard !fullVersionUnlocked else { return true }
+        guard !freeDailyPartyModeLimitReached else {
+            showFreeDailyGameModeLimitUpsell(modeTitle: L("Partymodus", "Party Mode"), total: FreeVersionLimits.dailyPartyModeRounds)
+            return false
+        }
+        updateActiveProfile { profile in
+            profile.recordPartyModeStart()
+        }
+        return true
     }
 
     var statisticsCountries: [Country] {

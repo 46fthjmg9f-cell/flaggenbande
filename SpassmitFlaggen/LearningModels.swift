@@ -1,6 +1,12 @@
 import SwiftUI
 import Foundation
 
+private extension KeyedDecodingContainer {
+    func decodeDefault<T: Decodable>(_ type: T.Type, forKey key: Key, default defaultValue: @autoclosure () -> T) -> T {
+        (try? decodeIfPresent(type, forKey: key)) ?? defaultValue()
+    }
+}
+
 enum LearningSubject: String, CaseIterable, Identifiable {
     case countries
     case capitals
@@ -145,6 +151,17 @@ struct LeagueAnswerRecord: Identifiable, Codable {
     let wasCorrect: Bool
     let responseTime: Double
     let pointsAwarded: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case countryCode
+        case countryName
+        case submittedAnswer
+        case detectedCountryName
+        case wasCorrect
+        case responseTime
+        case pointsAwarded
+    }
 }
 
 struct LeagueMatchResult: Identifiable, Codable {
@@ -160,6 +177,21 @@ struct LeagueMatchResult: Identifiable, Codable {
     let ratingBefore: Int?
     let ratingAfter: Int?
     let ratingDelta: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case date
+        case opponentName
+        case ownScore
+        case opponentScore
+        case correct
+        case wrong
+        case duration
+        case answerDetails
+        case ratingBefore
+        case ratingAfter
+        case ratingDelta
+    }
 
     var totalAnswers: Int {
         correct + wrong
@@ -187,6 +219,21 @@ struct LeagueStats: Codable {
     var currentWinStreak: Int = 0
     var bestWinStreak: Int = 0
     var recentMatches: [LeagueMatchResult] = []
+
+    enum CodingKeys: String, CodingKey {
+        case rating
+        case played
+        case wins
+        case draws
+        case losses
+        case bestScore
+        case totalScore
+        case totalCorrect
+        case totalWrong
+        case currentWinStreak
+        case bestWinStreak
+        case recentMatches
+    }
 
     var averageScore: Double { 0 }
 
@@ -284,6 +331,24 @@ struct CountryStats: Codable {
     var lastKnownAt: Date?
     var lastTierDecayAt: Date?
     var tierHistory: [TierHistoryEntry]?
+
+    enum CodingKeys: String, CodingKey {
+        case attempts
+        case correct
+        case wrong
+        case cardReviews
+        case cardKnown
+        case cardUnknown
+        case showmasterPlayed
+        case storedTier
+        case totalResponseTime
+        case fastestResponseTime
+        case slowestResponseTime
+        case lastPracticedAt
+        case lastKnownAt
+        case lastTierDecayAt
+        case tierHistory
+    }
 
     var accuracy: Double {
         attempts == 0 ? 0 : Double(correct) / Double(attempts)
@@ -419,11 +484,44 @@ struct UserProfile: Identifiable, Codable {
     var practiceCardsByDay: [String: Int]?
     var practiceKnownCardsByDay: [String: Int]?
     var practiceUnknownCardsByDay: [String: Int]?
+    var showmasterCardsByDay: [String: Int]?
     var perfectFullPracticeSessionSubjects: [String]?
     var announcedAchievementIDs: [String]?
     var achievedAchievementDates: [String: Date]?
     var leagueStats: LeagueStats?
     var partyRoundsPlayed: Int?
+    var leagueRunsByDay: [String: Int]?
+    var partyModeRunsByDay: [String: Int]?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case pin
+        case totalAnswers
+        case correctAnswers
+        case wrongAnswers
+        case currentStreak
+        case bestStreak
+        case totalResponseTime
+        case fastestResponseTime
+        case slowestResponseTime
+        case showmasterCards
+        case byCountry
+        case learningStreak
+        case bestLearningStreak
+        case lastLearningStreakDate
+        case practiceCardsByDay
+        case practiceKnownCardsByDay
+        case practiceUnknownCardsByDay
+        case showmasterCardsByDay
+        case perfectFullPracticeSessionSubjects
+        case announcedAchievementIDs
+        case achievedAchievementDates
+        case leagueStats
+        case partyRoundsPlayed
+        case leagueRunsByDay
+        case partyModeRunsByDay
+    }
 
     var accuracy: Double {
         totalAnswers == 0 ? 0 : Double(correctAnswers) / Double(totalAnswers)
@@ -551,12 +649,39 @@ struct UserProfile: Identifiable, Codable {
         return changes
     }
 
-    mutating func recordShowmasterCard(country: Country, subject: LearningSubject = .countries) {
+    mutating func recordShowmasterCard(country: Country, subject: LearningSubject = .countries, now: Date = Date(), calendar: Calendar = .current) {
         showmasterCards += 1
         let key = subject.statsKey(for: country)
         var countryStats = byCountry[key] ?? CountryStats()
         countryStats.recordShowmasterCard()
         byCountry[key] = countryStats
+
+        let dayKey = Self.practiceDayKey(for: now, subject: subject, calendar: calendar)
+        var cardsByDay = showmasterCardsByDay ?? [:]
+        cardsByDay[dayKey, default: 0] += 1
+        showmasterCardsByDay = cardsByDay
+    }
+
+    func leagueRunsToday(now: Date = Date(), calendar: Calendar = .current) -> Int {
+        leagueRunsByDay?[Self.dayKey(for: now, calendar: calendar)] ?? 0
+    }
+
+    func partyModeRunsToday(now: Date = Date(), calendar: Calendar = .current) -> Int {
+        partyModeRunsByDay?[Self.dayKey(for: now, calendar: calendar)] ?? 0
+    }
+
+    mutating func recordLeagueRunStart(now: Date = Date(), calendar: Calendar = .current) {
+        let dayKey = Self.dayKey(for: now, calendar: calendar)
+        var runsByDay = leagueRunsByDay ?? [:]
+        runsByDay[dayKey, default: 0] += 1
+        leagueRunsByDay = runsByDay
+    }
+
+    mutating func recordPartyModeStart(now: Date = Date(), calendar: Calendar = .current) {
+        let dayKey = Self.dayKey(for: now, calendar: calendar)
+        var runsByDay = partyModeRunsByDay ?? [:]
+        runsByDay[dayKey, default: 0] += 1
+        partyModeRunsByDay = runsByDay
     }
 
     mutating func recordLeagueMatch(_ result: LeagueMatchResult, opponentRating: Int = 1000) {
@@ -599,11 +724,135 @@ struct UserProfile: Identifiable, Codable {
 }
 
 struct AppData: Codable {
+    var schemaVersion: Int = 1
     var profiles: [UserProfile] = []
     var activeProfileID: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case profiles
+        case activeProfileID
+    }
 
     var activeProfile: UserProfile? {
         guard let activeProfileID else { return nil }
         return profiles.first { $0.id == activeProfileID }
+    }
+}
+
+extension LeagueAnswerRecord {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.decodeDefault(UUID.self, forKey: .id, default: UUID())
+        countryCode = container.decodeDefault(String.self, forKey: .countryCode, default: "")
+        countryName = container.decodeDefault(String.self, forKey: .countryName, default: countryCode)
+        submittedAnswer = container.decodeDefault(String.self, forKey: .submittedAnswer, default: "")
+        detectedCountryName = container.decodeDefault(String.self, forKey: .detectedCountryName, default: "")
+        wasCorrect = container.decodeDefault(Bool.self, forKey: .wasCorrect, default: false)
+        responseTime = container.decodeDefault(Double.self, forKey: .responseTime, default: 0)
+        pointsAwarded = container.decodeDefault(Int.self, forKey: .pointsAwarded, default: 0)
+    }
+}
+
+extension LeagueMatchResult {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.decodeDefault(UUID.self, forKey: .id, default: UUID())
+        date = container.decodeDefault(Date.self, forKey: .date, default: Date())
+        opponentName = container.decodeDefault(String.self, forKey: .opponentName, default: "Training")
+        ownScore = container.decodeDefault(Int.self, forKey: .ownScore, default: 0)
+        opponentScore = container.decodeDefault(Int.self, forKey: .opponentScore, default: 0)
+        correct = container.decodeDefault(Int.self, forKey: .correct, default: 0)
+        wrong = container.decodeDefault(Int.self, forKey: .wrong, default: 0)
+        duration = container.decodeDefault(Int.self, forKey: .duration, default: 60)
+        answerDetails = try? container.decodeIfPresent([LeagueAnswerRecord].self, forKey: .answerDetails)
+        ratingBefore = try? container.decodeIfPresent(Int.self, forKey: .ratingBefore)
+        ratingAfter = try? container.decodeIfPresent(Int.self, forKey: .ratingAfter)
+        ratingDelta = try? container.decodeIfPresent(Int.self, forKey: .ratingDelta)
+    }
+}
+
+extension LeagueStats {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rating = container.decodeDefault(Int.self, forKey: .rating, default: 1000)
+        played = container.decodeDefault(Int.self, forKey: .played, default: 0)
+        wins = container.decodeDefault(Int.self, forKey: .wins, default: 0)
+        draws = container.decodeDefault(Int.self, forKey: .draws, default: 0)
+        losses = container.decodeDefault(Int.self, forKey: .losses, default: 0)
+        bestScore = container.decodeDefault(Int.self, forKey: .bestScore, default: 0)
+        totalScore = container.decodeDefault(Int.self, forKey: .totalScore, default: 0)
+        totalCorrect = container.decodeDefault(Int.self, forKey: .totalCorrect, default: 0)
+        totalWrong = container.decodeDefault(Int.self, forKey: .totalWrong, default: 0)
+        currentWinStreak = container.decodeDefault(Int.self, forKey: .currentWinStreak, default: 0)
+        bestWinStreak = container.decodeDefault(Int.self, forKey: .bestWinStreak, default: 0)
+        recentMatches = container.decodeDefault([LeagueMatchResult].self, forKey: .recentMatches, default: [])
+    }
+}
+
+extension CountryStats {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        attempts = container.decodeDefault(Int.self, forKey: .attempts, default: 0)
+        correct = container.decodeDefault(Int.self, forKey: .correct, default: 0)
+        wrong = container.decodeDefault(Int.self, forKey: .wrong, default: 0)
+        cardReviews = container.decodeDefault(Int.self, forKey: .cardReviews, default: 0)
+        cardKnown = container.decodeDefault(Int.self, forKey: .cardKnown, default: 0)
+        cardUnknown = container.decodeDefault(Int.self, forKey: .cardUnknown, default: 0)
+        showmasterPlayed = container.decodeDefault(Int.self, forKey: .showmasterPlayed, default: 0)
+        storedTier = container.decodeDefault(MasteryTier.self, forKey: .storedTier, default: .f)
+        totalResponseTime = container.decodeDefault(Double.self, forKey: .totalResponseTime, default: 0)
+        fastestResponseTime = try? container.decodeIfPresent(Double.self, forKey: .fastestResponseTime)
+        slowestResponseTime = try? container.decodeIfPresent(Double.self, forKey: .slowestResponseTime)
+        lastPracticedAt = try? container.decodeIfPresent(Date.self, forKey: .lastPracticedAt)
+        lastKnownAt = try? container.decodeIfPresent(Date.self, forKey: .lastKnownAt)
+        lastTierDecayAt = try? container.decodeIfPresent(Date.self, forKey: .lastTierDecayAt)
+        tierHistory = try? container.decodeIfPresent([TierHistoryEntry].self, forKey: .tierHistory)
+    }
+}
+
+extension UserProfile {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = container.decodeDefault(UUID.self, forKey: .id, default: UUID())
+        name = container.decodeDefault(String.self, forKey: .name, default: "Training")
+        pin = container.decodeDefault(String.self, forKey: .pin, default: "")
+        totalAnswers = container.decodeDefault(Int.self, forKey: .totalAnswers, default: 0)
+        correctAnswers = container.decodeDefault(Int.self, forKey: .correctAnswers, default: 0)
+        wrongAnswers = container.decodeDefault(Int.self, forKey: .wrongAnswers, default: 0)
+        currentStreak = container.decodeDefault(Int.self, forKey: .currentStreak, default: 0)
+        bestStreak = container.decodeDefault(Int.self, forKey: .bestStreak, default: 0)
+        totalResponseTime = container.decodeDefault(Double.self, forKey: .totalResponseTime, default: 0)
+        fastestResponseTime = try? container.decodeIfPresent(Double.self, forKey: .fastestResponseTime)
+        slowestResponseTime = try? container.decodeIfPresent(Double.self, forKey: .slowestResponseTime)
+        showmasterCards = container.decodeDefault(Int.self, forKey: .showmasterCards, default: 0)
+        byCountry = container.decodeDefault([String: CountryStats].self, forKey: .byCountry, default: [:])
+        learningStreak = try? container.decodeIfPresent(Int.self, forKey: .learningStreak)
+        bestLearningStreak = try? container.decodeIfPresent(Int.self, forKey: .bestLearningStreak)
+        lastLearningStreakDate = try? container.decodeIfPresent(Date.self, forKey: .lastLearningStreakDate)
+        practiceCardsByDay = try? container.decodeIfPresent([String: Int].self, forKey: .practiceCardsByDay)
+        practiceKnownCardsByDay = try? container.decodeIfPresent([String: Int].self, forKey: .practiceKnownCardsByDay)
+        practiceUnknownCardsByDay = try? container.decodeIfPresent([String: Int].self, forKey: .practiceUnknownCardsByDay)
+        showmasterCardsByDay = try? container.decodeIfPresent([String: Int].self, forKey: .showmasterCardsByDay)
+        perfectFullPracticeSessionSubjects = try? container.decodeIfPresent([String].self, forKey: .perfectFullPracticeSessionSubjects)
+        announcedAchievementIDs = try? container.decodeIfPresent([String].self, forKey: .announcedAchievementIDs)
+        achievedAchievementDates = try? container.decodeIfPresent([String: Date].self, forKey: .achievedAchievementDates)
+        leagueStats = try? container.decodeIfPresent(LeagueStats.self, forKey: .leagueStats)
+        partyRoundsPlayed = try? container.decodeIfPresent(Int.self, forKey: .partyRoundsPlayed)
+        leagueRunsByDay = try? container.decodeIfPresent([String: Int].self, forKey: .leagueRunsByDay)
+        partyModeRunsByDay = try? container.decodeIfPresent([String: Int].self, forKey: .partyModeRunsByDay)
+    }
+}
+
+extension AppData {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = container.decodeDefault(Int.self, forKey: .schemaVersion, default: 1)
+        profiles = container.decodeDefault([UserProfile].self, forKey: .profiles, default: [])
+        activeProfileID = try? container.decodeIfPresent(UUID.self, forKey: .activeProfileID)
+
+        if activeProfileID == nil {
+            activeProfileID = profiles.first?.id
+        }
     }
 }

@@ -61,7 +61,7 @@ struct PracticeHistoryBar: View {
             } + [(.current, nil)]
         }
 
-        let total = max(limit, results.count + 1)
+        let total = max(limit, results.count)
         return (0..<total).map { index in
             if index < results.count {
                 return (results[index] ? .known : .unknown, index < changes.count ? changes[index] : nil)
@@ -74,33 +74,56 @@ struct PracticeHistoryBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 7) {
-            ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
-                if let change = entry.change {
-                    Button {
-                        onSelectChange(PracticeHistoryPreview(change: change, index: index, total: entries.count))
-                    } label: {
-                        PracticeHistoryPill(mark: entry.mark, accentColor: accentColor, isSelected: selectedChangeID == change.id)
+        ScaledHistoryBarContainer(entryCount: entries.count) { pillSize, spacing in
+            HStack(spacing: spacing) {
+                ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
+                    if let change = entry.change {
+                        Button {
+                            onSelectChange(PracticeHistoryPreview(change: change, index: index, total: entries.count))
+                        } label: {
+                            PracticeHistoryPill(mark: entry.mark, accentColor: accentColor, isSelected: selectedChangeID == change.id, size: pillSize)
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Circle())
+                    } else {
+                        PracticeHistoryPill(mark: entry.mark, accentColor: accentColor, isSelected: false, size: pillSize)
                     }
-                    .buttonStyle(.plain)
-                    .contentShape(Circle())
-                } else {
-                    PracticeHistoryPill(mark: entry.mark, accentColor: accentColor, isSelected: false)
                 }
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(accentColor.opacity(0.2), lineWidth: 1)
-        )
         .animation(.spring(response: 0.3, dampingFraction: 0.72), value: results)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Üben Verlauf")
+    }
+}
+
+struct ScaledHistoryBarContainer<Content: View>: View {
+    let entryCount: Int
+    @ViewBuilder let content: (CGFloat, CGFloat) -> Content
+
+    var body: some View {
+        GeometryReader { geometry in
+            let horizontalPadding: CGFloat = 20
+            let maxSpacing: CGFloat = 7
+            let maxPillSize: CGFloat = 28
+            let count = max(entryCount, 1)
+            let availableWidth = max(geometry.size.width - horizontalPadding, 1)
+            let idealWidth = maxPillSize * CGFloat(count) + maxSpacing * CGFloat(max(count - 1, 0))
+            let spacing = idealWidth > availableWidth ? 4 : maxSpacing
+            let pillSize = min(maxPillSize, max(20, (availableWidth - spacing * CGFloat(max(count - 1, 0))) / CGFloat(count)))
+
+            content(pillSize, spacing)
+                .frame(maxWidth: .infinity, minHeight: maxPillSize)
+                .padding(.horizontal, horizontalPadding / 2)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                )
+        }
+        .frame(height: 44)
     }
 }
 
@@ -108,6 +131,7 @@ struct PracticeHistoryPill: View {
     let mark: PracticeHistoryMark
     let accentColor: Color
     let isSelected: Bool
+    var size: CGFloat = 28
 
     private var fillColor: Color {
         switch mark {
@@ -125,9 +149,9 @@ struct PracticeHistoryPill: View {
 
     var body: some View {
         Image(systemName: mark.systemImage)
-            .font(.system(size: 13, weight: .bold))
+            .font(.system(size: max(size * 0.46, 10), weight: .bold))
             .foregroundStyle(iconColor)
-            .frame(width: 28, height: 28)
+            .frame(width: size, height: size)
             .background(fillColor)
             .clipShape(Circle())
             .overlay(
@@ -166,33 +190,26 @@ struct ShowHistoryBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 7) {
-            ForEach(0..<totalSlots, id: \.self) { index in
-                if index < visibleEntries.count {
-                    let entry = visibleEntries[index]
-                    Button {
-                        onSelectEntry(ShowHistoryPreview(entry: entry, index: index, total: totalSlots))
-                    } label: {
-                        PracticeHistoryPill(mark: .seen, accentColor: accentColor, isSelected: selectedEntryID == entry.id)
+        ScaledHistoryBarContainer(entryCount: totalSlots) { pillSize, spacing in
+            HStack(spacing: spacing) {
+                ForEach(0..<totalSlots, id: \.self) { index in
+                    if index < visibleEntries.count {
+                        let entry = visibleEntries[index]
+                        Button {
+                            onSelectEntry(ShowHistoryPreview(entry: entry, index: index, total: totalSlots))
+                        } label: {
+                            PracticeHistoryPill(mark: .seen, accentColor: accentColor, isSelected: selectedEntryID == entry.id, size: pillSize)
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Circle())
+                    } else if limit == 0 || index == entries.count {
+                        PracticeHistoryPill(mark: .current, accentColor: accentColor, isSelected: false, size: pillSize)
+                    } else {
+                        PracticeHistoryPill(mark: .pending, accentColor: accentColor, isSelected: false, size: pillSize)
                     }
-                    .buttonStyle(.plain)
-                    .contentShape(Circle())
-                } else if limit == 0 || index == entries.count {
-                    PracticeHistoryPill(mark: .current, accentColor: accentColor, isSelected: false)
-                } else {
-                    PracticeHistoryPill(mark: .pending, accentColor: accentColor, isSelected: false)
                 }
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(accentColor.opacity(0.2), lineWidth: 1)
-        )
         .animation(.spring(response: 0.3, dampingFraction: 0.72), value: entries.count)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Showmaster Verlauf")

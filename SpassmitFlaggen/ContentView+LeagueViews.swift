@@ -62,6 +62,10 @@ extension ContentView {
             }
             .buttonStyle(ActionButtonStyle(color: tealAccentColor))
 
+            if !fullVersionUnlocked {
+                freeDailyGameModeLimitInfo(title: runTitle, remaining: freeDailyLeagueRunsRemaining, total: FreeVersionLimits.dailyFlaggenrunRounds)
+            }
+
             leagueStatsCard
 
             flaggenrunLeaderboardCard
@@ -118,6 +122,9 @@ extension ContentView {
 
     var leagueSetupView: some View {
         VStack(spacing: 14) {
+            if !fullVersionUnlocked {
+                freeDailyGameModeLimitInfo(title: runTitle, remaining: freeDailyLeagueRunsRemaining, total: FreeVersionLimits.dailyFlaggenrunRounds)
+            }
             leagueStartMatchButton
             leagueStatsCard
             leagueMatchHistoryCard

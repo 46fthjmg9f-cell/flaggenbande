@@ -9,6 +9,7 @@ struct GlobeSceneView: UIViewRepresentable {
     let tiersByCountryCode: [String: MasteryTier]
     let resetToken: Int
     let focusCountryCode: String?
+    var highlightCountryCode: String? = nil
     var persistsViewState: Bool = true
     let onSelectCountryCode: (String) -> Void
 
@@ -39,6 +40,7 @@ struct GlobeSceneView: UIViewRepresentable {
         context.coordinator.resetIfNeeded(token: resetToken)
         context.coordinator.updateCountries(countries, tiersByCountryCode: tiersByCountryCode)
         context.coordinator.focusIfNeeded(countryCode: focusCountryCode)
+        context.coordinator.updateHighlight(countryCode: highlightCountryCode)
     }
 
     final class Coordinator: NSObject {
@@ -47,6 +49,7 @@ struct GlobeSceneView: UIViewRepresentable {
         private weak var sceneView: SCNView?
         private let globeNode = SCNNode()
         private let borderNode = SCNNode()
+        private let highlightNode = SCNNode()
         private let globeMaterial = SCNMaterial()
         private let cameraNode = SCNNode()
         private var boundaryData: GlobeBoundaryData?
@@ -57,6 +60,7 @@ struct GlobeSceneView: UIViewRepresentable {
         private var cameraDistance: Float = 3.2
         private var lastResetToken: Int = 0
         private var lastFocusedCountryCode: String?
+        private var highlightedCountryCode: String?
         private var pendingFocusCountryCode: String?
         private let minimumCameraDistance: Float = 1.65
         private let maximumCameraDistance: Float = 4.8
@@ -110,6 +114,7 @@ struct GlobeSceneView: UIViewRepresentable {
 
             globeNode.geometry = sphere
             globeNode.addChildNode(borderNode)
+            globeNode.addChildNode(highlightNode)
             globeNode.addChildNode(makeAtmosphereNode())
             scene.rootNode.addChildNode(globeNode)
 
@@ -153,7 +158,7 @@ struct GlobeSceneView: UIViewRepresentable {
 
         func focusIfNeeded(countryCode: String?) {
             guard let countryCode, countryCode != lastFocusedCountryCode else { return }
-            guard let coordinate = globeMainlandFocusByCountryCode[countryCode] ?? boundaryData?.centroidsByCountryCode[countryCode] else {
+            guard let coordinate = coordinateForCountryCode(countryCode) else {
                 pendingFocusCountryCode = countryCode
                 return
             }
@@ -162,6 +167,16 @@ struct GlobeSceneView: UIViewRepresentable {
             stopInertia()
             cameraDistance = min(cameraDistance, 3.0)
             applyFocus(on: coordinate, animated: true)
+        }
+
+        func updateHighlight(countryCode: String?) {
+            guard highlightedCountryCode != countryCode else { return }
+            highlightedCountryCode = countryCode
+            rebuildHighlightMarker()
+        }
+
+        private func coordinateForCountryCode(_ countryCode: String) -> GlobeCoordinate? {
+            globeMainlandFocusByCountryCode[countryCode] ?? boundaryData?.centroidsByCountryCode[countryCode]
         }
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -370,6 +385,7 @@ struct GlobeSceneView: UIViewRepresentable {
                 boundaryData = cachedData
                 rebuildGlobeTexture()
                 rebuildBoundaries()
+                rebuildHighlightMarker()
                 focusIfNeeded(countryCode: pendingFocusCountryCode)
                 return
             }
@@ -380,6 +396,7 @@ struct GlobeSceneView: UIViewRepresentable {
                 self.boundaryData = boundaryData
                 rebuildGlobeTexture()
                 rebuildBoundaries()
+                rebuildHighlightMarker()
                 focusIfNeeded(countryCode: pendingFocusCountryCode)
                 return
             }
@@ -395,9 +412,43 @@ struct GlobeSceneView: UIViewRepresentable {
                     self.boundaryData = boundaryData
                     self.rebuildGlobeTexture()
                     self.rebuildBoundaries()
+                    self.rebuildHighlightMarker()
                     self.focusIfNeeded(countryCode: self.pendingFocusCountryCode)
                 }
             }.resume()
+        }
+
+        private func rebuildHighlightMarker() {
+            highlightNode.childNodes.forEach { $0.removeFromParentNode() }
+            guard let highlightedCountryCode, let coordinate = coordinateForCountryCode(highlightedCountryCode) else { return }
+
+            let center = simd_normalize(simdPosition(for: coordinate, radius: 1.032))
+            let reference = abs(center.y) < 0.92 ? SIMD3<Float>(0, 1, 0) : SIMD3<Float>(1, 0, 0)
+            let tangent = simd_normalize(simd_cross(reference, center))
+            let bitangent = simd_normalize(simd_cross(center, tangent))
+            let angularRadius: Float = 0.092
+            let segments = 96
+            var vertices: [SCNVector3] = []
+            var indices: [Int32] = []
+
+            for index in 0..<segments {
+                let angle = Float(index) / Float(segments) * 2 * .pi
+                let direction = simd_normalize(center * cos(angularRadius) + (tangent * cos(angle) + bitangent * sin(angle)) * sin(angularRadius))
+                let position = direction * 1.035
+                vertices.append(SCNVector3(position.x, position.y, position.z))
+                indices.append(Int32(index))
+                indices.append(Int32((index + 1) % segments))
+            }
+
+            let source = SCNGeometrySource(vertices: vertices)
+            let element = SCNGeometryElement(indices: indices, primitiveType: .line)
+            let geometry = SCNGeometry(sources: [source], elements: [element])
+            let material = SCNMaterial()
+            material.diffuse.contents = UIColor.white
+            material.emission.contents = UIColor(red: 0.12, green: 0.94, blue: 0.90, alpha: 1)
+            material.lightingModel = .constant
+            geometry.materials = [material]
+            highlightNode.addChildNode(SCNNode(geometry: geometry))
         }
 
         private func rebuildBoundaries() {
@@ -472,12 +523,17 @@ struct GlobeSceneView: UIViewRepresentable {
         }
 
         private func position(for coordinate: GlobeCoordinate, radius: Double) -> SCNVector3 {
-            let latitude = coordinate.latitude * .pi / 180
-            let longitude = coordinate.longitude * .pi / 180
+            let position = simdPosition(for: coordinate, radius: Float(radius))
+            return SCNVector3(position.x, position.y, position.z)
+        }
+
+        private func simdPosition(for coordinate: GlobeCoordinate, radius: Float) -> SIMD3<Float> {
+            let latitude = Float(coordinate.latitude * .pi / 180)
+            let longitude = Float(coordinate.longitude * .pi / 180)
             let x = radius * cos(latitude) * sin(longitude)
             let y = radius * sin(latitude)
             let z = radius * cos(latitude) * cos(longitude)
-            return SCNVector3(Float(x), Float(y), Float(z))
+            return SIMD3<Float>(x, y, z)
         }
 
         private func coordinate(from position: SCNVector3) -> GlobeCoordinate {

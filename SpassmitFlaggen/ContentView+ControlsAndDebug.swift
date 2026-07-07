@@ -5,13 +5,20 @@ import UIKit
 extension ContentView {
     func accentColorButton(for accent: AppAccent) -> some View {
         let isSelected = appAccent == accent
-        let isLocked = !fullVersionUnlocked
+        let isFullVersionLocked = accent != .champion && !fullVersionUnlocked
+        let isAchievementLocked = accent == .champion && !allAchievementsUnlocked
+        let isLocked = isFullVersionLocked || isAchievementLocked
         let color = adaptiveColor(light: accent.lightUIColor, dark: accent.darkUIColor)
+        let gradient = LinearGradient(colors: accent.gradientColors, startPoint: .topLeading, endPoint: .bottomTrailing)
 
         return Button {
             guard !isLocked else {
                 Haptics.notify(.warning)
-                isShowingFullVersionSheet = true
+                if isFullVersionLocked {
+                    isShowingFullVersionSheet = true
+                } else {
+                    storeKit.statusText = L("Champion schaltest du frei, wenn du alle Achievements geschafft hast.", "Champion unlocks when you complete every achievement.")
+                }
                 return
             }
             Haptics.tap()
@@ -20,38 +27,55 @@ extension ContentView {
             }
         } label: {
             ZStack {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(color)
-                        .frame(width: 18, height: 18)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white.opacity(0.35), lineWidth: 1)
-                        )
-                    Text(accent.title(language: appLanguage))
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                    Spacer(minLength: 0)
-                    if isSelected && !isLocked {
-                        Image(systemName: "checkmark")
-                            .font(.caption.weight(.bold))
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(panelBackgroundColor)
+                if isSelected && !isLocked {
+                    if accent == .champion {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(gradient)
+                    } else {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(color)
                     }
                 }
-                .blur(radius: isLocked ? 3 : 0)
-                .opacity(isLocked ? 0.58 : 1)
 
-                if isLocked {
-                    Image(systemName: "lock.fill")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .padding(7)
-                        .background(.ultraThinMaterial, in: Circle())
+                ZStack {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(accent == .champion ? gradient : LinearGradient(colors: [color, color], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 18, height: 18)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.35), lineWidth: 1)
+                            )
+                        Text(accent.title(language: appLanguage))
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                        Spacer(minLength: 0)
+                        if accent == .champion {
+                            Image(systemName: "sparkles")
+                                .font(.caption.weight(.bold))
+                        }
+                        if isSelected && !isLocked {
+                            Image(systemName: "checkmark")
+                                .font(.caption.weight(.bold))
+                        }
+                    }
+                    .blur(radius: isLocked ? 3 : 0)
+                    .opacity(isLocked ? 0.58 : 1)
+
+                    if isLocked {
+                        Image(systemName: "lock.fill")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.secondary)
+                            .padding(7)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
                 }
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 40)
-            .background(isSelected && !isLocked ? color : panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
             .foregroundStyle(isSelected && !isLocked ? .white : .primary)
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
@@ -81,14 +105,8 @@ extension ContentView {
 
     func categoryButton(for continent: String, selection: Binding<Set<String>>, isWide: Bool = false) -> some View {
         let isSelected = selection.wrappedValue.contains(continent)
-        let isLocked = !fullVersionUnlocked && continent != "Europa"
 
         return Button {
-            guard !isLocked else {
-                Haptics.notify(.warning)
-                isShowingFullVersionSheet = true
-                return
-            }
             Haptics.tap()
             withAnimation(.easeInOut(duration: 0.18)) {
                 togglePracticeContinent(continent, selection: selection)
@@ -107,11 +125,6 @@ extension ContentView {
                     .background((isSelected ? Color.white : tealAccentColor).opacity(0.16))
                     .clipShape(Capsule())
                     .foregroundStyle(isSelected ? .white.opacity(0.9) : .secondary)
-                if isLocked {
-                    Image(systemName: "lock.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
             }
             .frame(maxWidth: .infinity, minHeight: isWide ? 50 : 56)
             .padding(.horizontal, 12)
@@ -121,7 +134,6 @@ extension ContentView {
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        .opacity(isLocked ? 0.58 : 1)
     }
 
     func togglePracticeContinent(_ continent: String, selection: Binding<Set<String>>) {
@@ -254,13 +266,7 @@ extension ContentView {
 
     func subjectModeButton(for subject: LearningSubject) -> some View {
         let isSelected = selectedSubject == subject
-        let isLocked = subject == .capitals && !fullVersionUnlocked
         return Button {
-            guard !isLocked else {
-                Haptics.notify(.warning)
-                isShowingFullVersionSheet = true
-                return
-            }
             guard selectedSubject != subject else { return }
             Haptics.tap()
             withAnimation(.spring(response: 0.26, dampingFraction: 0.82)) {
@@ -274,10 +280,7 @@ extension ContentView {
                     .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
-                if isLocked {
-                    Image(systemName: "lock.fill")
-                        .font(.caption.weight(.bold))
-                } else if isSelected {
+                if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.caption.weight(.bold))
                         .transition(.scale.combined(with: .opacity))
@@ -285,17 +288,16 @@ extension ContentView {
             }
             .frame(maxWidth: .infinity, minHeight: 46)
             .padding(.horizontal, 10)
-            .background(isSelected && !isLocked ? tealAccentColor : Color.clear)
-            .foregroundStyle(isSelected && !isLocked ? .white : .primary)
+            .background(isSelected ? tealAccentColor : Color.clear)
+            .foregroundStyle(isSelected ? .white : .primary)
             .clipShape(RoundedRectangle(cornerRadius: 11))
             .overlay(
                 RoundedRectangle(cornerRadius: 11)
-                    .stroke(isSelected && !isLocked ? Color.white.opacity(0.22) : tealAccentColor.opacity(0.28), lineWidth: 1)
+                    .stroke(isSelected ? Color.white.opacity(0.22) : tealAccentColor.opacity(0.28), lineWidth: 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: 11))
         }
         .buttonStyle(.plain)
-        .opacity(isLocked ? 0.55 : 1)
     }
 
     @ViewBuilder
@@ -344,13 +346,7 @@ extension ContentView {
 
     func subjectGlassSwitcherButton(for subject: LearningSubject) -> some View {
         let isSelected = selectedSubject == subject
-        let isLocked = subject == .capitals && !fullVersionUnlocked
         return Button {
-            guard !isLocked else {
-                Haptics.notify(.warning)
-                isShowingFullVersionSheet = true
-                return
-            }
             guard selectedSubject != subject else { return }
             dismissStatisticsSearchKeyboard()
             Haptics.tap()
@@ -365,17 +361,12 @@ extension ContentView {
                     .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                if isLocked {
-                    Image(systemName: "lock.fill")
-                        .font(.caption.weight(.bold))
-                }
             }
             .frame(maxWidth: .infinity, minHeight: 46)
-            .foregroundStyle(isSelected && !isLocked ? .white : .primary)
+            .foregroundStyle(isSelected ? .white : .primary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .opacity(isLocked ? 0.55 : 1)
     }
 
     @ViewBuilder

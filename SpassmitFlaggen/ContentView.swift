@@ -4,6 +4,7 @@ import UIKit
 
 struct ContentView: View {
     @Environment(\.dismiss) var dismiss
+    @Environment(\.scenePhase) var scenePhase
 
     // MARK: - Persisted Settings
 
@@ -14,11 +15,15 @@ struct ContentView: View {
     @AppStorage("friendNames") var friendNamesRawValue: String = ""
     @AppStorage("tierDecayPopupLastShownSignature") var tierDecayPopupLastShownSignature: String = ""
     @AppStorage("includePartiallyRecognizedFlags") var includePartiallyRecognizedFlags: Bool = false
+    @AppStorage("excludedPartiallyRecognizedCountryCodes") var excludedPartiallyRecognizedCountryCodesRawValue: String = ""
+    @AppStorage("includeDependentTerritories") var includeDependentTerritories: Bool = false
+    @AppStorage("excludedDependentTerritoryCodes") var excludedDependentTerritoryCodesRawValue: String = ""
     @AppStorage("onlineFeaturesEnabled") var onlineFeaturesEnabled: Bool = true
     @AppStorage("didEnableOnlineByDefault") var didEnableOnlineByDefault: Bool = false
     @AppStorage("hapticsEnabled") var hapticsEnabled: Bool = true
     #if DEBUG
     @AppStorage("debugToolsEnabled") var debugToolsEnabled: Bool = false
+    @AppStorage("debugShowTierDecayInfoOnNextLaunchV2") var debugShowTierDecayInfoOnNextLaunch: Bool = true
     #endif
 
     // MARK: - App State
@@ -54,6 +59,7 @@ struct ContentView: View {
     @State var isTierExplanationExpanded: Bool = false
     @State var isMasteryScoreInfoExpanded: Bool = false
     @State var isDisputedTerritoriesInfoExpanded: Bool = false
+    @State var isDependentTerritoriesInfoExpanded: Bool = false
     @State var statisticsGraphHintIsVisible: Bool = false
     @State var scoreHistoryPageOffset: Int = 0
     @State var selectedScoreHistoryPoint: ScoreHistoryPoint?
@@ -170,8 +176,12 @@ struct ContentView: View {
     @State var globeSearchText: String = ""
     @State var globeFocusCountryCode: String?
     @State var tierDecayPopup: TierDecayPopup?
+    @State var tierDecayInfoPopup: TierDecayPopup?
     @State var selectedTierDecayChangeID: String?
     @State var tierDecayShowsAllChanges: Bool = false
+    @State var tierDecayInfoIsExpanded: Bool = false
+    @State var tierDecayInfoPulse: Bool = false
+    @State var tierDecayInfoWiggle: Bool = false
     @State var achievementPopupItem: AchievementItem?
     @State var achievementPopupDragOffset: CGFloat = 0
     @State var expandedOnlineLeaderboardSections: Set<String> = []
@@ -222,14 +232,25 @@ struct ContentView: View {
                     .zIndex(1)
             }
 
-            if let tierDecayPopup {
-                tierDecayPopupView(tierDecayPopup)
-                    .padding(.horizontal, 18)
-                    .frame(maxWidth: 560)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black.opacity(0.22).ignoresSafeArea())
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            if tierDecayInfoIsExpanded, let tierDecayInfoPopup {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            tierDecayInfoIsExpanded = false
+                            self.tierDecayInfoPopup = nil
+                        }
+                    }
                     .zIndex(2)
+
+                tierDecayInfoFloatingPopup(tierDecayInfoPopup)
+                    .padding(.horizontal, 18)
+                    .frame(maxWidth: 440)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 118)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    .zIndex(3)
             }
 
             if let achievementPopupItem {
@@ -316,19 +337,10 @@ struct ContentView: View {
             currentCountry = nextRandomCountry(excluding: currentCountry)
         }
         .onChange(of: includePartiallyRecognizedFlags) { _, _ in
-            practiceSessionActive = false
-            showSessionActive = false
-            showRecap = false
-            practiceRecapPromptIsVisible = false
-            showSessionCount = 0
-            showSessionEntries = []
-            showHistoryPreview = nil
-            showRecentCountryCodes = []
-            showDeckCountryCodes = []
-            statisticsSearchText = ""
-            cardIsFlipped = false
-            resetCurrentCardHint()
-            currentCountry = nextRandomCountry(excluding: currentCountry)
+            resetCountryPoolDependentState()
+        }
+        .onChange(of: includeDependentTerritories) { _, _ in
+            resetCountryPoolDependentState()
         }
         .onChange(of: onlineFeaturesEnabled) { _, isEnabled in
             if isEnabled {
@@ -342,13 +354,18 @@ struct ContentView: View {
         .onChange(of: storeKit.purchasedFullVersion) { _, isUnlocked in
             fullVersionUnlocked = isUnlocked
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task {
+                await storeKit.refreshPurchasedProducts()
+                fullVersionUnlocked = storeKit.purchasedFullVersion
+            }
+        }
         .onChange(of: fullVersionUnlocked) { _, isUnlocked in
             if !isUnlocked {
-                appAccentRawValue = AppAccent.teal.rawValue
-                selectedSubject = .countries
-                selectedPracticeContinents = ["Europa"]
-                selectedShowContinents = ["Europa"]
-                selectedStatisticsContinents = ["Europa"]
+                if appAccent != .champion || !allAchievementsUnlocked {
+                    appAccentRawValue = AppAccent.teal.rawValue
+                }
                 selectedStatisticsTier = nil
                 expandedStatisticsCountryCodes = []
                 statisticsSearchText = ""

@@ -33,66 +33,6 @@
       "productID" : "de.phil.SpassmitFlaggen.fullversion",
       "referenceName" : "Vollversion",
       "type" : "NonConsumable"
-    },
-    {
-      "displayPrice" : "0.99",
-      "familyShareable" : false,
-      "internalID" : "6787168244",
-      "localizations" : [
-        {
-          "description" : "Kleine Unterstützung für Flaggenbande",
-          "displayName" : "Kleine Spende",
-          "locale" : "de"
-        },
-        {
-          "description" : "Small tip for Flaggenbande",
-          "displayName" : "Small tip",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "de.phil.SpassmitFlaggen.donation.small",
-      "referenceName" : "Kleine Spende",
-      "type" : "Consumable"
-    },
-    {
-      "displayPrice" : "2.99",
-      "familyShareable" : false,
-      "internalID" : "6787168245",
-      "localizations" : [
-        {
-          "description" : "Mittlere Unterstützung für Flaggenbande",
-          "displayName" : "Mittlere Spende",
-          "locale" : "de"
-        },
-        {
-          "description" : "Medium tip for Flaggenbande",
-          "displayName" : "Medium tip",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "de.phil.SpassmitFlaggen.donation.medium",
-      "referenceName" : "Mittlere Spende",
-      "type" : "Consumable"
-    },
-    {
-      "displayPrice" : "4.99",
-      "familyShareable" : false,
-      "internalID" : "6787168246",
-      "localizations" : [
-        {
-          "description" : "Große Unterstützung für Flaggenbande",
-          "displayName" : "Große Spende",
-          "locale" : "de"
-        },
-        {
-          "description" : "Large tip for Flaggenbande",
-          "displayName" : "Large tip",
-          "locale" : "en_US"
-        }
-      ],
-      "productID" : "de.phil.SpassmitFlaggen.donation.large",
-      "referenceName" : "Große Spende",
-      "type" : "Consumable"
     }
   ],
   "settings" : {

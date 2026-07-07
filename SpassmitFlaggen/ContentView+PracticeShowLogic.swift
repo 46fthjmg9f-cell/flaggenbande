@@ -148,7 +148,12 @@ extension ContentView {
     }
 
     func nextShowCard() {
-        guard !showLimitReached else { return }
+        guard !showLimitReached else {
+            if freeDailyFlagLimitReached {
+                showFreeDailyFlagLimitUpsell()
+            }
+            return
+        }
         showSessionCount += 1
         showSessionEntries.append(ShowSessionEntry(country: currentCountry))
         updateActiveProfile { profile in
@@ -159,7 +164,12 @@ extension ContentView {
         }
         checkForUnlockedAchievements()
 
-        guard !showLimitReached else { return }
+        guard !showLimitReached else {
+            if freeDailyFlagLimitReached {
+                showFreeDailyFlagLimitUpsell()
+            }
+            return
+        }
         prepareShowCard()
     }
 
@@ -233,11 +243,36 @@ extension ContentView {
     }
 
     var availableCountries: [Country] {
-        let countries = includePartiallyRecognizedFlags ? allPracticeCountries : allCountries
-        guard fullVersionUnlocked else {
-            return countries.filter { $0.continent == "Europa" }
+        var countries = allCountries
+        if includeDependentTerritories {
+            countries += dependentTerritoryCountries.filter { !excludedDependentTerritoryCodes.contains($0.code) }
+        }
+        if includePartiallyRecognizedFlags {
+            countries += partiallyRecognizedCountries.filter { !excludedPartiallyRecognizedCountryCodes.contains($0.code) }
         }
         return countries
+    }
+
+    var excludedDependentTerritoryCodes: Set<String> {
+        codeSet(from: excludedDependentTerritoryCodesRawValue)
+    }
+
+    var excludedPartiallyRecognizedCountryCodes: Set<String> {
+        codeSet(from: excludedPartiallyRecognizedCountryCodesRawValue)
+    }
+
+    func codeSet(from rawValue: String) -> Set<String> {
+        Set(rawValue.split(separator: ",").map(String.init))
+    }
+
+    func setExcludedCode(_ code: String, isExcluded: Bool, rawValue: Binding<String>) {
+        var codes = codeSet(from: rawValue.wrappedValue)
+        if isExcluded {
+            codes.insert(code)
+        } else {
+            codes.remove(code)
+        }
+        rawValue.wrappedValue = codes.sorted().joined(separator: ",")
     }
 
     func countries(inContinent continent: String) -> [Country] {
@@ -385,7 +420,12 @@ extension ContentView {
     }
 
     func recordPracticeCard(isKnown: Bool) {
-        guard practiceSessionActive, !practiceLimitReached, !practiceRecapPromptIsVisible else { return }
+        guard practiceSessionActive, !practiceLimitReached, !practiceRecapPromptIsVisible else {
+            if freeDailyFlagLimitReached {
+                showFreeDailyFlagLimitUpsell()
+            }
+            return
+        }
         let reviewedCountry = currentCountry
         let tierBefore = tier(for: reviewedCountry)
         let tierAfter = isKnown ? tierBefore.promoted : tierBefore.demoted
@@ -432,6 +472,9 @@ extension ContentView {
         checkForUnlockedAchievements()
 
         if practiceLimitReached {
+            if freeDailyFlagLimitReached {
+                showFreeDailyFlagLimitUpsell()
+            }
             withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
                 practiceCardDragOffset = 0
                 practiceCardEntryOffset = 0

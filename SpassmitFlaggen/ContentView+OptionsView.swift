@@ -17,7 +17,7 @@ extension ContentView {
                         HStack(spacing: 12) {
                             Label(L("Vollversion kaufen", "Buy full version"), systemImage: "lock.open.fill")
                             Spacer()
-                            if storeKit.isPurchasing {
+                            if storeKit.isPurchasing || storeKit.isLoading || storeKit.isRefreshingEntitlements {
                                 ProgressView()
                             } else if let product = storeKit.fullVersionProduct {
                                 Text(product.displayPrice)
@@ -30,7 +30,7 @@ extension ContentView {
                             }
                         }
                     }
-                    .disabled(storeKit.isPurchasing)
+                    .disabled(storeKit.isPurchasing || storeKit.isLoading || storeKit.isRefreshingEntitlements)
                 }
 
                 if !fullVersionUnlocked {
@@ -43,7 +43,7 @@ extension ContentView {
                     } label: {
                         Label(L("Käufe wiederherstellen", "Restore purchases"), systemImage: "arrow.clockwise")
                     }
-                    .disabled(storeKit.isLoading)
+                    .disabled(storeKit.isLoading || storeKit.isPurchasing || storeKit.isRefreshingEntitlements)
                 }
             }
 
@@ -75,14 +75,66 @@ extension ContentView {
             }
 
             Section(L("Flaggen", "Flags")) {
-                HStack(spacing: 10) {
-                    Toggle(isOn: $includePartiallyRecognizedFlags) {
-                        Label(L("Teilweise anerkannte Gebiete", "Partly recognized territories"), systemImage: "checkmark.seal")
-                    }
+                territoryOptionRow(
+                    title: L("Teilweise anerkannte Gebiete", "Partly recognized territories"),
+                    systemImage: "checkmark.seal",
+                    isExpanded: Binding(
+                        get: { isDisputedTerritoriesInfoExpanded },
+                        set: { isExpanded in
+                            isDisputedTerritoriesInfoExpanded = isExpanded
+                            if isExpanded { isDependentTerritoriesInfoExpanded = false }
+                        }
+                    ),
+                    isEnabled: Binding(
+                        get: { includePartiallyRecognizedFlags },
+                        set: { isEnabled in
+                            includePartiallyRecognizedFlags = isEnabled
+                            excludedPartiallyRecognizedCountryCodesRawValue = isEnabled ? "" : partiallyRecognizedCountries.map(\.code).sorted().joined(separator: ",")
+                            resetCountryPoolDependentState()
+                        }
+                    )
+                )
 
-                    infoButton(isPresented: $isDisputedTerritoriesInfoExpanded) {
-                        Text(L("Fügt unter anderem Kosovo, Taiwan, Palästina, Westsahara, Cookinseln, Niue, Abchasien, Südossetien, Nordzypern und Somaliland hinzu. Diese Auswahl ist als Lern-Erweiterung gemeint und trifft keine politische Einordnung.", "Adds Kosovo, Taiwan, Palestine, Western Sahara, Cook Islands, Niue, Abkhazia, South Ossetia, Northern Cyprus, and Somaliland. This option is intended as a learning extension and does not make a political classification."))
-                    }
+                if isDisputedTerritoriesInfoExpanded {
+                    territorySelectionPanel(
+                        text: L("Diese Auswahl ist als Lern-Erweiterung gemeint und trifft keine politische Einordnung.", "This option is intended as a learning extension and does not make a political classification."),
+                        countries: partiallyRecognizedCountries,
+                        excludedCodes: excludedPartiallyRecognizedCountryCodes,
+                        rawValue: $excludedPartiallyRecognizedCountryCodesRawValue,
+                        isGroupEnabled: $includePartiallyRecognizedFlags
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                territoryOptionRow(
+                    title: L("Abhängige Länder und Gebiete", "Dependent countries and territories"),
+                    systemImage: "flag.2.crossed.fill",
+                    isExpanded: Binding(
+                        get: { isDependentTerritoriesInfoExpanded },
+                        set: { isExpanded in
+                            isDependentTerritoriesInfoExpanded = isExpanded
+                            if isExpanded { isDisputedTerritoriesInfoExpanded = false }
+                        }
+                    ),
+                    isEnabled: Binding(
+                        get: { includeDependentTerritories },
+                        set: { isEnabled in
+                            includeDependentTerritories = isEnabled
+                            excludedDependentTerritoryCodesRawValue = isEnabled ? "" : dependentTerritoryCountries.map(\.code).sorted().joined(separator: ",")
+                            resetCountryPoolDependentState()
+                        }
+                    )
+                )
+
+                if isDependentTerritoriesInfoExpanded {
+                    territorySelectionPanel(
+                        text: L("Diese Auswahl zeigt zusätzliche Länder, Landesteile und abhängige Gebiete nur als Lern-Erweiterung und ist keine politische Einordnung.", "This option shows additional countries, constituent countries, and dependent territories only as a learning extension and does not make a political classification."),
+                        countries: dependentTerritoryCountries,
+                        excludedCodes: excludedDependentTerritoryCodes,
+                        rawValue: $excludedDependentTerritoryCodesRawValue,
+                        isGroupEnabled: $includeDependentTerritories
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
 
@@ -123,23 +175,6 @@ extension ContentView {
                 }
             }
 
-            Section(L("Spenden", "Tips")) {
-                if storeKit.donationProducts.isEmpty {
-                    Label(L("Spenden bald verfügbar", "Tips coming soon"), systemImage: "heart")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(storeKit.donationProducts, id: \.id) { product in
-                        HStack(spacing: 12) {
-                            Label(product.displayName, systemImage: "heart.fill")
-                            Spacer()
-                            Text(product.displayPrice)
-                                .font(.subheadline.weight(.semibold))
-                        }
-                        .foregroundStyle(.secondary)
-                        .opacity(0.55)
-                    }
-                }
-            }
 
             if let statusText = storeKit.statusText {
                 Section {
@@ -156,20 +191,12 @@ extension ContentView {
                 }
 
                 if debugToolsEnabled {
-                    Toggle(isOn: Binding(
-                        get: { fullVersionUnlocked },
-                        set: { isUnlocked in
-                            if isUnlocked {
-                                fullVersionUnlocked = true
-                            } else {
-                                Task {
-                                    await storeKit.resetFullVersionPurchaseForDebugTesting()
-                                    fullVersionUnlocked = false
-                                }
-                            }
-                        }
-                    )) {
-                        Label(L("Vollversion freischalten", "Unlock full version"), systemImage: "lock.open.fill")
+                    Button(role: .destructive) {
+                        Haptics.notify(.warning)
+                        storeKit.resetLocalPremiumStatusForDebug()
+                        fullVersionUnlocked = false
+                    } label: {
+                        Label(L("Lokalen Premiumstatus zurücksetzen", "Reset local premium status"), systemImage: "lock.slash.fill")
                     }
 
                     Stepper(value: Binding(
@@ -224,7 +251,13 @@ extension ContentView {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(appBackgroundGradient.ignoresSafeArea())
+        .background(
+            appBackgroundGradient
+                .ignoresSafeArea()
+                .onTapGesture {
+                    collapseTerritoryPanels()
+                }
+        )
         .navigationTitle(L("Optionen", "Options"))
         .alert(L("Store", "Store"), isPresented: Binding(
             get: { storeKit.statusText != nil },
@@ -241,15 +274,134 @@ extension ContentView {
             Text(storeKit.statusText ?? "")
         }
         .task {
-            guard !fullVersionUnlocked else { return }
-            #if DEBUG
-            await storeKit.loadProducts(refreshPurchasedEntitlements: false)
-            #else
             await storeKit.loadProducts()
             fullVersionUnlocked = storeKit.purchasedFullVersion
-            #endif
         }
     }
 
+    func territoryOptionRow(
+        title: String,
+        systemImage: String,
+        isExpanded: Binding<Bool>,
+        isEnabled: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                Haptics.tap()
+                withAnimation(.spring(response: 0.26, dampingFraction: 0.84)) {
+                    isExpanded.wrappedValue.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: systemImage)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(tealAccentColor)
+                        .frame(width: 22)
 
+                    Text(title)
+                        .font(.body)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Image(systemName: "info.circle")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(tealAccentColor)
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: isExpanded.wrappedValue ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Toggle("", isOn: isEnabled)
+                .labelsHidden()
+                .fixedSize()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    func territorySelectionPanel(
+        text: String,
+        countries: [Country],
+        excludedCodes: Set<String>,
+        rawValue: Binding<String>,
+        isGroupEnabled: Binding<Bool>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(countries) { country in
+                        territorySelectionRow(
+                            country: country,
+                            excludedCodes: excludedCodes,
+                            rawValue: rawValue,
+                            isGroupEnabled: isGroupEnabled
+                        )
+                    }
+                }
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: 260)
+
+            Divider()
+
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(tealAccentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(tealAccentColor.opacity(0.2), lineWidth: 1)
+        )
+    }
+
+    func territorySelectionRow(
+        country: Country,
+        excludedCodes: Set<String>,
+        rawValue: Binding<String>,
+        isGroupEnabled: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(countryName(for: country))
+                .font(.caption.weight(.semibold))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            Toggle("", isOn: Binding(
+                get: { isGroupEnabled.wrappedValue && !excludedCodes.contains(country.code) },
+                set: { isIncluded in
+                    Haptics.tap()
+                    if isIncluded {
+                        isGroupEnabled.wrappedValue = true
+                    }
+                    setExcludedCode(country.code, isExcluded: !isIncluded, rawValue: rawValue)
+                    resetCountryPoolDependentState()
+                }
+            ))
+            .labelsHidden()
+            .fixedSize()
+        }
+        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    func collapseTerritoryPanels() {
+        guard isDisputedTerritoriesInfoExpanded || isDependentTerritoriesInfoExpanded else { return }
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
+            isDisputedTerritoriesInfoExpanded = false
+            isDependentTerritoriesInfoExpanded = false
+        }
+    }
 }

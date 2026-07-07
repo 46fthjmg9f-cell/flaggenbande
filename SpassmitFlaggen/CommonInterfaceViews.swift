@@ -465,6 +465,20 @@ struct PracticeRecapView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Button {
+                onRepeat()
+            } label: {
+                Text(localized("10 weitere üben", "Practice 10 more", language: language))
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(accentColor)
+                    .foregroundStyle(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .contentShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+
             HStack {
                 Text(localized("Zusammenfassung", "Summary", language: language))
                     .font(.headline)
@@ -487,20 +501,6 @@ struct PracticeRecapView: View {
             Text(localized("Unten findest du die Sessionstatistiken und alle Stufenwechsel.", "Below you can see the session stats and every level change.", language: language))
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
-            Button {
-                onRepeat()
-            } label: {
-                Text(localized("Weitere 10 üben", "Practice 10 more", language: language))
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(accentColor)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .contentShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
 
             sessionDetails
         }

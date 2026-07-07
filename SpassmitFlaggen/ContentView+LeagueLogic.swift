@@ -58,6 +58,8 @@ extension ContentView {
 
     @MainActor
     func startLeagueMatch() async {
+        guard consumeFreeDailyLeagueRunIfAllowed() else { return }
+
         leagueCorrect = 0
         leagueWrong = 0
         leagueScore = 0

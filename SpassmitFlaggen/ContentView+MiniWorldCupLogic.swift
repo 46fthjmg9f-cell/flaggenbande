@@ -127,6 +127,8 @@ extension ContentView {
 
     func startMiniWorldCup() {
         guard miniWorldCupPlayers.count >= 2 else { return }
+        guard consumeFreeDailyPartyModeRunIfAllowed() else { return }
+
         miniWorldCupActivePlayers = miniWorldCupPlayers
         miniWorldCupEliminations = []
         miniWorldCupRoundResults = []

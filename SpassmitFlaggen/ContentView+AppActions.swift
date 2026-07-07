@@ -7,25 +7,15 @@ import GameKit
 extension ContentView {
     func runStartupWorkAfterFirstRender() async {
         await Task.yield()
-        UserDefaults.standard.removeObject(forKey: "fullVersionUnlocked")
+        AppStorageService.removeLegacyLocalPremiumFlagIfNeeded()
         if !UserDefaults.standard.bool(forKey: "didApplyGermanDefaultLanguage") {
             appLanguageRawValue = AppLanguage.german.rawValue
             UserDefaults.standard.set(true, forKey: "didApplyGermanDefaultLanguage")
         }
 
         fullVersionUnlocked = false
-        #if DEBUG
-        await storeKit.loadProducts(refreshPurchasedEntitlements: false)
-        #else
         await storeKit.loadProducts()
         fullVersionUnlocked = storeKit.purchasedFullVersion
-        #endif
-        if !fullVersionUnlocked {
-            selectedSubject = .countries
-            selectedPracticeContinents = ["Europa"]
-            selectedShowContinents = ["Europa"]
-            selectedStatisticsContinents = ["Europa"]
-        }
         if !availableCountries.contains(currentCountry) {
             currentCountry = nextRandomCountry(excluding: currentCountry, from: availableCountries)
             leagueCurrentCountry = currentCountry
@@ -41,9 +31,26 @@ extension ContentView {
         await hideStartupScreenAfterDelay()
         #if DEBUG
         applyWeeklyTierDecay(showPopup: false)
+        showDebugTierDecayInfoOnNextLaunchIfNeeded()
         #else
         applyWeeklyTierDecay(showPopup: true)
         #endif
+    }
+
+    func resetCountryPoolDependentState() {
+        practiceSessionActive = false
+        showSessionActive = false
+        showRecap = false
+        practiceRecapPromptIsVisible = false
+        showSessionCount = 0
+        showSessionEntries = []
+        showHistoryPreview = nil
+        showRecentCountryCodes = []
+        showDeckCountryCodes = []
+        statisticsSearchText = ""
+        cardIsFlipped = false
+        resetCurrentCardHint()
+        currentCountry = nextRandomCountry(excluding: currentCountry)
     }
 
     func ensureTrainerProfile() {
@@ -205,6 +212,9 @@ extension ContentView {
             tierDecayPopupLastShownSignature = signature
             selectedTierDecayChangeID = decayChanges.first?.id
             tierDecayShowsAllChanges = false
+            tierDecayInfoIsExpanded = false
+            tierDecayInfoPulse = false
+            tierDecayInfoWiggle = false
             withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
                 tierDecayPopup = TierDecayPopup(changes: decayChanges)
             }
@@ -217,6 +227,25 @@ extension ContentView {
             .sorted()
             .joined(separator: "|")
     }
+
+    #if DEBUG
+    func showDebugTierDecayInfoOnNextLaunchIfNeeded() {
+        guard debugShowTierDecayInfoOnNextLaunch else { return }
+        debugShowTierDecayInfoOnNextLaunch = false
+
+        var change = TierDecayChange(from: .a, to: .b, daysSinceLastPractice: 4)
+        change.statsKey = allCountries.first?.code ?? "DE"
+        selectedTierDecayChangeID = change.id
+        tierDecayShowsAllChanges = false
+        tierDecayInfoIsExpanded = false
+        tierDecayInfoPulse = false
+        tierDecayInfoWiggle = false
+
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+            tierDecayPopup = TierDecayPopup(changes: [change])
+        }
+    }
+    #endif
 
     func saveLocalCache() {
         AppStorageService.save(appData)
@@ -399,8 +428,12 @@ extension ContentView {
         practiceRecapPromptIsVisible = false
         achievementPopupItem = nil
         tierDecayPopup = nil
+        tierDecayInfoPopup = nil
         selectedTierDecayChangeID = nil
         tierDecayShowsAllChanges = false
+        tierDecayInfoIsExpanded = false
+        tierDecayInfoPulse = false
+        tierDecayInfoWiggle = false
         tierDecayPopupLastShownSignature = ""
         resetCurrentCardHint()
     }
@@ -436,6 +469,11 @@ extension ContentView {
     }
 
     func startPracticeSession() {
+        guard !freeDailyFlagLimitReached else {
+            showFreeDailyFlagLimitUpsell()
+            return
+        }
+
         applyWeeklyTierDecay()
         showRecap = false
         practiceRecapPromptIsVisible = false
@@ -450,7 +488,7 @@ extension ContentView {
         practiceForcedNextCountry = nil
         practiceUndoSnapshot = nil
         practiceSessionSeenCountryCodes = []
-        selectedPracticeCardLimit = 10
+        selectedPracticeCardLimit = min(10, freeDailyFlagCardsRemaining)
         recapStartCounts = activeProfile.tierCounts(in: availableCountries)
         recapEndCounts = recapStartCounts
         currentCountry = nextPracticeCountry()
@@ -557,6 +595,11 @@ extension ContentView {
     }
 
     func startShowSession() {
+        guard !freeDailyFlagLimitReached else {
+            showFreeDailyFlagLimitUpsell()
+            return
+        }
+
         showSessionCount = 0
         showSessionEntries = []
         showHistoryPreview = nil

@@ -169,6 +169,10 @@ extension ContentView {
 
             miniWorldCupRulesView
 
+            if !fullVersionUnlocked {
+                freeDailyGameModeLimitInfo(title: L("Partymodus", "Party Mode"), remaining: freeDailyPartyModeRunsRemaining, total: FreeVersionLimits.dailyPartyModeRounds)
+            }
+
             Button {
                 Haptics.tap()
                 startMiniWorldCup()

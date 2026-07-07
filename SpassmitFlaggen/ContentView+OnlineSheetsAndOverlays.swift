@@ -285,13 +285,10 @@ extension ContentView {
         .buttonStyle(.plain)
         .popover(isPresented: isPresented) {
             content()
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineSpacing(2)
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(14)
-                .frame(width: 280, alignment: .leading)
+                .frame(width: 320, alignment: .leading)
                 .presentationCompactAdaptation(.popover)
         }
     }
@@ -412,6 +409,70 @@ extension ContentView {
         .buttonStyle(.plain)
     }
 
+    func tierDecayInfoFloatingPopup(_ popup: TierDecayPopup) -> some View {
+        let visibleChanges = Array(popup.changes.prefix(8))
+        let hiddenCount = max(popup.changes.count - visibleChanges.count, 0)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "info.circle.fill")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.red)
+                    .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("Stufen heruntergestuft", "Levels downgraded"))
+                        .font(.headline.weight(.bold))
+                    Text(L("Einige Länder wurden heruntergestuft. Keine Sorge, das bekommst du ganz sicher schnell wieder hin!", "Some countries were downgraded. Don't worry, you'll definitely get them back quickly!"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            VStack(spacing: 8) {
+                ForEach(visibleChanges) { change in
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tierDecayCountryTitle(for: change))
+                                .font(.subheadline.weight(.semibold))
+                            Text(tierDecaySubjectTitle(for: change))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                        HStack(spacing: 6) {
+                            Text(change.from.rawValue)
+                                .foregroundStyle(change.from.color)
+                            Image(systemName: "arrow.right")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.secondary)
+                            Text(change.to.rawValue)
+                                .foregroundStyle(change.to.color)
+                        }
+                        .font(.caption.weight(.black))
+                    }
+                    .padding(10)
+                    .background(Color.red.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+                }
+
+                if hiddenCount > 0 {
+                    Text(L("+ \(hiddenCount) weitere", "+ \(hiddenCount) more"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .padding(16)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.red.opacity(0.26), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
+    }
+
     func tierDecayDetailView(_ change: TierDecayChange) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(tierDecayCountryTitle(for: change))
@@ -434,7 +495,7 @@ extension ContentView {
 
     func tierDecayCountryTitle(for change: TierDecayChange) -> String {
         let code = normalizedCountryCode(fromStatsKey: change.statsKey)
-        guard let country = allCountries.first(where: { $0.code == code }) else { return change.statsKey }
+        guard let country = allPracticeCountries.first(where: { $0.code == code }) else { return change.statsKey }
         return localizedCountryName(country, language: appLanguage)
     }
 
@@ -452,11 +513,11 @@ extension ContentView {
         }
 
         let uppercasedKey = key.uppercased()
-        if allCountries.contains(where: { $0.code == uppercasedKey }) {
+        if allPracticeCountries.contains(where: { $0.code == uppercasedKey }) {
             return uppercasedKey
         }
 
-        return allCountries.first { country in
+        return allPracticeCountries.first { country in
             uppercasedKey.hasSuffix(country.code)
         }?.code ?? uppercasedKey
     }

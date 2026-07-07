@@ -59,6 +59,16 @@ let capitalByCountryCode: [String: String] = [
     "VU": "Port Vila", "VE": "Caracas", "AE": "Abu Dhabi", "US": "Washington, D.C.", "GB": "London",
     "VN": "Hanoi", "BY": "Minsk", "CF": "Bangui", "CY": "Nikosia", "EG": "Kairo",
     "GQ": "Malabo", "ET": "Addis Abeba", "AT": "Wien", "GL": "Nuuk", "FO": "Tórshavn",
+    "GB-ENG": "London", "GB-SCT": "Edinburgh", "GB-WLS": "Cardiff", "GB-NIR": "Belfast",
+    "IM": "Douglas", "JE": "Saint Helier", "GG": "Saint Peter Port", "GI": "Gibraltar",
+    "BM": "Hamilton", "KY": "George Town", "VG": "Road Town", "AI": "The Valley",
+    "MS": "Plymouth", "TC": "Cockburn Town", "FK": "Stanley", "SH": "Jamestown",
+    "PN": "Adamstown", "IO": "Diego Garcia", "AW": "Oranjestad", "CW": "Willemstad",
+    "SX": "Philipsburg", "BQ": "Kralendijk", "GF": "Cayenne", "PF": "Papeete",
+    "WF": "Mata Utu", "BL": "Gustavia", "MF": "Marigot", "PM": "Saint-Pierre",
+    "RE": "Saint-Denis", "YT": "Mamoudzou", "GP": "Basse-Terre", "MQ": "Fort-de-France",
+    "AS": "Pago Pago", "GU": "Hagåtña", "MP": "Saipan", "PR": "San Juan",
+    "VI": "Charlotte Amalie", "HK": "Hongkong", "MO": "Macau",
     "XK": "Pristina", "TW": "Taipeh", "PS": "Ramallah", "EH": "El Aaiún",
     "CK": "Avarua", "NU": "Alofi", "AB": "Suchumi", "OS": "Zchinwali",
     "NC": "Nord-Nikosia", "SLD": "Hargeisa"
@@ -142,7 +152,6 @@ let allCountries: [Country] = [
     Country(code: "EE", name: "Estland", continent: "Europa"),
     Country(code: "FJ", name: "Fidschi", continent: "Ozeanien"),
     Country(code: "FI", name: "Finnland", continent: "Europa"),
-    Country(code: "FO", name: "Färöer", continent: "Europa"),
     Country(code: "FR", name: "Frankreich", continent: "Europa"),
     Country(code: "GA", name: "Gabun", continent: "Afrika"),
     Country(code: "GM", name: "Gambia", continent: "Afrika"),
@@ -150,7 +159,6 @@ let allCountries: [Country] = [
     Country(code: "GH", name: "Ghana", continent: "Afrika"),
     Country(code: "GD", name: "Grenada", continent: "Nordamerika"),
     Country(code: "GR", name: "Griechenland", continent: "Europa"),
-    Country(code: "GL", name: "Grönland", continent: "Nordamerika"),
     Country(code: "GT", name: "Guatemala", continent: "Nordamerika"),
     Country(code: "GN", name: "Guinea", continent: "Afrika"),
     Country(code: "GW", name: "Guinea-Bissau", continent: "Afrika"),
@@ -299,8 +307,53 @@ let allCountries: [Country] = [
 ]
 
 let partiallyRecognizedCategory = "Teilweise anerkannt"
+let dependentTerritoriesCategory = "Abhängige Gebiete"
 
 let worldCupWinnerCountryCodes: Set<String> = ["AR", "BR", "DE", "ES", "FR", "GB", "IT", "UY"]
+
+let dependentTerritoryCountries: [Country] = [
+    Country(code: "GB-ENG", name: "England", continent: dependentTerritoriesCategory),
+    Country(code: "GB-SCT", name: "Schottland", continent: dependentTerritoriesCategory),
+    Country(code: "GB-WLS", name: "Wales", continent: dependentTerritoriesCategory),
+    Country(code: "GB-NIR", name: "Nordirland", continent: dependentTerritoriesCategory),
+    Country(code: "GL", name: "Grönland", continent: dependentTerritoriesCategory),
+    Country(code: "FO", name: "Färöer", continent: dependentTerritoriesCategory),
+    Country(code: "IM", name: "Isle of Man", continent: dependentTerritoriesCategory),
+    Country(code: "JE", name: "Jersey", continent: dependentTerritoriesCategory),
+    Country(code: "GG", name: "Guernsey", continent: dependentTerritoriesCategory),
+    Country(code: "GI", name: "Gibraltar", continent: dependentTerritoriesCategory),
+    Country(code: "BM", name: "Bermuda", continent: dependentTerritoriesCategory),
+    Country(code: "KY", name: "Kaimaninseln", continent: dependentTerritoriesCategory),
+    Country(code: "VG", name: "Britische Jungferninseln", continent: dependentTerritoriesCategory),
+    Country(code: "AI", name: "Anguilla", continent: dependentTerritoriesCategory),
+    Country(code: "MS", name: "Montserrat", continent: dependentTerritoriesCategory),
+    Country(code: "TC", name: "Turks- und Caicosinseln", continent: dependentTerritoriesCategory),
+    Country(code: "FK", name: "Falklandinseln", continent: dependentTerritoriesCategory),
+    Country(code: "SH", name: "St. Helena", continent: dependentTerritoriesCategory),
+    Country(code: "PN", name: "Pitcairninseln", continent: dependentTerritoriesCategory),
+    Country(code: "IO", name: "Britisches Territorium im Indischen Ozean", continent: dependentTerritoriesCategory),
+    Country(code: "AW", name: "Aruba", continent: dependentTerritoriesCategory),
+    Country(code: "CW", name: "Curaçao", continent: dependentTerritoriesCategory),
+    Country(code: "SX", name: "Sint Maarten", continent: dependentTerritoriesCategory),
+    Country(code: "BQ", name: "Karibische Niederlande", continent: dependentTerritoriesCategory),
+    Country(code: "GF", name: "Französisch-Guayana", continent: dependentTerritoriesCategory),
+    Country(code: "PF", name: "Französisch-Polynesien", continent: dependentTerritoriesCategory),
+    Country(code: "WF", name: "Wallis und Futuna", continent: dependentTerritoriesCategory),
+    Country(code: "BL", name: "Saint-Barthélemy", continent: dependentTerritoriesCategory),
+    Country(code: "MF", name: "Saint-Martin", continent: dependentTerritoriesCategory),
+    Country(code: "PM", name: "Saint-Pierre und Miquelon", continent: dependentTerritoriesCategory),
+    Country(code: "RE", name: "Réunion", continent: dependentTerritoriesCategory),
+    Country(code: "YT", name: "Mayotte", continent: dependentTerritoriesCategory),
+    Country(code: "GP", name: "Guadeloupe", continent: dependentTerritoriesCategory),
+    Country(code: "MQ", name: "Martinique", continent: dependentTerritoriesCategory),
+    Country(code: "AS", name: "Amerikanisch-Samoa", continent: dependentTerritoriesCategory),
+    Country(code: "GU", name: "Guam", continent: dependentTerritoriesCategory),
+    Country(code: "MP", name: "Nördliche Marianen", continent: dependentTerritoriesCategory),
+    Country(code: "PR", name: "Puerto Rico", continent: dependentTerritoriesCategory),
+    Country(code: "VI", name: "Amerikanische Jungferninseln", continent: dependentTerritoriesCategory),
+    Country(code: "HK", name: "Hongkong", continent: dependentTerritoriesCategory),
+    Country(code: "MO", name: "Macau", continent: dependentTerritoriesCategory)
+]
 
 let partiallyRecognizedCountries: [Country] = [
     Country(code: "XK", name: "Kosovo", continent: "Europa"),
@@ -315,7 +368,7 @@ let partiallyRecognizedCountries: [Country] = [
     Country(code: "SLD", name: "Somaliland", continent: "Afrika")
 ]
 
-let allPracticeCountries = allCountries + partiallyRecognizedCountries
+let allPracticeCountries = allCountries + dependentTerritoryCountries + partiallyRecognizedCountries
 
 let countryEnglishNameByCode: [String: String] = [
     "AF": "Afghanistan", "AL": "Albania", "DZ": "Algeria", "AD": "Andorra", "AO": "Angola",
@@ -326,8 +379,8 @@ let countryEnglishNameByCode: [String: String] = [
     "BI": "Burundi", "CL": "Chile", "CN": "China", "CR": "Costa Rica", "DE": "Germany",
     "DM": "Dominica", "DO": "Dominican Republic", "DJ": "Djibouti", "DK": "Denmark", "EC": "Ecuador",
     "SV": "El Salvador", "CI": "Cote d'Ivoire", "ER": "Eritrea", "EE": "Estonia", "FJ": "Fiji",
-    "FI": "Finland", "FO": "Faroe Islands", "FR": "France", "GA": "Gabon", "GM": "Gambia", "GE": "Georgia",
-    "GH": "Ghana", "GD": "Grenada", "GR": "Greece", "GL": "Greenland", "GT": "Guatemala", "GN": "Guinea",
+    "FI": "Finland", "FR": "France", "GA": "Gabon", "GM": "Gambia", "GE": "Georgia",
+    "GH": "Ghana", "GD": "Grenada", "GR": "Greece", "GT": "Guatemala", "GN": "Guinea",
     "GW": "Guinea-Bissau", "GY": "Guyana", "HT": "Haiti", "HN": "Honduras", "IN": "India",
     "ID": "Indonesia", "IQ": "Iraq", "IR": "Iran", "IE": "Ireland", "IS": "Iceland",
     "IL": "Israel", "IT": "Italy", "JM": "Jamaica", "JP": "Japan", "YE": "Yemen",
@@ -356,7 +409,17 @@ let countryEnglishNameByCode: [String: String] = [
     "UG": "Uganda", "UA": "Ukraine", "HU": "Hungary", "UY": "Uruguay", "UZ": "Uzbekistan",
     "VU": "Vanuatu", "VE": "Venezuela", "AE": "United Arab Emirates", "US": "United States", "GB": "United Kingdom",
     "VN": "Vietnam", "BY": "Belarus", "CF": "Central African Republic", "CY": "Cyprus", "EG": "Egypt",
-    "GQ": "Equatorial Guinea", "ET": "Ethiopia", "AT": "Austria", "XK": "Kosovo", "TW": "Taiwan",
+    "GQ": "Equatorial Guinea", "ET": "Ethiopia", "AT": "Austria", "GB-ENG": "England", "GB-SCT": "Scotland",
+    "GB-WLS": "Wales", "GB-NIR": "Northern Ireland", "GL": "Greenland", "FO": "Faroe Islands",
+    "IM": "Isle of Man", "JE": "Jersey", "GG": "Guernsey", "GI": "Gibraltar", "BM": "Bermuda",
+    "KY": "Cayman Islands", "VG": "British Virgin Islands", "AI": "Anguilla", "MS": "Montserrat",
+    "TC": "Turks and Caicos Islands", "FK": "Falkland Islands", "SH": "Saint Helena", "PN": "Pitcairn Islands",
+    "IO": "British Indian Ocean Territory", "AW": "Aruba", "CW": "Curacao", "SX": "Sint Maarten",
+    "BQ": "Caribbean Netherlands", "GF": "French Guiana", "PF": "French Polynesia", "WF": "Wallis and Futuna",
+    "BL": "Saint Barthelemy", "MF": "Saint Martin", "PM": "Saint Pierre and Miquelon", "RE": "Reunion",
+    "YT": "Mayotte", "GP": "Guadeloupe", "MQ": "Martinique", "AS": "American Samoa", "GU": "Guam",
+    "MP": "Northern Mariana Islands", "PR": "Puerto Rico", "VI": "U.S. Virgin Islands", "HK": "Hong Kong", "MO": "Macau",
+    "XK": "Kosovo", "TW": "Taiwan",
     "PS": "Palestine", "EH": "Western Sahara", "CK": "Cook Islands", "NU": "Niue",
     "AB": "Abkhazia", "OS": "South Ossetia", "NC": "Northern Cyprus", "SLD": "Somaliland"
 ]
