@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-17T16:26:42Z",
+  "generatedAt": "2026-07-17T16:28:08Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
       "available": false,
       "reason": "Apple hat noch keine Analytics-Instanzen bereitgestellt.",
-      "updatedAt": "2026-07-17T16:26:42Z"
+      "updatedAt": "2026-07-17T16:28:08Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-17T16:26:42Z"
+      "updatedAt": "2026-07-17T16:28:08Z"
     },
     "Sales & Trends": {
       "available": false,
-      "reason": "Der Tagesreport ist noch nicht verfügbar: 404: {\n  \"errors\" : [ {\n    \"id\" : \"205abc62-6a4a-4dc5-adeb-28f734c8c625\",\n    \"status\" : \"404\",\n    \"code\" : \"NOT_FOUND\",\n    \"title\" : \"The request expected results but none were found\",\n    \"detail\" : \"There were no sales for the date specified.\"\n  } ]\n}",
-      "updatedAt": "2026-07-17T16:26:42Z"
+      "reason": "Apple meldet für den abgefragten Tag noch keine Verkäufe.",
+      "updatedAt": "2026-07-17T16:28:08Z"
     },
     "CloudKit Public DB": {
       "available": false,
       "reason": "CloudKit-Server-to-Server-Secrets fehlen.",
-      "updatedAt": "2026-07-17T16:26:42Z"
+      "updatedAt": "2026-07-17T16:28:08Z"
     },
     "Finance": {
       "available": false,
       "reason": "Separater Finance-Key oder ASC_VENDOR_NUMBER fehlt.",
-      "updatedAt": "2026-07-17T16:26:42Z"
+      "updatedAt": "2026-07-17T16:28:08Z"
     }
   },
   "kpis": {
