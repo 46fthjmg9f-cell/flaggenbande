@@ -201,7 +201,7 @@ async function cloudKitQuery(recordType, desiredKeys) {
   const all = []
   let continuationMarker
   do {
-    const payload = JSON.stringify({ query: { recordType }, desiredKeys, resultsLimit: 200, continuationMarker })
+    const payload = JSON.stringify({ query: { recordType, filterBy: [], sortBy: [] }, desiredKeys, resultsLimit: 200, continuationMarker })
     const response = await fetchWithRetry(`https://api.apple-cloudkit.com${path}`, { method: 'POST', headers: cloudKitHeaders(path, payload), body: payload })
     const page = await response.json()
     all.push(...(page.records ?? []))
