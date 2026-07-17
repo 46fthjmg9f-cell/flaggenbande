@@ -166,7 +166,13 @@ async function collectSales() {
   try {
     const response = await fetchWithRetry(`${appStoreBase}/salesReports?${query}`, { headers: { authorization: `Bearer ${createAscToken()}` } })
     return { rows: canonicalSales(parseTsv(await response.arrayBuffer())), available: true }
-  } catch (error) { return { rows: [], available: false, reason: `Der Tagesreport ist noch nicht verfügbar: ${error.message}` } }
+  } catch (error) {
+    const detail = String(error.message)
+    const reason = detail.includes('NOT_FOUND') || detail.includes('no sales for the date specified')
+      ? 'Apple meldet für den abgefragten Tag noch keine Verkäufe.'
+      : 'Der Tagesreport ist noch nicht verfügbar; der nächste tägliche Abruf versucht es erneut.'
+    return { rows: [], available: false, reason }
+  }
 }
 
 async function collectFinance() {
@@ -179,7 +185,7 @@ async function collectFinance() {
     const rows = parseTsv(await response.arrayBuffer())
     const proceeds = rows.reduce((sum, row) => sum + metricFromRow(row, ['developerproceeds', 'proceeds']), 0)
     return { available: true, latest: { period: month, proceeds, currency: 'EUR' } }
-  } catch (error) { return { available: false, reason: `Finanzreport ist noch nicht verfügbar: ${error.message}`, latest: null } }
+  } catch (error) { return { available: false, reason: 'Der monatliche Finanzreport ist noch nicht verfügbar.', latest: null } }
 }
 
 function cloudKitHeaders(path, body) {
