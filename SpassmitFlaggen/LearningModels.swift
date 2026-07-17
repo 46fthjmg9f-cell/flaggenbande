@@ -1,13 +1,13 @@
 import SwiftUI
 import Foundation
 
-private extension KeyedDecodingContainer {
+nonisolated private extension KeyedDecodingContainer {
     func decodeDefault<T: Decodable>(_ type: T.Type, forKey key: Key, default defaultValue: @autoclosure () -> T) -> T {
         (try? decodeIfPresent(type, forKey: key)) ?? defaultValue()
     }
 }
 
-enum LearningSubject: String, CaseIterable, Identifiable {
+enum LearningSubject: String, CaseIterable, Identifiable, Codable {
     case countries
     case capitals
 
@@ -177,6 +177,11 @@ struct LeagueMatchResult: Identifiable, Codable {
     let ratingBefore: Int?
     let ratingAfter: Int?
     let ratingDelta: Int?
+    let runVariant: LeagueRunVariant
+    let dailyAttemptNumber: Int?
+    let dailyDateKey: String?
+    let subject: LearningSubject
+    let wasAborted: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -191,6 +196,11 @@ struct LeagueMatchResult: Identifiable, Codable {
         case ratingBefore
         case ratingAfter
         case ratingDelta
+        case runVariant
+        case dailyAttemptNumber
+        case dailyDateKey
+        case subject
+        case wasAborted
     }
 
     var totalAnswers: Int {
@@ -235,7 +245,11 @@ struct LeagueStats: Codable {
         case recentMatches
     }
 
-    var averageScore: Double { 0 }
+    var averageScore: Double {
+        let daily = recentMatches.filter { $0.runVariant == .daily }
+        guard !daily.isEmpty else { return 0 }
+        return Double(daily.reduce(0) { $0 + $1.ownScore }) / Double(daily.count)
+    }
 
     var accuracy: Double {
         let total = totalCorrect + totalWrong
@@ -273,15 +287,60 @@ struct LeagueStats: Codable {
     }
 
     mutating func recordMatch(_ result: LeagueMatchResult, opponentRating: Int) {
+        recentMatches.insert(result, at: 0)
+        recentMatches = Array(recentMatches.prefix(100))
+
+        guard result.runVariant == .daily, !result.wasAborted else { return }
         played += 1
         bestScore = max(bestScore, result.ownScore)
         totalCorrect += result.correct
         totalWrong += result.wrong
         currentWinStreak = result.ownScore > 0 ? currentWinStreak + 1 : 0
         bestWinStreak = max(bestWinStreak, currentWinStreak)
+    }
 
-        recentMatches.insert(result, at: 0)
-        recentMatches = Array(recentMatches.prefix(12))
+    func matches(variant: LeagueRunVariant, subject: LearningSubject) -> [LeagueMatchResult] {
+        recentMatches.filter { $0.runVariant == variant && $0.subject == subject }
+    }
+
+    func bestDailyMatch(subject: LearningSubject) -> LeagueMatchResult? {
+        matches(variant: .daily, subject: subject).filter { !$0.wasAborted }.max {
+            if $0.ownScore == $1.ownScore { return $0.date < $1.date }
+            return $0.ownScore < $1.ownScore
+        }
+    }
+
+    func dailyAccuracy(subject: LearningSubject) -> Double {
+        let daily = matches(variant: .daily, subject: subject).filter { !$0.wasAborted }
+        let correct = daily.reduce(0) { $0 + $1.correct }
+        let total = correct + daily.reduce(0) { $0 + $1.wrong }
+        return total == 0 ? 0 : Double(correct) / Double(total)
+    }
+}
+
+struct BeginnerStats: Codable {
+    var roundsPlayed: Int = 0
+    var answered: Int = 0
+    var correct: Int = 0
+    var wrong: Int = 0
+    var bestRoundCorrect: Int = 0
+    var bestRoundTotal: Int = 0
+
+    var accuracy: Double {
+        answered == 0 ? 0 : Double(correct) / Double(answered)
+    }
+
+    mutating func recordRound(correct roundCorrect: Int, wrong roundWrong: Int) {
+        let total = roundCorrect + roundWrong
+        guard total > 0 else { return }
+        roundsPlayed += 1
+        answered += total
+        correct += roundCorrect
+        wrong += roundWrong
+        if roundCorrect > bestRoundCorrect || (roundCorrect == bestRoundCorrect && total > bestRoundTotal) {
+            bestRoundCorrect = roundCorrect
+            bestRoundTotal = total
+        }
     }
 }
 
@@ -311,6 +370,11 @@ enum LeagueMatchPhase {
     case countdown
     case playing
     case feedback
+}
+
+enum LeagueRunVariant: String, Codable {
+    case practice
+    case daily
 }
 
 struct CountryStats: Codable {
@@ -489,6 +553,7 @@ struct UserProfile: Identifiable, Codable {
     var announcedAchievementIDs: [String]?
     var achievedAchievementDates: [String: Date]?
     var leagueStats: LeagueStats?
+    var beginnerStats: BeginnerStats?
     var partyRoundsPlayed: Int?
     var leagueRunsByDay: [String: Int]?
     var partyModeRunsByDay: [String: Int]?
@@ -518,6 +583,7 @@ struct UserProfile: Identifiable, Codable {
         case announcedAchievementIDs
         case achievedAchievementDates
         case leagueStats
+        case beginnerStats
         case partyRoundsPlayed
         case leagueRunsByDay
         case partyModeRunsByDay
@@ -684,6 +750,12 @@ struct UserProfile: Identifiable, Codable {
         partyModeRunsByDay = runsByDay
     }
 
+    mutating func recordBeginnerRound(correct: Int, wrong: Int) {
+        var stats = beginnerStats ?? BeginnerStats()
+        stats.recordRound(correct: correct, wrong: wrong)
+        beginnerStats = stats
+    }
+
     mutating func recordLeagueMatch(_ result: LeagueMatchResult, opponentRating: Int = 1000) {
         var stats = leagueStats ?? LeagueStats()
         stats.recordMatch(result, opponentRating: opponentRating)
@@ -723,7 +795,7 @@ struct UserProfile: Identifiable, Codable {
     }
 }
 
-struct AppData: Codable {
+nonisolated struct AppData: Codable {
     var schemaVersion: Int = 1
     var profiles: [UserProfile] = []
     var activeProfileID: UUID?
@@ -769,6 +841,11 @@ extension LeagueMatchResult {
         ratingBefore = try? container.decodeIfPresent(Int.self, forKey: .ratingBefore)
         ratingAfter = try? container.decodeIfPresent(Int.self, forKey: .ratingAfter)
         ratingDelta = try? container.decodeIfPresent(Int.self, forKey: .ratingDelta)
+        runVariant = container.decodeDefault(LeagueRunVariant.self, forKey: .runVariant, default: .practice)
+        dailyAttemptNumber = try? container.decodeIfPresent(Int.self, forKey: .dailyAttemptNumber)
+        dailyDateKey = try? container.decodeIfPresent(String.self, forKey: .dailyDateKey)
+        subject = container.decodeDefault(LearningSubject.self, forKey: .subject, default: .countries)
+        wasAborted = container.decodeDefault(Bool.self, forKey: .wasAborted, default: false)
     }
 }
 
@@ -786,7 +863,15 @@ extension LeagueStats {
         totalWrong = container.decodeDefault(Int.self, forKey: .totalWrong, default: 0)
         currentWinStreak = container.decodeDefault(Int.self, forKey: .currentWinStreak, default: 0)
         bestWinStreak = container.decodeDefault(Int.self, forKey: .bestWinStreak, default: 0)
-        recentMatches = container.decodeDefault([LeagueMatchResult].self, forKey: .recentMatches, default: [])
+        recentMatches = Array(container.decodeDefault([LeagueMatchResult].self, forKey: .recentMatches, default: []).prefix(100))
+
+        // Older builds counted unlimited practice rounds as high scores. From
+        // this version onward only explicitly marked Daily runs count.
+        let dailyMatches = recentMatches.filter { $0.runVariant == .daily && !$0.wasAborted }
+        played = dailyMatches.count
+        bestScore = dailyMatches.map(\.ownScore).max() ?? 0
+        totalCorrect = dailyMatches.reduce(0) { $0 + $1.correct }
+        totalWrong = dailyMatches.reduce(0) { $0 + $1.wrong }
     }
 }
 
@@ -838,6 +923,7 @@ extension UserProfile {
         announcedAchievementIDs = try? container.decodeIfPresent([String].self, forKey: .announcedAchievementIDs)
         achievedAchievementDates = try? container.decodeIfPresent([String: Date].self, forKey: .achievedAchievementDates)
         leagueStats = try? container.decodeIfPresent(LeagueStats.self, forKey: .leagueStats)
+        beginnerStats = try? container.decodeIfPresent(BeginnerStats.self, forKey: .beginnerStats)
         partyRoundsPlayed = try? container.decodeIfPresent(Int.self, forKey: .partyRoundsPlayed)
         leagueRunsByDay = try? container.decodeIfPresent([String: Int].self, forKey: .leagueRunsByDay)
         partyModeRunsByDay = try? container.decodeIfPresent([String: Int].self, forKey: .partyModeRunsByDay)
@@ -845,7 +931,7 @@ extension UserProfile {
 }
 
 extension AppData {
-    init(from decoder: Decoder) throws {
+    nonisolated init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = container.decodeDefault(Int.self, forKey: .schemaVersion, default: 1)
         profiles = container.decodeDefault([UserProfile].self, forKey: .profiles, default: [])

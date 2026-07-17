@@ -6,6 +6,15 @@ import Foundation
 extension ContentView {
     var achievementsView: some View {
         List {
+            let practiceItems = practiceAchievementItems
+            let regionItems = regionAchievementItems
+            let showmasterItems = showmasterAchievementItems
+            let allItems = practiceItems + regionItems + showmasterItems + beginnerAchievementItems
+            let activeIDs = Set(allItems.filter(\.isUnlocked).map(\.id))
+            let onlinePlayers = deduplicatedOnlineLeaderboard
+            let globalUnlockCounts = globalAchievementUnlockCounts(activeIDs: activeIDs, players: onlinePlayers)
+            let globalPlayerCount = max(onlinePlayers.count, activeIDs.isEmpty ? 0 : 1)
+
             Section {
                 HStack(spacing: 14) {
                     Image(systemName: "trophy.fill")
@@ -15,7 +24,7 @@ extension ContentView {
                         .background(tealAccentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 10))
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("\(unlockedAchievementCount)/\(achievementItems.count)")
+                        Text("\(activeIDs.count)/\(allItems.count)")
                             .font(.headline)
                         Text(L("Erreichte Achievements", "Unlocked achievements"))
                             .font(.caption)
@@ -36,62 +45,62 @@ extension ContentView {
 
             switch achievementSortMode {
             case .category:
-                Section(achievementSectionTitle(L("Üben", "Practice"), items: practiceAchievementItems)) {
-                    ForEach(achievementsSortedInsideCategory(practiceAchievementItems)) { item in
+                Section(achievementSectionTitle(L("Üben", "Practice"), items: practiceItems)) {
+                    ForEach(achievementsSortedInsideCategory(practiceItems)) { item in
                         AchievementRow(
                             item: item,
                             language: appLanguage,
                             achievedAt: achievedDate(for: item),
-                            globalUnlockCount: globalUnlockCount(for: item.id),
-                            globalPlayerCount: globalAchievementPlayerCount
+                            globalUnlockCount: globalUnlockCounts[item.id, default: 0],
+                            globalPlayerCount: globalPlayerCount
                         )
                     }
                 }
 
-                Section(achievementSectionTitle(L("Regionen & Spezialsets", "Regions & special sets"), items: regionAchievementItems)) {
-                    ForEach(achievementsSortedInsideCategory(regionAchievementItems)) { item in
+                Section(achievementSectionTitle(L("Regionen & Spezialsets", "Regions & special sets"), items: regionItems)) {
+                    ForEach(achievementsSortedInsideCategory(regionItems)) { item in
                         AchievementRow(
                             item: item,
                             language: appLanguage,
                             achievedAt: achievedDate(for: item),
-                            globalUnlockCount: globalUnlockCount(for: item.id),
-                            globalPlayerCount: globalAchievementPlayerCount
+                            globalUnlockCount: globalUnlockCounts[item.id, default: 0],
+                            globalPlayerCount: globalPlayerCount
                         )
                     }
                 }
 
-                Section(achievementSectionTitle("Showmaster", items: showmasterAchievementItems)) {
-                    ForEach(achievementsSortedInsideCategory(showmasterAchievementItems)) { item in
+                Section(achievementSectionTitle("Showmaster", items: showmasterItems)) {
+                    ForEach(achievementsSortedInsideCategory(showmasterItems)) { item in
                         AchievementRow(
                             item: item,
                             language: appLanguage,
                             achievedAt: achievedDate(for: item),
-                            globalUnlockCount: globalUnlockCount(for: item.id),
-                            globalPlayerCount: globalAchievementPlayerCount
+                            globalUnlockCount: globalUnlockCounts[item.id, default: 0],
+                            globalPlayerCount: globalPlayerCount
                         )
                     }
                 }
             case .date:
                 Section(L("Datum", "Date")) {
-                    ForEach(achievementsSortedByDate(achievementItems)) { item in
+                    ForEach(achievementsSortedByDate(allItems)) { item in
                         AchievementRow(
                             item: item,
                             language: appLanguage,
                             achievedAt: achievedDate(for: item),
-                            globalUnlockCount: globalUnlockCount(for: item.id),
-                            globalPlayerCount: globalAchievementPlayerCount
+                            globalUnlockCount: globalUnlockCounts[item.id, default: 0],
+                            globalPlayerCount: globalPlayerCount
                         )
                     }
                 }
             case .worldwide:
                 Section(L("Weltweit", "Worldwide")) {
-                    ForEach(achievementsSortedByGlobalUnlocks(achievementItems)) { item in
+                    ForEach(achievementsSortedByGlobalUnlocks(allItems, globalUnlockCounts: globalUnlockCounts)) { item in
                         AchievementRow(
                             item: item,
                             language: appLanguage,
                             achievedAt: achievedDate(for: item),
-                            globalUnlockCount: globalUnlockCount(for: item.id),
-                            globalPlayerCount: globalAchievementPlayerCount
+                            globalUnlockCount: globalUnlockCounts[item.id, default: 0],
+                            globalPlayerCount: globalPlayerCount
                         )
                     }
                 }
@@ -182,6 +191,18 @@ extension ContentView {
                             .foregroundStyle(.secondary)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
+                }
+            }
+            .onTapGesture { dismissStatisticsSearchKeyboard() }
+
+            Section(L("Anfänger", "Beginner")) {
+                let stats = beginnerStats
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
+                    CompactStatTile(title: L("Runden", "Rounds"), value: "\(stats.roundsPlayed)", subtitle: L("gesamt", "total"))
+                    CompactStatTile(title: L("Aufgaben", "Questions"), value: "\(stats.answered)", subtitle: L("beantwortet", "answered"))
+                    CompactStatTile(title: L("Richtig", "Correct"), value: "\(stats.correct)", subtitle: percent(stats.correct, of: stats.answered))
+                    CompactStatTile(title: L("Falsch", "Wrong"), value: "\(stats.wrong)", subtitle: "")
+                    CompactStatTile(title: L("Beste Runde", "Best round"), value: stats.bestRoundTotal > 0 ? "\(stats.bestRoundCorrect)/\(stats.bestRoundTotal)" : "-", subtitle: stats.bestRoundTotal > 0 ? percent(stats.bestRoundCorrect, of: stats.bestRoundTotal) : L("noch offen", "open"))
                 }
             }
             .onTapGesture { dismissStatisticsSearchKeyboard() }

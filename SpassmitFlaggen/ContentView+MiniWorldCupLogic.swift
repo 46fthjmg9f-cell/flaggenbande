@@ -458,32 +458,64 @@ extension ContentView {
         }
     }
 
-    func finishPracticeSwipe(translation: CGSize, predictedTranslation: CGSize) {
-        guard !isFinishingPracticeSwipe else { return }
+    func finishStudyCardSwipe(
+        translation: CGSize,
+        predictedTranslation: CGSize,
+        dragOffset: Binding<CGFloat>,
+        isFinishingSwipe: Binding<Bool>,
+        knownSwipeIsBlocked: Bool,
+        onKnownBlocked: @escaping () -> Void,
+        onComplete: @escaping (Bool) -> Void
+    ) {
+        guard !isFinishingSwipe.wrappedValue else { return }
         let threshold: CGFloat = 72
         let committedWidth = abs(predictedTranslation.width) > abs(translation.width) ? predictedTranslation.width : translation.width
         let isMostlyHorizontal = abs(committedWidth) > abs(translation.height) * 1.15
 
         guard isMostlyHorizontal, abs(committedWidth) >= threshold else {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
-                practiceCardDragOffset = 0
+                dragOffset.wrappedValue = 0
             }
             return
         }
 
         let isKnown = committedWidth > 0
-        if isKnown && currentCardUsedHint {
-            showHintKnownBlockedFeedback()
+        if isKnown && knownSwipeIsBlocked {
+            onKnownBlocked()
             return
         }
 
         Haptics.tap(style: .medium)
-        isFinishingPracticeSwipe = true
+        isFinishingSwipe.wrappedValue = true
         withAnimation(.interpolatingSpring(stiffness: 180, damping: 24)) {
-            practiceCardDragOffset = isKnown ? 620 : -620
+            dragOffset.wrappedValue = isKnown ? 620 : -620
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
-            recordPracticeCard(isKnown: isKnown)
+            onComplete(isKnown)
         }
+    }
+
+    func finishPracticeSwipe(translation: CGSize, predictedTranslation: CGSize) {
+        finishStudyCardSwipe(
+            translation: translation,
+            predictedTranslation: predictedTranslation,
+            dragOffset: $practiceCardDragOffset,
+            isFinishingSwipe: $isFinishingPracticeSwipe,
+            knownSwipeIsBlocked: currentCardUsedHint,
+            onKnownBlocked: showHintKnownBlockedFeedback,
+            onComplete: { isKnown in recordPracticeCard(isKnown: isKnown) }
+        )
+    }
+
+    func finishShowSwipe(translation: CGSize, predictedTranslation: CGSize) {
+        finishStudyCardSwipe(
+            translation: translation,
+            predictedTranslation: predictedTranslation,
+            dragOffset: $showCardDragOffset,
+            isFinishingSwipe: $isFinishingShowSwipe,
+            knownSwipeIsBlocked: currentCardUsedHint,
+            onKnownBlocked: { showHintKnownBlockedFeedback(dragOffset: $showCardDragOffset) },
+            onComplete: { isKnown in recordShowCard(isKnown: isKnown) }
+        )
     }
 }

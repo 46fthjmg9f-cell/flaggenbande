@@ -350,8 +350,41 @@ extension ContentView {
         ]
     }
 
+    var beginnerAchievementItems: [AchievementItem] {
+        let stats = activeProfile.beginnerStats ?? BeginnerStats()
+        return [
+            AchievementItem(
+                id: "beginner-first-answer",
+                title: L("Erste Antwort", "First answer"),
+                description: L("Eine Aufgabe in Anfänger beantwortet", "Answer one Beginner question"),
+                iconName: "1.circle.fill",
+                currentValue: stats.answered,
+                targetValue: 1,
+                tint: tealAccentColor
+            ),
+            AchievementItem(
+                id: "beginner-fifty-correct",
+                title: L("Anfänger sitzt", "Beginner basics"),
+                description: L("50 richtige Antworten in Anfänger", "50 correct answers in Beginner"),
+                iconName: "checkmark.circle.fill",
+                currentValue: stats.correct,
+                targetValue: 50,
+                tint: .green
+            ),
+            AchievementItem(
+                id: "beginner-perfect-ten",
+                title: L("Fehlerfrei gestartet", "Perfect start"),
+                description: L("Eine Runde mit mindestens 10 Aufgaben ohne Fehler abschließen", "Finish a round of at least 10 questions without a mistake"),
+                iconName: "star.circle.fill",
+                currentValue: stats.bestRoundTotal >= 10 && stats.bestRoundCorrect == stats.bestRoundTotal ? 1 : 0,
+                targetValue: 1,
+                tint: .orange
+            )
+        ]
+    }
+
     var achievementItems: [AchievementItem] {
-        practiceAchievementItems + regionAchievementItems + showmasterAchievementItems
+        practiceAchievementItems + regionAchievementItems + showmasterAchievementItems + beginnerAchievementItems
     }
 
     var unlockedAchievementCount: Int {
@@ -375,11 +408,11 @@ extension ContentView {
     }
 
     var runTitleWithBeta: String {
-        "\(runTitle) Beta"
+        runTitle
     }
 
     var runHighscoreTitle: String {
-        selectedSubject == .capitals ? L("Städterun Highscore", "City Run high score") : L("Flaggenrun Highscore", "Flag Run high score")
+        selectedSubject == .capitals ? L("Daily-Städterun Highscore", "Daily City Run high score") : L("Daily-Flaggenrun Highscore", "Daily Flag Run high score")
     }
 
     func screenTitle(_ screen: AppScreen) -> String {
@@ -428,10 +461,37 @@ extension ContentView {
         return count
     }
 
+    func globalAchievementUnlockCounts(
+        activeIDs: Set<String>? = nil,
+        players: [OnlinePlayerStats]? = nil
+    ) -> [String: Int] {
+        let activeIDs = activeIDs ?? activeAchievementIDs
+        let players = players ?? deduplicatedOnlineLeaderboard
+        var counts: [String: Int] = [:]
+
+        for player in players {
+            for achievementID in player.achievementIDs {
+                counts[achievementID, default: 0] += 1
+            }
+        }
+
+        if !activeIDs.isEmpty && !players.contains(where: { isCurrentOnlinePlayer($0) }) {
+            for achievementID in activeIDs {
+                counts[achievementID, default: 0] += 1
+            }
+        }
+
+        return counts
+    }
+
     func achievementsSortedByGlobalUnlocks(_ items: [AchievementItem]) -> [AchievementItem] {
+        achievementsSortedByGlobalUnlocks(items, globalUnlockCounts: globalAchievementUnlockCounts())
+    }
+
+    func achievementsSortedByGlobalUnlocks(_ items: [AchievementItem], globalUnlockCounts: [String: Int]) -> [AchievementItem] {
         items.sorted {
-            let firstCount = globalUnlockCount(for: $0.id)
-            let secondCount = globalUnlockCount(for: $1.id)
+            let firstCount = globalUnlockCounts[$0.id, default: 0]
+            let secondCount = globalUnlockCounts[$1.id, default: 0]
             if firstCount == secondCount {
                 if $0.isUnlocked == $1.isUnlocked {
                     return $0.title < $1.title

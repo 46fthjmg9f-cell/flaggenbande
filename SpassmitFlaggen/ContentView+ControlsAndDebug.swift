@@ -217,6 +217,26 @@ extension ContentView {
         leagueSummaryResult = nil
     }
 
+    @MainActor
+    func debugResetDailyLeagueLimit() async {
+        guard !isLoadingDailyLeague else { return }
+        isLoadingDailyLeague = true
+        defer { isLoadingDailyLeague = false }
+
+        do {
+            try await DailyFlaggenrunService.resetTodayForCurrentUser(subject: selectedSubject, gameCenterPlayerID: gameCenterPlayerID)
+            dailyLeagueStatusMessage = L("Daily-Versuche für heute zurückgesetzt.", "Daily attempts reset for today.")
+            dailyLeagueReservation = nil
+            dailyLeagueAttempts = []
+            dailyLeagueLeaderboard = []
+            await refreshDailyLeagueStatus()
+            Haptics.notify(.success)
+        } catch {
+            dailyLeagueStatusMessage = OnlineStatsService.userFacingMessage(for: error)
+            Haptics.notify(.error)
+        }
+    }
+
     func debugSetAllCountryTiers(_ tier: MasteryTier) {
         updateActiveProfile { profile in
             let now = Date()

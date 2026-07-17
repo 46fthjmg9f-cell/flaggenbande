@@ -9,7 +9,7 @@ struct ContentView: View {
     // MARK: - Persisted Settings
 
     @AppStorage("onlinePlayerName") var onlinePlayerName: String = ""
-    @AppStorage("appLanguage") var appLanguageRawValue: String = AppLanguage.german.rawValue
+    @AppStorage("appLanguage") var appLanguageRawValue: String = AppLanguage.systemDefault.rawValue
     @AppStorage("appTheme") var appThemeRawValue: String = AppTheme.system.rawValue
     @AppStorage("appAccent") var appAccentRawValue: String = AppAccent.teal.rawValue
     @AppStorage("friendNames") var friendNamesRawValue: String = ""
@@ -21,6 +21,7 @@ struct ContentView: View {
     @AppStorage("onlineFeaturesEnabled") var onlineFeaturesEnabled: Bool = true
     @AppStorage("didEnableOnlineByDefault") var didEnableOnlineByDefault: Bool = false
     @AppStorage("hapticsEnabled") var hapticsEnabled: Bool = true
+    @AppStorage("selectedPracticeContinents") var selectedPracticeContinentsRawValue: String = CountryScope.worldwide
     #if DEBUG
     @AppStorage("debugToolsEnabled") var debugToolsEnabled: Bool = false
     @AppStorage("debugShowTierDecayInfoOnNextLaunchV2") var debugShowTierDecayInfoOnNextLaunch: Bool = true
@@ -31,19 +32,22 @@ struct ContentView: View {
     @StateObject var storeKit = StoreKitManager()
     @State var fullVersionUnlocked: Bool = false
     @State var appData: AppData = AppStorageService.load()
-    @State var onlineLeaderboard: [OnlinePlayerStats] = []
+    @State var onlineLeaderboard: [OnlinePlayerStats] = OnlineLeaderboardCache.load()
     @State var onlineLeaderboardRefreshID: Int = 0
     @State var onlineStatusText: String = "Online-Rangliste noch nicht geladen"
     @State var isSyncingOnlineStats: Bool = false
+    @State var isLoadingOnlinePlayerDetail: Bool = false
     @State var isRestoringCloudBackup: Bool = false
     @State var cloudBackupRestoreAttemptedPlayerID: String = ""
     @State var pendingOnlineSyncTask: Task<Void, Never>?
+    @State var pendingLocalSaveTask: Task<Void, Never>?
     @State var isGameCenterAuthenticated: Bool = false
     @State var gameCenterPlayerID: String = ""
     @State var gameCenterAlias: String = ""
     @State var gameCenterStatusText: String = "Game Center noch nicht verbunden"
     @State var gameCenterAuthPresentation: GameCenterAuthPresentation?
     @State var gameCenterFriendIDs: Set<String> = []
+    @State var didConfigureGameCenterAuthentication: Bool = false
     @State var selectedOnlineGlobePlayer: OnlinePlayerStats?
     @State var selectedOnlineScope: OnlineLeaderboardScope = .friends
     @State var isShowingFriendInfo: Bool = false
@@ -52,9 +56,26 @@ struct ContentView: View {
     @State var isShowingFriendList: Bool = false
     @State var friendPendingRemoval: String?
     @State var selectedSubject: LearningSubject = .countries
-    @State var selectedPracticeContinents: Set<String> = ["Europa"]
-    @State var selectedShowContinents: Set<String> = ["Europa"]
-    @State var selectedStatisticsContinents: Set<String> = ["Europa"]
+    @State var selectedPracticeContinents: Set<String> = [CountryScope.worldwide]
+    @State var selectedBeginnerContinents: Set<String> = [CountryScope.worldwide]
+    @State var selectedBeginnerDirection: BeginnerDirection = .countryToFlag
+    @State var selectedBeginnerQuestionLimit: Int = 10
+    @State var beginnerSessionActive: Bool = false
+    @State var beginnerQuestionCountry: Country = allCountries[0]
+    @State var beginnerAnswerOptions: [Country] = []
+    @State var beginnerSelectedCountry: Country?
+    @State var beginnerIsAdvancing: Bool = false
+    @State var beginnerDisplayedQuestionNumber: Int = 1
+    @State var beginnerSessionResults: [BeginnerRoundResult] = []
+    @State var beginnerHistoryPreview: BeginnerRoundResult?
+    @State var beginnerSessionCorrect: Int = 0
+    @State var beginnerSessionWrong: Int = 0
+    @State var showBeginnerSummary: Bool = false
+    @State var beginnerEasterEggTapDates: [Date] = []
+    @State var showBeginnerEasterEgg: Bool = false
+    @State var beginnerEasterEggPulse: Bool = false
+    @State var selectedShowContinents: Set<String> = [CountryScope.worldwide]
+    @State var selectedStatisticsContinents: Set<String> = [CountryScope.worldwide]
     @State var selectedStatisticsTier: MasteryTier?
     @State var isTierExplanationExpanded: Bool = false
     @State var isMasteryScoreInfoExpanded: Bool = false
@@ -76,10 +97,14 @@ struct ContentView: View {
     @State var selectedShowCardLimit: Int = 0
     @State var showAvoidsRecentRepeats: Bool = true
     @State var leagueShowsStartMenu: Bool = true
+    @State var leaguePracticeHistoryIsExpanded: Bool = false
+    @State var leagueRunVariant: LeagueRunVariant = .practice
     @State var leagueMatchActive: Bool = false
     @State var leagueSecondsRemaining: Int = 60
     @State var leagueCurrentCountry: Country = allCountries[0]
     @State var leagueAnswerText: String = ""
+    @State var leagueAnswerCandidates: [Country] = []
+    @State var selectedLeagueHistoryMatch: LeagueMatchResult?
     @State var leagueCorrect: Int = 0
     @State var leagueWrong: Int = 0
     @State var leagueScore: Int = 0
@@ -88,11 +113,14 @@ struct ContentView: View {
     @State var leagueSummaryResult: LeagueMatchResult?
     @State var leagueAnswerMatch: LeagueAnswerMatch?
     @State var leagueAutoSubmitTask: Task<Void, Never>?
+    @State var leagueFocusTask: Task<Void, Never>?
     @State var leagueTimerIsRunning: Bool = false
     @State var leagueTimerStartTask: Task<Void, Never>?
     @State var leagueCountdownTask: Task<Void, Never>?
     @State var leagueAdvanceTask: Task<Void, Never>?
     @State var leagueFeedbackClearTask: Task<Void, Never>?
+    @State var leagueCandidateAttentionTask: Task<Void, Never>?
+    @State var leagueCandidateAttentionPulse: Bool = false
     @State var leagueInputIsLocked: Bool = false
     @State var leagueLockedAnswerText: String = ""
     @State var leagueAnswerFeedback: Bool?
@@ -101,9 +129,32 @@ struct ContentView: View {
     @State var leagueStartCountdown: Int = 3
     @State var leagueFirstFlagIsReady: Bool = false
     @State var leaguePreloadedFlagImage: UIImage?
+    @State var isPreparingLeagueAssets: Bool = false
+    @State var leagueAssetPreloadCompleted: Int = 0
+    @State var leagueAssetPreloadTotal: Int = 0
+    @State var leagueAssetPreloadError: String?
+    @State var leaguePreparedPracticeOrder: [Country] = []
+    @State var leaguePreparedPracticeAssetSignature: String = ""
+    @State var leaguePreparedDailyAssetSignature: String = ""
+    @State var leagueLookaheadWarmTask: Task<Void, Never>?
     @State var leagueTypingLockedUntil: Date = .distantPast
     @State var leagueCurrentQuestionStartedAt: Date = Date()
     @State var leagueNotificationsAuthorized: Bool = false
+    @State var dailyLeagueChallenge: DailyChallenge?
+    @State var dailyLeagueStatus: DailyUserStatus?
+    @State var dailyLeagueLeaderboard: [DailyLeaderboardEntry] = []
+    @State var trophyLeaderboard: [TrophyLeaderboardEntry] = []
+    @State var isLoadingTrophyLeaderboard: Bool = false
+    @State var trophyLeaderboardMessage: String?
+    @State var dailyLeagueAttempts: [DailyAttemptSummary] = []
+    @State var dailyLeagueReservation: DailyAttemptReservation?
+    @State var dailyLeagueFlagOrder: [Country] = []
+    @State var dailyLeagueFlagIndex: Int = 0
+    @State var dailyLeagueStatusMessage: String?
+    @State var isLoadingDailyLeague: Bool = false
+    @State var dailyLeagueRefreshID: Int = 0
+    @State var isRetryingPendingDailyCompletions: Bool = false
+    @State var lastDailyLeagueResultWasBest: Bool?
     @FocusState var isLeagueAnswerFocused: Bool
     @FocusState var isMiniWorldCupNameFocused: Bool
     @State var practiceSessionSeenCountryCodes: Set<String> = []
@@ -118,13 +169,16 @@ struct ContentView: View {
     @State var practiceHistoryPreview: PracticeHistoryPreview?
     @State var practiceHistoryGlobeCountry: Country?
     @State var practiceHistoryBarMinY: CGFloat = 150
+    @State var selectedHistoryPillFrame: CGRect?
     @State var practiceForcedNextCountry: Country?
+    @State var preloadedFirstPracticeCountry: Country?
     @State var practiceUndoSnapshot: PracticeUndoSnapshot?
+    @State var showUndoSnapshot: ShowUndoSnapshot?
     @State var practiceSessionActive: Bool = false
     @State var showSessionActive: Bool = false
     @State var showSessionCount: Int = 0
-    @State var showSessionEntries: [ShowSessionEntry] = []
-    @State var showHistoryPreview: ShowHistoryPreview?
+    @State var showSessionEntries: [PracticeSessionChange] = []
+    @State var showHistoryPreview: PracticeHistoryPreview?
     @State var showHistoryBarMinY: CGFloat = 150
     @State var miniWorldCupPlayers: [MiniWorldCupPlayer] = []
     @State var miniWorldCupNewPlayerName: String = ""
@@ -166,11 +220,17 @@ struct ContentView: View {
     @State var practiceCardEntryOffset: CGFloat = 0
     @State var practiceCardEntryOpacity: Double = 1
     @State var isFinishingPracticeSwipe: Bool = false
+    @State var showCardDragOffset: CGFloat = 0
+    @State var showCardEntryOffset: CGFloat = 0
+    @State var showCardEntryOpacity: Double = 1
+    @State var isFinishingShowSwipe: Bool = false
     @State var recapStartCounts: [MasteryTier: Int] = [:]
     @State var recapEndCounts: [MasteryTier: Int] = [:]
     @State var showRecap: Bool = false
     @State var practiceRecapPromptIsVisible: Bool = false
     @State var isShowingStartupScreen: Bool = true
+    @State var startupPreloadCompleted: Int = 0
+    @State var startupPreloadTotal: Int = 1
     @State var selectedGlobeCountry: Country?
     @State var globeResetToken: Int = 0
     @State var globeSearchText: String = ""
@@ -188,37 +248,69 @@ struct ContentView: View {
     @State var achievementSortMode: AchievementSortMode = .category
     @State var selectedMenuInfoScreen: AppScreen?
     @State var isShowingResetConfirmation: Bool = false
+    @State var isShowingPracticeCancelConfirmation: Bool = false
     @State var isShowingShowCancelConfirmation: Bool = false
+    @State var isShowingBeginnerCancelConfirmation: Bool = false
+    @State var isShowingLeagueCancelConfirmation: Bool = false
     @State var isShowingFullVersionSheet: Bool = false
     @State var navigationPath: [AppScreen] = []
+    @State var allowsProtectedBackNavigation: Bool = false
 
     var body: some View {
         ZStack {
             NavigationStack(path: $navigationPath) {
                 startView
                     .navigationDestination(for: AppScreen.self) { screen in
-                        switch screen {
-                        case .games:
-                            gameModesView
-                        case .practice:
-                            practiceView
-                        case .showmaster:
-                            showView
-                        case .miniWorldCup:
-                            miniWorldCupView
-                        case .league:
-                            leagueView
-                        case .statistics:
-                            statisticsView
-                        case .globe:
-                            fullVersionUnlocked ? AnyView(globeView) : AnyView(fullVersionLockedView(feature: L("Globus", "Globe")))
-                        case .achievements:
-                            achievementsView
-                        case .friends:
-                            friendsView
-                        case .options:
-                            optionsView
+                        Group {
+                            switch screen {
+                            case .games:
+                                gameModesView
+                            case .practice:
+                                practiceView
+                            case .bloodyBeginner:
+                                beginnerView
+                            case .showmaster:
+                                showView
+                            case .miniWorldCup:
+                                miniWorldCupView
+                            case .league:
+                                leagueView
+                            case .statistics:
+                                statisticsView
+                            case .globe:
+                                fullVersionUnlocked ? AnyView(globeView) : AnyView(fullVersionLockedView(feature: L("Globus", "Globe")))
+                            case .achievements:
+                                achievementsView
+                            case .friends:
+                                friendsView
+                            case .options:
+                                optionsView
+                            }
                         }
+                        .navigationBarBackButtonHidden(shouldDisableInteractiveBackSwipe)
+                        .toolbar {
+                            if shouldDisableInteractiveBackSwipe {
+                                ToolbarItem(placement: .topBarLeading) {
+                                    Button {
+                                        Haptics.tap()
+                                        guard !navigationPath.isEmpty else { return }
+                                        allowsProtectedBackNavigation = true
+                                        navigationPath.removeLast()
+                                        DispatchQueue.main.async {
+                                            allowsProtectedBackNavigation = false
+                                        }
+                                    } label: {
+                                        Image(systemName: "chevron.left")
+                                            .font(.headline.weight(.semibold))
+                                    }
+                                    .accessibilityLabel(L("Zurück", "Back"))
+                                }
+                            }
+                        }
+                        .background(
+                            BackSwipeGestureController(isDisabled: shouldDisableInteractiveBackSwipe)
+                                .frame(width: 0, height: 0)
+                        )
                     }
             }
             .scaleEffect(isShowingStartupScreen ? 0.96 : 1)
@@ -227,7 +319,11 @@ struct ContentView: View {
             .animation(.spring(response: 0.58, dampingFraction: 0.86), value: isShowingStartupScreen)
 
             if isShowingStartupScreen {
-                StartupScreen(language: appLanguage)
+                StartupScreen(
+                    language: appLanguage,
+                    completedItemCount: startupPreloadCompleted,
+                    totalItemCount: startupPreloadTotal
+                )
                     .transition(.asymmetric(insertion: .opacity, removal: .move(edge: .top).combined(with: .opacity)))
                     .zIndex(1)
             }
@@ -251,6 +347,12 @@ struct ContentView: View {
                     .padding(.top, 118)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
                     .zIndex(3)
+            }
+
+            if showBeginnerEasterEgg {
+                beginnerEasterEggOverlay
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    .zIndex(4)
             }
 
             if let achievementPopupItem {
@@ -309,6 +411,15 @@ struct ContentView: View {
         } message: {
             Text(L("Möchtest du wirklich deine komplette Statistik zurücksetzen? Dadurch wird dein gesamter Fortschritt gelöscht.", "Do you really want to reset your complete statistics? This will delete all of your progress."))
         }
+        .alert(L("Üben abbrechen?", "Cancel Practice?"), isPresented: $isShowingPracticeCancelConfirmation) {
+            Button(L("Weiter", "Continue"), role: .cancel) {}
+            Button(L("Abbrechen", "Cancel"), role: .destructive) {
+                Haptics.notify(.warning)
+                finishPracticeSession(showSummary: practiceSessionCount > 0)
+            }
+        } message: {
+            Text(L("Möchtest du diese Übungs-Session wirklich abbrechen?", "Do you really want to cancel this practice session?"))
+        }
         .alert(L("Showmaster abbrechen?", "Cancel Showmaster?"), isPresented: $isShowingShowCancelConfirmation) {
             Button(L("Weiter", "Continue"), role: .cancel) {}
             Button(L("Abbrechen", "Cancel"), role: .destructive) {
@@ -318,14 +429,61 @@ struct ContentView: View {
         } message: {
             Text(L("Möchtest du diese Showmaster-Runde wirklich abbrechen?", "Do you really want to cancel this Showmaster round?"))
         }
+        .alert(L("Anfänger beenden?", "End Beginner?"), isPresented: $isShowingBeginnerCancelConfirmation) {
+            Button(L("Weiter", "Continue"), role: .cancel) {}
+            Button(L("Beenden", "End"), role: .destructive) {
+                Haptics.notify(.warning)
+                finishBeginnerSession(showSummary: true)
+            }
+        } message: {
+            Text(L("Möchtest du diese Anfänger-Session wirklich beenden?", "Do you really want to end this Beginner session?"))
+        }
+        .alert(L("\(runTitle) verlassen?", "Leave \(runTitle)?"), isPresented: $isShowingLeagueCancelConfirmation) {
+            Button(L("Weiter", "Continue"), role: .cancel) {
+                focusLeagueAnswerInputAfterLayout(delay: 0.15)
+            }
+            Button(L("Verlassen", "Leave"), role: .destructive) {
+                Haptics.notify(.warning)
+                finishLeagueMatch(aborted: true)
+            }
+        } message: {
+            Text(L("Möchtest du diese Session wirklich beenden? Dein aktueller Stand wird als Ergebnis gespeichert.", "Do you really want to end this session? Your current score will be saved as the result."))
+        }
         .tint(tealAccentColor)
         .preferredColorScheme(appTheme.colorScheme)
+        .onChange(of: navigationPath) { oldPath, newPath in
+            guard !allowsProtectedBackNavigation,
+                  shouldRestoreProtectedNavigationPath(from: oldPath, to: newPath) else { return }
+            DispatchQueue.main.async {
+                navigationPath = oldPath
+            }
+        }
         .onChange(of: selectedSubject) { _, _ in
+            abortActiveDailyLeagueMatchIfNeeded()
+            dailyLeagueRefreshID += 1
+            dailyLeagueChallenge = nil
+            dailyLeagueStatus = nil
+            dailyLeagueLeaderboard = []
+            dailyLeagueAttempts = []
+            dailyLeagueReservation = nil
+            dailyLeagueStatusMessage = nil
             practiceSessionActive = false
+            beginnerSessionActive = false
+            beginnerSelectedCountry = nil
+            beginnerSessionResults = []
+            beginnerHistoryPreview = nil
+            showBeginnerSummary = false
             showSessionActive = false
             showSessionCount = 0
             showSessionEntries = []
             showHistoryPreview = nil
+            showUndoSnapshot = nil
+            practiceHistoryGlobeCountry = nil
+            selectedHistoryPillFrame = nil
+            showCardDragOffset = 0
+            showCardEntryOffset = 0
+            showCardEntryOpacity = 1
+            isFinishingShowSwipe = false
             showRecentCountryCodes = []
             showDeckCountryCodes = []
             showRecap = false
@@ -355,10 +513,22 @@ struct ContentView: View {
             fullVersionUnlocked = isUnlocked
         }
         .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                abortActiveDailyLeagueMatchIfNeeded()
+                flushLocalCache()
+                return
+            }
+
             guard phase == .active else { return }
             Task {
                 await storeKit.refreshPurchasedProducts()
                 fullVersionUnlocked = storeKit.purchasedFullVersion
+                await retryPendingDailyCompletions()
+                if onlineFeaturesEnabled,
+                   dailyLeagueStatus?.dateKey != DailyFlaggenrunService.dateKey() {
+                    dailyLeagueChallenge = nil
+                    await refreshDailyLeagueStatus()
+                }
             }
         }
         .onChange(of: fullVersionUnlocked) { _, isUnlocked in

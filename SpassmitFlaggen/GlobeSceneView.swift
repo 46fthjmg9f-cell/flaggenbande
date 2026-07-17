@@ -43,6 +43,12 @@ struct GlobeSceneView: UIViewRepresentable {
         context.coordinator.updateHighlight(countryCode: highlightCountryCode)
     }
 
+    static func dismantleUIView(_ sceneView: SCNView, coordinator: Coordinator) {
+        coordinator.teardown()
+        sceneView.scene = nil
+        sceneView.delegate = nil
+    }
+
     final class Coordinator: NSObject {
         var persistsViewState: Bool
         var onSelectCountryCode: (String) -> Void
@@ -58,6 +64,7 @@ struct GlobeSceneView: UIViewRepresentable {
         private var currentTextureSignature: String = ""
         private var didStartLoadingBoundaries = false
         private var cameraDistance: Float = 3.2
+        private var pinchStartCameraDistance: Float?
         private var lastResetToken: Int = 0
         private var lastFocusedCountryCode: String?
         private var highlightedCountryCode: String?
@@ -74,6 +81,15 @@ struct GlobeSceneView: UIViewRepresentable {
         init(persistsViewState: Bool, onSelectCountryCode: @escaping (String) -> Void) {
             self.persistsViewState = persistsViewState
             self.onSelectCountryCode = onSelectCountryCode
+        }
+
+        deinit {
+            inertiaDisplayLink?.invalidate()
+        }
+
+        func teardown() {
+            stopInertia()
+            sceneView = nil
         }
 
         func configure(_ sceneView: SCNView) {
@@ -229,13 +245,23 @@ struct GlobeSceneView: UIViewRepresentable {
         }
 
         @objc func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-            stopInertia()
-            let scale = max(Float(gesture.scale), 0.01)
-            cameraDistance = min(max(cameraDistance / scale, minimumCameraDistance), maximumCameraDistance)
-            cameraNode.position = SCNVector3(0, 0, cameraDistance)
-            gesture.scale = 1
-            if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
+            switch gesture.state {
+            case .began:
+                stopInertia()
+                pinchStartCameraDistance = cameraDistance
+            case .changed:
+                guard let pinchStartCameraDistance else { return }
+                let scale = max(pow(Float(gesture.scale), 0.86), 0.01)
+                cameraDistance = min(
+                    max(pinchStartCameraDistance / scale, minimumCameraDistance),
+                    maximumCameraDistance
+                )
+                cameraNode.position = SCNVector3(0, 0, cameraDistance)
+            case .ended, .cancelled, .failed:
+                pinchStartCameraDistance = nil
                 persistViewState()
+            default:
+                break
             }
         }
 
@@ -420,7 +446,9 @@ struct GlobeSceneView: UIViewRepresentable {
 
         private func rebuildHighlightMarker() {
             highlightNode.childNodes.forEach { $0.removeFromParentNode() }
-            guard let highlightedCountryCode, let coordinate = coordinateForCountryCode(highlightedCountryCode) else { return }
+            guard let highlightedCountryCode,
+                  shouldShowHighlightMarker(for: highlightedCountryCode),
+                  let coordinate = coordinateForCountryCode(highlightedCountryCode) else { return }
 
             let center = simd_normalize(simdPosition(for: coordinate, radius: 1.032))
             let reference = abs(center.y) < 0.92 ? SIMD3<Float>(0, 1, 0) : SIMD3<Float>(1, 0, 0)
@@ -449,6 +477,22 @@ struct GlobeSceneView: UIViewRepresentable {
             material.lightingModel = .constant
             geometry.materials = [material]
             highlightNode.addChildNode(SCNNode(geometry: geometry))
+        }
+
+        private func shouldShowHighlightMarker(for countryCode: String) -> Bool {
+            guard let rings = boundaryData?.ringsByCountryCode[countryCode] else { return true }
+            let coordinates = rings.flatMap { $0 }
+            guard !coordinates.isEmpty else { return true }
+            let latitudes = coordinates.map(\.latitude)
+            let longitudes = coordinates.map(\.longitude)
+            guard let minimumLatitude = latitudes.min(),
+                  let maximumLatitude = latitudes.max(),
+                  let minimumLongitude = longitudes.min(),
+                  let maximumLongitude = longitudes.max() else { return true }
+
+            let latitudeSpan = maximumLatitude - minimumLatitude
+            let longitudeSpan = maximumLongitude - minimumLongitude
+            return max(latitudeSpan, longitudeSpan) < 2.2
         }
 
         private func rebuildBoundaries() {
@@ -615,6 +659,50 @@ enum GlobeBoundaryCache {
         guard let localCacheURL else { return }
         try? newData.write(to: localCacheURL, options: .atomic)
     }
+
+    @MainActor
+    static func preload() async {
+        guard data == nil || source != globeBoundarySource else { return }
+        guard let cacheURL = localCacheURL else { return }
+
+        let localData = await Task.detached(priority: .utility) {
+            try? Data(contentsOf: cacheURL)
+        }.value
+
+        let boundaryData: Data
+        let shouldPersist: Bool
+        if let localData {
+            boundaryData = localData
+            shouldPersist = false
+        } else {
+            guard let url = URL(string: globeBoundaryURLString) else { return }
+            do {
+                var request = URLRequest(url: url)
+                request.cachePolicy = .returnCacheDataElseLoad
+                request.timeoutInterval = 6
+                let (downloadedData, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode),
+                      !downloadedData.isEmpty else { return }
+                boundaryData = downloadedData
+                shouldPersist = true
+            } catch {
+                return
+            }
+        }
+
+        guard let parsedData = await Task.detached(priority: .userInitiated, operation: {
+            GlobeBoundaryData.parse(data: boundaryData)
+        }).value else { return }
+        source = globeBoundarySource
+        data = parsedData
+
+        if shouldPersist {
+            await Task.detached(priority: .utility) {
+                try? boundaryData.write(to: cacheURL, options: .atomic)
+            }.value
+        }
+    }
 }
 
 private struct GlobeScenePersistedViewState: Codable {
@@ -654,17 +742,28 @@ private struct GlobeScenePersistedViewState: Codable {
     }
 }
 
-struct GlobeCoordinate: Codable {
+struct GlobeCoordinate: Codable, Sendable {
     let latitude: Double
     let longitude: Double
+
+    nonisolated init(latitude: Double, longitude: Double) {
+        self.latitude = latitude
+        self.longitude = longitude
+    }
 }
 
-struct GlobeBoundaryData {
+struct GlobeBoundaryData: Sendable {
     let rings: [[GlobeCoordinate]]
     let ringsByCountryCode: [String: [[GlobeCoordinate]]]
     let centroidsByCountryCode: [String: GlobeCoordinate]
 
-    static func parse(data: Data) -> GlobeBoundaryData? {
+    nonisolated init(rings: [[GlobeCoordinate]], ringsByCountryCode: [String: [[GlobeCoordinate]]], centroidsByCountryCode: [String: GlobeCoordinate]) {
+        self.rings = rings
+        self.ringsByCountryCode = ringsByCountryCode
+        self.centroidsByCountryCode = centroidsByCountryCode
+    }
+
+    nonisolated static func parse(data: Data) -> GlobeBoundaryData? {
         guard
             let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let features = root["features"] as? [[String: Any]]
@@ -694,7 +793,7 @@ struct GlobeBoundaryData {
         return GlobeBoundaryData(rings: rings, ringsByCountryCode: ringsByCountryCode, centroidsByCountryCode: centroidsByCountryCode)
     }
 
-    private static func parseRings(from geometry: [String: Any]) -> [[GlobeCoordinate]] {
+    nonisolated private static func parseRings(from geometry: [String: Any]) -> [[GlobeCoordinate]] {
         guard let type = geometry["type"] as? String else { return [] }
 
         if type == "Polygon", let polygons = geometry["coordinates"] as? [[[Double]]] {
@@ -710,14 +809,14 @@ struct GlobeBoundaryData {
         return []
     }
 
-    private static func parseRing(_ rawRing: [[Double]]) -> [GlobeCoordinate] {
+    nonisolated private static func parseRing(_ rawRing: [[Double]]) -> [GlobeCoordinate] {
         rawRing.compactMap { pair in
             guard pair.count >= 2 else { return nil }
             return GlobeCoordinate(latitude: pair[1], longitude: pair[0])
         }
     }
 
-    static func centroid(from rings: [[GlobeCoordinate]]) -> GlobeCoordinate? {
+    nonisolated static func centroid(from rings: [[GlobeCoordinate]]) -> GlobeCoordinate? {
         let allCoordinates = rings.flatMap { $0 }
         guard !allCoordinates.isEmpty else { return nil }
         let latitude = allCoordinates.reduce(0) { $0 + $1.latitude } / Double(allCoordinates.count)
@@ -725,7 +824,7 @@ struct GlobeBoundaryData {
         return GlobeCoordinate(latitude: latitude, longitude: longitude)
     }
 
-    private static func normalizedCountryCode(from properties: [String: Any]) -> String? {
+    nonisolated private static func normalizedCountryCode(from properties: [String: Any]) -> String? {
         let codeCandidates = [
             properties["ISO_A2"] as? String,
             properties["iso_a2"] as? String,
@@ -800,4 +899,3 @@ private extension MasteryTier {
         }
     }
 }
-

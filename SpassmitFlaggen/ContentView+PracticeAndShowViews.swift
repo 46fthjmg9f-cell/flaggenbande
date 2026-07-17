@@ -98,7 +98,7 @@ extension ContentView {
 
                             Button {
                                 Haptics.tap()
-                                finishPracticeSession(showSummary: practiceSessionCount > 0)
+                                isShowingPracticeCancelConfirmation = true
                             } label: {
                                 Text(L("Session abbrechen", "Cancel session"))
                                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -182,12 +182,11 @@ extension ContentView {
 
                 practiceHistoryFloatingPreview(for: practiceHistoryPreview)
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .padding(.top, practiceHistoryBarMinY + 38)
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                     .zIndex(2)
             }
 
-            if let practiceHistoryGlobeCountry, !practiceRecapPromptIsVisible {
+            if let practiceHistoryGlobeCountry {
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
@@ -197,13 +196,13 @@ extension ContentView {
                     .zIndex(3)
 
                 practiceHistoryGlobePopup(for: practiceHistoryGlobeCountry)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    .padding(.top, practiceHistoryBarMinY + 238)
+                    .frame(maxHeight: .infinity, alignment: .center)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
                     .zIndex(4)
             }
         }
         .coordinateSpace(name: "practicePreviewSpace")
+        .coordinateSpace(name: "historyPreviewSpace")
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: practiceSessionActive)
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: showRecap)
         .animation(.spring(response: 0.28, dampingFraction: 0.78), value: practiceHistoryPreview?.id)
@@ -212,11 +211,16 @@ extension ContentView {
                 practiceHistoryBarMinY = value
             }
         }
+        .onPreferenceChange(SelectedHistoryPillFrameKey.self) { frame in
+            selectedHistoryPillFrame = frame
+        }
         .onChange(of: selectedPracticeContinents) { _, _ in
+            persistPracticeContinents()
             withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
                 practiceSessionActive = false
                 practiceHistoryGlobeCountry = nil
                 practiceHistoryPreview = nil
+                selectedHistoryPillFrame = nil
             }
         }
     }
@@ -229,6 +233,8 @@ extension ContentView {
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 Spacer(minLength: 0)
+                Image(systemName: "globe.europe.africa.fill")
+                    .foregroundStyle(tealAccentColor)
                 Text(change.country.code)
                     .font(.caption.weight(.black))
                     .foregroundStyle(tealAccentColor)
@@ -244,7 +250,7 @@ extension ContentView {
 
             HStack(spacing: 12) {
                 MiniLocationGlobe(country: change.country, accentColor: tealAccentColor)
-                    .frame(width: 76, height: 76)
+                    .frame(width: 92, height: 92)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(localizedScope(change.country.continent))
                         .font(.subheadline.weight(.semibold))
@@ -269,58 +275,81 @@ extension ContentView {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(change.wasKnown ? Color.green.opacity(0.28) : Color.red.opacity(0.28), lineWidth: 1)
         )
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .onTapGesture {
+            showPracticeHistoryGlobePreview(for: change.country)
+        }
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(L("Öffnet das Land auf dem Globus", "Opens the country on the globe"))
     }
 
     func practiceHistoryFloatingPreview(for preview: PracticeHistoryPreview) -> some View {
-        GeometryReader { geometry in
-            let screenWidth = geometry.size.width
-            let bubbleWidth = min(max(screenWidth - 20, 300), 410)
-            let popupHeight: CGFloat = selectedSubject == .capitals ? 204 : 188
-            let barHorizontalPadding: CGFloat = 10
-            let pillWidth: CGFloat = 28
-            let pillSpacing: CGFloat = 7
-            let entriesWidth = CGFloat(preview.total) * pillWidth + CGFloat(max(preview.total - 1, 0)) * pillSpacing
-            let entriesStart = (screenWidth - entriesWidth) / 2
-            let selectedCenterX = entriesStart + CGFloat(preview.index) * (pillWidth + pillSpacing) + pillWidth / 2
-            let bubbleLeft = min(max(selectedCenterX - bubbleWidth / 2, barHorizontalPadding), screenWidth - bubbleWidth - barHorizontalPadding)
-            let arrowX = min(max(selectedCenterX - bubbleLeft, 24), bubbleWidth - 24)
+        historyFloatingPreview(
+            for: preview,
+            sourceFrame: selectedHistoryPillFrame,
+            onDismiss: dismissPracticeHistoryPreview,
+            onShowGlobe: { country in showPracticeHistoryGlobePreview(for: country) }
+        )
+    }
 
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                        .frame(width: arrowX - 13)
-                    Triangle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 26, height: 14)
-                        .overlay(
-                            Triangle()
-                                .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-                        )
-                    Spacer(minLength: 0)
+    func historyFloatingPreview(for preview: PracticeHistoryPreview, sourceFrame: CGRect?, onDismiss: @escaping () -> Void, onShowGlobe: @escaping (Country) -> Void) -> some View {
+        GeometryReader { geometry in
+            if let sourceFrame {
+                let screenWidth = geometry.size.width
+                let bubbleWidth = min(max(screenWidth - 20, 300), 410)
+                let popupHeight: CGFloat = selectedSubject == .capitals ? 214 : 198
+                let horizontalMargin: CGFloat = 10
+                let arrowWidth: CGFloat = 26
+                let popupGap: CGFloat = 6
+                let selectedCenterX = sourceFrame.midX
+                let bubbleLeft = min(max(selectedCenterX - bubbleWidth / 2, horizontalMargin), screenWidth - bubbleWidth - horizontalMargin)
+                let arrowX = min(max(selectedCenterX - bubbleLeft, arrowWidth / 2), bubbleWidth - arrowWidth / 2)
+                let popupTop = sourceFrame.maxY + popupGap
+
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                            .frame(width: arrowX - arrowWidth / 2)
+                        Triangle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: arrowWidth, height: 14)
+                            .overlay(
+                                Triangle()
+                                    .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                            )
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: bubbleWidth)
+
+                    historyPreview(for: preview.change, onShowGlobe: onShowGlobe)
+                        .overlay(alignment: .topTrailing) {
+                            Button {
+                                Haptics.tap()
+                                onDismiss()
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 28, height: 28)
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(8)
+                        }
                 }
                 .frame(width: bubbleWidth)
-
-                practiceHistoryPreview(for: preview.change)
-                    .overlay(alignment: .topTrailing) {
-                        Button {
-                            Haptics.tap()
-                            dismissPracticeHistoryPreview()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 28, height: 28)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .contentShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(8)
-                    }
+                .position(x: bubbleLeft + bubbleWidth / 2, y: popupTop + popupHeight / 2)
+            } else {
+                Color.clear
             }
-            .frame(width: bubbleWidth)
-            .position(x: bubbleLeft + bubbleWidth / 2, y: popupHeight / 2)
         }
-        .frame(height: selectedSubject == .capitals ? 204 : 188)
+    }
+
+    func historyGlobeTiers(highlightedCountry: Country) -> [String: MasteryTier] {
+        Dictionary(uniqueKeysWithValues: availableCountries.map { country in
+            (country.code, country.code == highlightedCountry.code ? MasteryTier.s : MasteryTier.b)
+        })
     }
 
     func practiceHistoryGlobePopup(for country: Country) -> some View {
@@ -345,8 +374,8 @@ extension ContentView {
                 }
 
                 GlobeSceneView(
-                    countries: [country],
-                    tiersByCountryCode: [country.code: .s],
+                    countries: availableCountries,
+                    tiersByCountryCode: historyGlobeTiers(highlightedCountry: country),
                     resetToken: 0,
                     focusCountryCode: country.code,
                     highlightCountryCode: country.code,
@@ -374,49 +403,58 @@ extension ContentView {
     }
 
     func practiceHistoryPreview(for change: PracticeSessionChange) -> some View {
+        historyPreview(for: change) { country in
+            showPracticeHistoryGlobePreview(for: country)
+        }
+    }
+
+    func historyPreview(for change: PracticeSessionChange, onShowGlobe: @escaping (Country) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                FlagImage(country: change.country, width: 82, height: 56, isZoomEnabled: false)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7)
-                            .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-                    )
+            Button {
+                onShowGlobe(change.country)
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    FlagImage(country: change.country, width: 82, height: 56, isZoomEnabled: false)
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7)
+                                .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
+                        )
 
-                Button {
-                    showPracticeHistoryGlobePreview(for: change.country)
-                } label: {
-                    VStack(spacing: 5) {
-                        MiniLocationGlobe(country: change.country, accentColor: tealAccentColor)
-                            .frame(width: 94, height: 94)
-                        Text(change.country.code)
-                            .font(.system(size: 10, weight: .black))
-                            .foregroundStyle(tealAccentColor)
+                    MiniLocationGlobe(country: change.country, accentColor: tealAccentColor)
+                        .frame(width: 108, height: 108)
+                        .frame(width: 112)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 5) {
+                            Text(countryName(for: change.country))
+                                .font(.headline.weight(.bold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.78)
+                            Image(systemName: "globe.europe.africa.fill")
+                                .font(.caption)
+                                .foregroundStyle(tealAccentColor)
+                        }
+                        Text(localizedScope(change.country.continent))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if selectedSubject == .capitals {
+                            Text(capitalName(for: change.country))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(tealAccentColor)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                        }
                     }
-                    .frame(width: 98)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(countryName(for: change.country))
-                        .font(.headline.weight(.bold))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.78)
-                    Text(localizedScope(change.country.continent))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if selectedSubject == .capitals {
-                        Text(capitalName(for: change.country))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(tealAccentColor)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-                    }
+                    Spacer(minLength: 0)
                 }
-
-                Spacer(minLength: 0)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityHint(L("Öffnet das Land auf dem Globus", "Opens the country on the globe"))
 
             HStack(spacing: 8) {
                 Label(change.wasKnown ? L("Gewusst", "Known") : L("Nicht gewusst", "Not known"), systemImage: change.wasKnown ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -456,10 +494,78 @@ extension ContentView {
             .background(tier.color, in: RoundedRectangle(cornerRadius: 6))
     }
 
+    func swipeableStudyCard(
+        dragOffset: Binding<CGFloat>,
+        entryOffset: Binding<CGFloat>,
+        entryOpacity: Binding<Double>,
+        isFinishingSwipe: Binding<Bool>,
+        isInteractionBlocked: Bool,
+        onFinishSwipe: @escaping (CGSize, CGSize) -> Void
+    ) -> some View {
+        let swipeColor: Color = dragOffset.wrappedValue >= 0 ? .green : .red
+        let swipeOpacity = min(abs(Double(dragOffset.wrappedValue)) / 140, 0.35)
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(swipeColor.opacity(swipeOpacity))
+                .frame(height: 260)
+                .overlay(alignment: dragOffset.wrappedValue >= 0 ? .leading : .trailing) {
+                    Image(systemName: dragOffset.wrappedValue >= 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .font(.system(size: 44, weight: .bold))
+                        .foregroundStyle(swipeColor)
+                        .opacity(swipeOpacity)
+                        .padding(.horizontal, 26)
+                }
+
+            FlipCard(country: currentCountry, isFlipped: cardIsFlipped, hasGoldAura: tier(for: currentCountry) == .s, language: appLanguage, subject: selectedSubject, capital: capitalName(for: currentCountry))
+                .id(currentCountry.id)
+                .offset(x: dragOffset.wrappedValue, y: entryOffset.wrappedValue)
+                .opacity((isFinishingSwipe.wrappedValue ? 0.82 : 1) * entryOpacity.wrappedValue)
+                .scaleEffect(entryOpacity.wrappedValue < 1 ? 0.985 : 1)
+                .rotationEffect(.degrees(max(min(Double(dragOffset.wrappedValue / 22), 10), -10)))
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .animation(.spring(response: 0.32, dampingFraction: 0.88), value: currentCountry.id)
+                .animation(.spring(response: 0.34, dampingFraction: 0.86), value: entryOffset.wrappedValue)
+                .animation(.easeOut(duration: 0.2), value: entryOpacity.wrappedValue)
+                .gesture(
+                    DragGesture(minimumDistance: 8)
+                        .onChanged { value in
+                            guard !isFinishingSwipe.wrappedValue, !isInteractionBlocked else { return }
+                            guard !FlagZoomInteractionState.isPinching else {
+                                dragOffset.wrappedValue = 0
+                                return
+                            }
+                            dragOffset.wrappedValue = max(min(value.translation.width, 220), -220)
+                        }
+                        .onEnded { value in
+                            guard !isInteractionBlocked else {
+                                dragOffset.wrappedValue = 0
+                                return
+                            }
+                            guard !FlagZoomInteractionState.isPinching else {
+                                dragOffset.wrappedValue = 0
+                                return
+                            }
+                            onFinishSwipe(value.translation, value.predictedEndTranslation)
+                        }
+                )
+
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .onTapGesture {
+            guard !isFinishingSwipe.wrappedValue, !isInteractionBlocked, !FlagZoomInteractionState.isPinching else { return }
+            Haptics.tap()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                cardIsFlipped.toggle()
+            }
+        }
+    }
+
     func showPracticeHistoryPreview(_ preview: PracticeHistoryPreview) {
         Haptics.tap()
         withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
             practiceHistoryGlobeCountry = nil
+            selectedHistoryPillFrame = nil
             practiceHistoryPreview = preview
         }
     }
@@ -468,6 +574,7 @@ extension ContentView {
         withAnimation(.easeOut(duration: 0.16)) {
             practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = nil
+            selectedHistoryPillFrame = nil
         }
     }
 
@@ -484,108 +591,20 @@ extension ContentView {
         }
     }
 
-    func showHistoryPreviewBubble(for preview: ShowHistoryPreview) -> some View {
-        GeometryReader { geometry in
-            let screenWidth = geometry.size.width
-            let horizontalMargin: CGFloat = 12
-            let outerPadding: CGFloat = 16
-            let barInnerPadding: CGFloat = 10
-            let pillWidth: CGFloat = 28
-            let pillSpacing: CGFloat = 7
-            let bubbleWidth = min(max(screenWidth - horizontalMargin * 2, 260), 360)
-            let contentMaxWidth = min(screenWidth - outerPadding * 2, 520)
-            let contentStart = (screenWidth - contentMaxWidth) / 2
-            let barContentWidth = max(contentMaxWidth - barInnerPadding * 2, 1)
-            let entriesWidth = CGFloat(preview.total) * pillWidth + CGFloat(max(preview.total - 1, 0)) * pillSpacing
-            let entriesStart = contentStart + barInnerPadding + max((barContentWidth - entriesWidth) / 2, 0)
-            let selectedCenterX = entriesStart + CGFloat(preview.index) * (pillWidth + pillSpacing) + pillWidth / 2
-            let bubbleLeft = min(max(selectedCenterX - bubbleWidth / 2, horizontalMargin), screenWidth - bubbleWidth - horizontalMargin)
-            let arrowX = min(max(selectedCenterX - bubbleLeft, 24), bubbleWidth - 24)
-
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    Spacer()
-                        .frame(width: arrowX - 13)
-                    Triangle()
-                        .fill(.ultraThinMaterial)
-                        .frame(width: 26, height: 14)
-                        .overlay(
-                            Triangle()
-                                .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-                        )
-                    Spacer(minLength: 0)
-                }
-                .frame(width: bubbleWidth)
-
-                showHistoryPreviewContent(for: preview.entry.country)
-            }
-            .frame(width: bubbleWidth)
-            .position(x: bubbleLeft + bubbleWidth / 2, y: 73)
-        }
-        .frame(height: 146)
-        .onTapGesture {
-            dismissShowmasterHistoryPreview()
-        }
-    }
-
-    func showHistoryPreviewContent(for country: Country) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            FlagImage(country: country, width: 74, height: 50)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7)
-                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-                )
-
-            MiniLocationGlobe(country: country, accentColor: tealAccentColor)
-                .frame(width: 50, height: 50)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(countryName(for: country))
-                    .font(.headline.weight(.bold))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.78)
-                Text(localizedScope(country.continent))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if selectedSubject == .capitals {
-                    Text(capitalName(for: country))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(tealAccentColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-                }
-                Text("Showmaster")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(tealAccentColor)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(tealAccentColor.opacity(0.32), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
-        .contentShape(RoundedRectangle(cornerRadius: 12))
-        .onTapGesture {
-            dismissShowmasterHistoryPreview()
-        }
-    }
-
-    func showShowmasterHistoryPreview(_ preview: ShowHistoryPreview) {
+    func showShowmasterHistoryPreview(_ preview: PracticeHistoryPreview) {
         Haptics.tap()
         withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
+            practiceHistoryGlobeCountry = nil
+            selectedHistoryPillFrame = nil
             showHistoryPreview = preview
         }
     }
 
     func dismissShowmasterHistoryPreview() {
         withAnimation(.easeOut(duration: 0.16)) {
+            practiceHistoryGlobeCountry = nil
             showHistoryPreview = nil
+            selectedHistoryPillFrame = nil
         }
     }
 
@@ -607,49 +626,16 @@ extension ContentView {
 
     var practiceSwipeCard: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(practiceSwipeColor.opacity(practiceSwipeOpacity))
-                .frame(height: 260)
-                .overlay(alignment: practiceCardDragOffset >= 0 ? .leading : .trailing) {
-                    Image(systemName: practiceCardDragOffset >= 0 ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .font(.system(size: 44, weight: .bold))
-                        .foregroundStyle(practiceCardDragOffset >= 0 ? .green : .red)
-                        .opacity(practiceSwipeOpacity)
-                        .padding(.horizontal, 26)
+            swipeableStudyCard(
+                dragOffset: $practiceCardDragOffset,
+                entryOffset: $practiceCardEntryOffset,
+                entryOpacity: $practiceCardEntryOpacity,
+                isFinishingSwipe: $isFinishingPracticeSwipe,
+                isInteractionBlocked: practiceRecapPromptIsVisible,
+                onFinishSwipe: { translation, predictedTranslation in
+                    finishPracticeSwipe(translation: translation, predictedTranslation: predictedTranslation)
                 }
-
-            FlipCard(country: currentCountry, isFlipped: cardIsFlipped, hasGoldAura: tier(for: currentCountry) == .s, language: appLanguage, subject: selectedSubject, capital: capitalName(for: currentCountry))
-                .id(currentCountry.id)
-                .offset(x: practiceCardDragOffset, y: practiceCardEntryOffset)
-                .opacity((isFinishingPracticeSwipe ? 0.82 : 1) * practiceCardEntryOpacity)
-                .scaleEffect(practiceCardEntryOpacity < 1 ? 0.985 : 1)
-                .rotationEffect(.degrees(max(min(Double(practiceCardDragOffset / 22), 10), -10)))
-                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                .animation(.spring(response: 0.32, dampingFraction: 0.88), value: currentCountry.id)
-                .animation(.spring(response: 0.34, dampingFraction: 0.86), value: practiceCardEntryOffset)
-                .animation(.easeOut(duration: 0.2), value: practiceCardEntryOpacity)
-                .gesture(
-                    DragGesture(minimumDistance: 8)
-                        .onChanged { value in
-                            guard !isFinishingPracticeSwipe, !practiceRecapPromptIsVisible else { return }
-                            guard !FlagZoomInteractionState.isPinching else {
-                                practiceCardDragOffset = 0
-                                return
-                            }
-                            practiceCardDragOffset = max(min(value.translation.width, 220), -220)
-                        }
-                        .onEnded { value in
-                            guard !practiceRecapPromptIsVisible else {
-                                practiceCardDragOffset = 0
-                                return
-                            }
-                            guard !FlagZoomInteractionState.isPinching else {
-                                practiceCardDragOffset = 0
-                                return
-                            }
-                            finishPracticeSwipe(translation: value.translation, predictedTranslation: value.predictedEndTranslation)
-                        }
-                )
+            )
 
             if hintBlockFeedbackIsVisible {
                 Label(L("Mit Tipp nur als nicht gewusst möglich", "With a hint, only not known is possible"), systemImage: "lock.fill")
@@ -662,14 +648,6 @@ extension ContentView {
                     .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96)))
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.top, 12)
-            }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 12))
-        .onTapGesture {
-            guard !isFinishingPracticeSwipe, !practiceRecapPromptIsVisible, !FlagZoomInteractionState.isPinching else { return }
-            Haptics.tap()
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                cardIsFlipped.toggle()
             }
         }
     }
@@ -733,12 +711,32 @@ extension ContentView {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    var practiceSwipeColor: Color {
-        practiceCardDragOffset >= 0 ? .green : .red
-    }
+    var showSwipeCard: some View {
+        ZStack {
+            swipeableStudyCard(
+                dragOffset: $showCardDragOffset,
+                entryOffset: $showCardEntryOffset,
+                entryOpacity: $showCardEntryOpacity,
+                isFinishingSwipe: $isFinishingShowSwipe,
+                isInteractionBlocked: showLimitReached,
+                onFinishSwipe: { translation, predictedTranslation in
+                    finishShowSwipe(translation: translation, predictedTranslation: predictedTranslation)
+                }
+            )
 
-    var practiceSwipeOpacity: Double {
-        min(abs(Double(practiceCardDragOffset)) / 140, 0.35)
+            if hintBlockFeedbackIsVisible {
+                Label(L("Mit Tipp nur als nicht gewusst möglich", "With a hint, only not known is possible"), systemImage: "lock.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(Color.orange.opacity(0.94), in: Capsule())
+                    .shadow(color: .orange.opacity(0.28), radius: 12, y: 5)
+                    .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.96)))
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 12)
+            }
+        }
     }
 
     var showView: some View {
@@ -755,12 +753,13 @@ extension ContentView {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
 
-                    ShowHistoryBar(
-                        entries: showSessionEntries,
+                    PracticeHistoryBar(
+                        results: showSessionEntries.map(\.wasKnown),
+                        changes: showSessionEntries,
                         limit: selectedShowCardLimit,
                         accentColor: tealAccentColor,
-                        selectedEntryID: showHistoryPreview?.id,
-                        onSelectEntry: showShowmasterHistoryPreview
+                        selectedChangeID: showHistoryPreview?.id,
+                        onSelectChange: showShowmasterHistoryPreview
                     )
                     .background(
                         GeometryReader { proxy in
@@ -768,37 +767,35 @@ extension ContentView {
                         }
                     )
 
-                    FlipCard(country: currentCountry, isFlipped: cardIsFlipped, hasGoldAura: tier(for: currentCountry) == .s, language: appLanguage, subject: selectedSubject, capital: capitalName(for: currentCountry))
-                        .id(currentCountry.id)
-                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                        .animation(.easeInOut(duration: 0.22), value: currentCountry.id)
-                        .contentShape(RoundedRectangle(cornerRadius: 12))
-                        .onTapGesture {
-                            Haptics.tap()
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                cardIsFlipped.toggle()
-                            }
-                        }
-                    Button {
-                        Haptics.tap()
-                        nextShowCard()
-                    } label: {
-                        Text(L("Nächste Flagge", "Next flag"))
-                            .frame(maxWidth: .infinity, minHeight: 50)
-                            .contentShape(RoundedRectangle(cornerRadius: 12))
+                    VStack(spacing: 8) {
+                        showSwipeCard
+                        Text(L("Wischen!", "Swipe!"))
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(ActionButtonStyle(color: tealAccentColor))
-                    .disabled(showLimitReached)
 
-                    Button {
-                        Haptics.tap()
-                        isShowingShowCancelConfirmation = true
-                    } label: {
-                        Text(L("Abbrechen", "Cancel"))
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .contentShape(RoundedRectangle(cornerRadius: 12))
+                    HStack(spacing: 10) {
+                        Button {
+                            Haptics.tap()
+                            undoLastShowSwipe()
+                        } label: {
+                            Label(L("Rückgängig", "Undo"), systemImage: "arrow.uturn.backward")
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(ActionButtonStyle(color: tealAccentColor))
+                        .disabled(showUndoSnapshot == nil)
+
+                        Button {
+                            Haptics.tap()
+                            isShowingShowCancelConfirmation = true
+                        } label: {
+                            Text(L("Abbrechen", "Cancel"))
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .contentShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(ActionButtonStyle(color: tealAccentColor))
                     }
-                    .buttonStyle(ActionButtonStyle(color: tealAccentColor))
 
                     hintControl
                 } else {
@@ -840,25 +837,51 @@ extension ContentView {
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        dismissShowmasterHistoryPreview()
+                        if practiceHistoryGlobeCountry != nil {
+                            dismissPracticeHistoryGlobePreview()
+                        } else {
+                            dismissShowmasterHistoryPreview()
+                        }
                     }
                     .zIndex(1)
 
-                showHistoryPreviewBubble(for: showHistoryPreview)
+                historyFloatingPreview(
+                    for: showHistoryPreview,
+                    sourceFrame: selectedHistoryPillFrame,
+                    onDismiss: dismissShowmasterHistoryPreview,
+                    onShowGlobe: { country in showPracticeHistoryGlobePreview(for: country) }
+                )
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .padding(.top, showHistoryBarMinY + 38)
-                    .transition(.scale(scale: 0.25, anchor: .top).combined(with: .opacity))
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                     .zIndex(2)
+            }
+
+            if let practiceHistoryGlobeCountry, showHistoryPreview != nil {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        dismissPracticeHistoryGlobePreview()
+                    }
+                    .zIndex(3)
+
+                practiceHistoryGlobePopup(for: practiceHistoryGlobeCountry)
+                    .frame(maxHeight: .infinity, alignment: .center)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+                    .zIndex(4)
             }
         }
         .coordinateSpace(name: "showPreviewSpace")
+        .coordinateSpace(name: "historyPreviewSpace")
         .animation(.spring(response: 0.28, dampingFraction: 0.78), value: showHistoryPreview?.id)
         .onPreferenceChange(ShowHistoryBarMinYKey.self) { value in
             if value > 0 {
                 showHistoryBarMinY = value
             }
         }
-        .onAppear { resetShowSession() }
+        .onPreferenceChange(SelectedHistoryPillFrameKey.self) { frame in
+            selectedHistoryPillFrame = frame
+        }
         .onChange(of: selectedShowContinents) { _, _ in
             resetShowSession(clearDeck: true)
         }

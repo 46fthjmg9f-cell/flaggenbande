@@ -49,17 +49,167 @@ extension ContentView {
 
     var onlineLeagueLeaderboard: [OnlinePlayerStats] {
         deduplicatedOnlineLeaderboard.sorted {
-            if $0.leagueBestScore == $1.leagueBestScore {
-                return $0.leaguePlayed > $1.leaguePlayed
+            if $0.runBestScore(for: selectedSubject) == $1.runBestScore(for: selectedSubject) {
+                return $0.runPlayed(for: selectedSubject) > $1.runPlayed(for: selectedSubject)
             }
-            return $0.leagueBestScore > $1.leagueBestScore
+            return $0.runBestScore(for: selectedSubject) > $1.runBestScore(for: selectedSubject)
         }
     }
 
     @MainActor
     func startLeagueMatch() async {
-        guard consumeFreeDailyLeagueRunIfAllowed() else { return }
+        guard let practiceOrder = await prepareLeaguePracticeAssetsIfNeeded() else { return }
+        isPreparingLeagueAssets = true
+        defer { isPreparingLeagueAssets = false }
+        await warmLeagueOpeningWindow(for: practiceOrder)
+        startLeagueMatch(variant: .practice, reservation: nil, flagOrder: practiceOrder)
+    }
 
+    @MainActor
+    func warmLeagueOpeningWindow(for countries: [Country]) async {
+        // Decode the farther images first so the immediately upcoming flags are
+        // the newest entries in the bounded cache and are least likely to evict.
+        let openingWindow = Array(countries.prefix(20).reversed())
+        await FlagImageCache.shared.warmInMemory(openingWindow)
+    }
+
+    func leaguePracticeAssetSignature(for countries: [Country]) -> String {
+        countries.map(\.code).sorted().joined(separator: "|")
+    }
+
+    @MainActor
+    func prepareLeaguePracticeAssetsIfNeeded() async -> [Country]? {
+        let countries = availableCountries
+        let signature = leaguePracticeAssetSignature(for: countries)
+        if signature == leaguePreparedPracticeAssetSignature,
+           leaguePreparedPracticeOrder.count == countries.count,
+           !leaguePreparedPracticeOrder.isEmpty {
+            return leaguePreparedPracticeOrder
+        }
+
+        guard !isPreparingLeagueAssets else { return nil }
+        isPreparingLeagueAssets = true
+        leagueAssetPreloadError = nil
+        defer { isPreparingLeagueAssets = false }
+
+        let practiceOrder = countries.shuffled()
+        guard await prepareLeagueAssets(for: practiceOrder) else { return nil }
+        leaguePreparedPracticeOrder = practiceOrder
+        leaguePreparedPracticeAssetSignature = signature
+        return practiceOrder
+    }
+
+    @MainActor
+    func prepareDailyLeagueOpeningAssetsIfAvailable() async {
+        guard let dailyLeagueChallenge else { return }
+        let order = countries(forDailyOrder: dailyLeagueChallenge.flagOrder)
+        guard !order.isEmpty, !isPreparingLeagueAssets else { return }
+
+        let signature = leagueDailyAssetSignature(for: dailyLeagueChallenge)
+        guard signature != leaguePreparedDailyAssetSignature else { return }
+
+        isPreparingLeagueAssets = true
+        defer { isPreparingLeagueAssets = false }
+        guard await prepareLeagueAssets(for: order) else { return }
+        leaguePreparedDailyAssetSignature = signature
+    }
+
+    func leagueDailyAssetSignature(for challenge: DailyChallenge) -> String {
+        "\(challenge.dateKey)|\(challenge.mode)|\(challenge.flagOrder.joined(separator: "|"))"
+    }
+
+    @MainActor
+    func startDailyLeagueMatch() async {
+        guard !isPreparingLeagueAssets else { return }
+        isLoadingDailyLeague = true
+        isPreparingLeagueAssets = true
+        dailyLeagueStatusMessage = nil
+        leagueAssetPreloadError = nil
+        defer {
+            isLoadingDailyLeague = false
+            isPreparingLeagueAssets = false
+        }
+
+        let expectedMode = DailyFlaggenrunService.mode(for: selectedSubject)
+        let expectedDateKey = DailyFlaggenrunService.dateKey()
+        if dailyLeagueChallenge?.mode != expectedMode || dailyLeagueChallenge?.dateKey != expectedDateKey {
+            await refreshDailyLeagueStatus()
+        }
+        guard let dailyLeagueChallenge,
+              dailyLeagueChallenge.mode == expectedMode,
+              dailyLeagueChallenge.dateKey == expectedDateKey else {
+            leagueAssetPreloadError = L("Der Daily Run konnte nicht vorbereitet werden. Bitte versuche es erneut.", "The Daily Run could not be prepared. Please try again.")
+            return
+        }
+
+        let plannedOrder = countries(forDailyOrder: dailyLeagueChallenge.flagOrder)
+        let plannedSignature = leagueDailyAssetSignature(for: dailyLeagueChallenge)
+        if plannedSignature != leaguePreparedDailyAssetSignature {
+            guard await prepareLeagueAssets(for: plannedOrder) else { return }
+            leaguePreparedDailyAssetSignature = plannedSignature
+        }
+        await warmLeagueOpeningWindow(for: plannedOrder)
+        await requestLeagueNotificationPermissionIfNeeded()
+
+        do {
+            let reservation = try await DailyFlaggenrunService.reserveAttempt(
+                subject: selectedSubject,
+                gameCenterPlayerID: gameCenterPlayerID,
+                displayName: onlineDisplayName,
+                countries: dailyLeagueCountries
+            )
+            let orderedCountries = countries(forDailyOrder: reservation.flagOrder)
+            if orderedCountries.map(\.code) != plannedOrder.map(\.code) {
+                guard await prepareLeagueAssets(for: orderedCountries) else { return }
+            }
+            dailyLeagueReservation = reservation
+            dailyLeagueStatus?.attemptsUsed += 1
+            startLeagueMatch(variant: .daily, reservation: reservation, flagOrder: orderedCountries)
+        } catch {
+            dailyLeagueStatusMessage = OnlineStatsService.userFacingMessage(for: error)
+        }
+    }
+
+    @MainActor
+    func prepareLeagueAssets(for countries: [Country]) async -> Bool {
+        guard !countries.isEmpty else {
+            leagueAssetPreloadError = L("Keine Flaggen für diesen Run gefunden.", "No flags were found for this run.")
+            return false
+        }
+
+        leagueAssetPreloadCompleted = 0
+        leagueAssetPreloadTotal = countries.count
+        let report = await FlagImageCache.shared.preloadToDisk(
+            countries: countries,
+            maximumConcurrentDownloads: 6,
+            maximumDuration: 30
+        ) { completed, total in
+            leagueAssetPreloadCompleted = completed
+            leagueAssetPreloadTotal = total
+        }
+
+        guard report.isComplete else {
+            leagueAssetPreloadError = L(
+                "Nicht alle Flaggen konnten geladen werden (\(report.cachedCount)/\(report.totalCount)). Prüfe bitte deine Verbindung und versuche es erneut.",
+                "Not all flags could be loaded (\(report.cachedCount)/\(report.totalCount)). Please check your connection and try again."
+            )
+            return false
+        }
+
+        // Keep the opening stretch decoded in memory. The complete run remains
+        // available on disk, while a rolling look-ahead warms later flags.
+        await warmLeagueOpeningWindow(for: countries)
+        leagueAssetPreloadCompleted = leagueAssetPreloadTotal
+        return true
+    }
+
+    @MainActor
+    func startLeagueMatch(variant: LeagueRunVariant, reservation: DailyAttemptReservation?, flagOrder: [Country]) {
+        leagueRunVariant = variant
+        dailyLeagueReservation = reservation
+        dailyLeagueFlagOrder = flagOrder
+        dailyLeagueFlagIndex = 0
+        lastDailyLeagueResultWasBest = nil
         leagueCorrect = 0
         leagueWrong = 0
         leagueScore = 0
@@ -67,13 +217,19 @@ extension ContentView {
         leagueRecentCountryCodes = []
         leagueAnswerRecords = []
         leagueAnswerText = ""
+        leagueAnswerCandidates = []
         leagueAnswerMatch = nil
         leagueAutoSubmitTask?.cancel()
         leagueAutoSubmitTask = nil
+        leagueFocusTask?.cancel()
+        leagueFocusTask = nil
         leagueAdvanceTask?.cancel()
         leagueAdvanceTask = nil
         leagueFeedbackClearTask?.cancel()
         leagueFeedbackClearTask = nil
+        leagueCandidateAttentionTask?.cancel()
+        leagueCandidateAttentionTask = nil
+        leagueCandidateAttentionPulse = false
         leagueCountdownTask?.cancel()
         leagueCountdownTask = nil
         leagueTimerIsRunning = false
@@ -83,24 +239,57 @@ extension ContentView {
         leagueCurrentQuestionStartedAt = Date()
         leagueAnswerFeedback = nil
         leagueRevealedCountryName = ""
-        leagueMatchPhase = .loading
+        leagueAnswerCandidates = []
         leagueStartCountdown = 3
         leagueFirstFlagIsReady = false
         leaguePreloadedFlagImage = nil
+        leagueLookaheadWarmTask?.cancel()
+        leagueLookaheadWarmTask = nil
         leagueTimerStartTask?.cancel()
         leagueTimerStartTask = nil
         leagueCurrentCountry = nextLeagueCountry()
+        if let flagURL = leagueCurrentCountry.flagImageURL {
+            leaguePreloadedFlagImage = FlagImageCache.shared.image(for: flagURL)
+        }
+        // Always show the short preparation phase. It gives iOS time to create
+        // the keyboard even when the first flag was already decoded.
+        leagueMatchPhase = .loading
         leagueMatchActive = true
+    }
+
+    func focusLeagueAnswerInputAfterLayout(delay: Double = 0.30) {
+        leagueFocusTask?.cancel()
+        leagueFocusTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            guard leagueMatchActive, leagueMatchPhase == .playing, !leagueInputIsLocked else { return }
+            if !isLeagueAnswerFocused {
+                isLeagueAnswerFocused = true
+            }
+            leagueFocusTask = nil
+        }
     }
 
     func prepareLeagueTimerAfterLayout() {
         leagueTimerStartTask?.cancel()
         leagueTimerStartTask = Task { @MainActor in
             await Task.yield()
-            leagueMatchPhase = .loading
-            await prepareFirstLeagueFlag()
+            if leaguePreloadedFlagImage == nil {
+                leagueMatchPhase = .loading
+                await prepareFirstLeagueFlag()
+            } else {
+                scheduleLeagueLookaheadWarmup()
+            }
             guard leagueMatchActive else { return }
             leagueFirstFlagIsReady = true
+
+            // The real input field stays mounted behind the preparation layer.
+            // Focus it before the countdown so keyboard creation and its layout
+            // animation are complete well before the timed round begins.
+            isLeagueAnswerFocused = true
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(320))
+            guard leagueMatchActive else { return }
 
             leagueMatchPhase = .countdown
             for value in stride(from: 3, through: 1, by: -1) {
@@ -109,11 +298,15 @@ extension ContentView {
                 guard leagueMatchActive else { return }
             }
 
+            leagueAnswerText = ""
+            leagueAnswerCandidates = []
+            leagueAnswerMatch = nil
             leagueMatchPhase = .playing
             leagueCurrentQuestionStartedAt = Date()
             await Task.yield()
-            isLeagueAnswerFocused = true
-            try? await Task.sleep(for: .milliseconds(180))
+            // Allow the real input field to inherit the already warm keyboard
+            // and finish its first layout before starting the fair-play timer.
+            try? await Task.sleep(for: .milliseconds(320))
             guard leagueMatchActive else { return }
             leagueTimerIsRunning = true
             startLeagueCountdown()
@@ -121,27 +314,34 @@ extension ContentView {
     }
 
     func prepareFirstLeagueFlag() async {
-        for _ in 0..<8 {
-            guard leagueMatchActive else { return }
-            if let image = await preloadedLeagueFlagImage(for: leagueCurrentCountry) {
-                leaguePreloadedFlagImage = image
-                return
-            }
-            leagueCurrentCountry = nextLeagueCountry()
-        }
-
-        leaguePreloadedFlagImage = nil
+        guard leagueMatchActive else { return }
+        leaguePreloadedFlagImage = await preloadedLeagueFlagImage(for: leagueCurrentCountry)
+        scheduleLeagueLookaheadWarmup()
     }
 
     func preloadedLeagueFlagImage(for country: Country) async -> UIImage? {
         guard let url = country.flagImageURL else { return nil }
-        do {
-            let result = try await OnlineStatsService.withTimeout(seconds: 4) {
-                try await FlagImageCache.shared.loadImage(from: url)
+        return try? await FlagImageCache.shared.loadImage(from: url)
+    }
+
+    func scheduleLeagueLookaheadWarmup() {
+        guard leagueLookaheadWarmTask == nil, !dailyLeagueFlagOrder.isEmpty else { return }
+        let startIndex = dailyLeagueFlagIndex % dailyLeagueFlagOrder.count
+        let orderedLookahead = (0..<20).map { offset in
+            dailyLeagueFlagOrder[(startIndex + offset) % dailyLeagueFlagOrder.count]
+        }
+        leagueLookaheadWarmTask = Task { @MainActor in
+            await FlagImageCache.shared.warmInMemory(Array(orderedLookahead.reversed()))
+            guard !Task.isCancelled else { return }
+            leagueLookaheadWarmTask = nil
+
+            // If the player advanced while this window was being decoded,
+            // immediately warm a new window from the latest position.
+            if leagueMatchActive,
+               !dailyLeagueFlagOrder.isEmpty,
+               dailyLeagueFlagIndex % dailyLeagueFlagOrder.count != startIndex {
+                scheduleLeagueLookaheadWarmup()
             }
-            return result
-        } catch {
-            return nil
         }
     }
 
@@ -162,7 +362,46 @@ extension ContentView {
     }
 
     func submitLeagueAnswer() {
+        // Return only submits a sufficiently clear recognition. Ambiguous or
+        // unusable input keeps the keyboard open instead of recording a guess.
+        guard leagueAnswerCandidates.count < 2 else {
+            keepLeagueKeyboardOpen(highlightCandidates: true)
+            return
+        }
+        guard let match = leagueAnswerMatch ?? bestLeagueAnswerMatch(for: leagueAnswerText),
+              match.isAcceptable || match.isCertain else {
+            keepLeagueKeyboardOpen(highlightCandidates: false)
+            return
+        }
         submitLeagueAnswer(forcedCorrectness: nil, keepsTypedAnswer: true)
+    }
+
+    func keepLeagueKeyboardOpen(highlightCandidates: Bool) {
+        guard leagueMatchActive, leagueTimerIsRunning, !leagueInputIsLocked else { return }
+        if !isLeagueAnswerFocused {
+            focusLeagueAnswerInputAfterLayout(delay: 0.01)
+        }
+
+        leagueCandidateAttentionTask?.cancel()
+        leagueCandidateAttentionTask = nil
+        guard highlightCandidates, leagueAnswerCandidates.count >= 2 else {
+            leagueCandidateAttentionPulse = false
+            return
+        }
+
+        leagueCandidateAttentionPulse = false
+        leagueCandidateAttentionTask = Task { @MainActor in
+            await Task.yield()
+            guard leagueMatchActive, leagueAnswerCandidates.count >= 2 else { return }
+            withAnimation(.spring(response: 0.20, dampingFraction: 0.58)) {
+                leagueCandidateAttentionPulse = true
+            }
+            try? await Task.sleep(for: .milliseconds(480))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.18)) {
+                leagueCandidateAttentionPulse = false
+            }
+        }
     }
 
     func submitLeagueAnswer(forcedCorrectness: Bool?, keepsTypedAnswer: Bool) {
@@ -179,6 +418,7 @@ extension ContentView {
         let pointsAwarded = isCorrect ? leaguePointsForAnswer(responseTime: responseTime) : 0
 
         leagueLockedAnswerText = keepsTypedAnswer ? leagueAnswerText : ""
+        leagueAnswerCandidates = []
         leagueInputIsLocked = true
         leagueTypingLockedUntil = .distantFuture
         leagueMatchPhase = .feedback
@@ -228,9 +468,14 @@ extension ContentView {
             let nextImage = await preloadedLeagueFlagImage(for: nextCountry)
             leagueAnswerText = ""
             leagueLockedAnswerText = ""
+            leagueAnswerCandidates = []
+            leagueCandidateAttentionTask?.cancel()
+            leagueCandidateAttentionTask = nil
+            leagueCandidateAttentionPulse = false
             leagueAnswerMatch = nil
             leagueCurrentCountry = nextCountry
             leaguePreloadedFlagImage = nextImage
+            scheduleLeagueLookaheadWarmup()
             leagueMatchPhase = .playing
             leagueTypingLockedUntil = Date().addingTimeInterval(0.32)
             try? await Task.sleep(for: .milliseconds(320))
@@ -238,17 +483,25 @@ extension ContentView {
             leagueInputIsLocked = false
             leagueTypingLockedUntil = .distantPast
             leagueCurrentQuestionStartedAt = Date()
-            isLeagueAnswerFocused = true
         }
     }
 
-    func finishLeagueMatch() {
+    func finishLeagueMatch(aborted: Bool = false) {
         guard leagueMatchActive else { return }
+        let finishedVariant = leagueRunVariant
+        let finishedReservation = dailyLeagueReservation
+        let finishedScore = leagueScore
+        let finishedCorrect = leagueCorrect
+        let finishedWrong = leagueWrong
+        let finishedRemainingTime = Double(leagueSecondsRemaining)
+        let finishedAnswerRecords = leagueAnswerRecords
         leagueMatchActive = false
         leagueTimerIsRunning = false
         isLeagueAnswerFocused = false
         leagueAutoSubmitTask?.cancel()
         leagueAutoSubmitTask = nil
+        leagueFocusTask?.cancel()
+        leagueFocusTask = nil
         leagueTimerStartTask?.cancel()
         leagueTimerStartTask = nil
         leagueCountdownTask?.cancel()
@@ -257,6 +510,11 @@ extension ContentView {
         leagueAdvanceTask = nil
         leagueFeedbackClearTask?.cancel()
         leagueFeedbackClearTask = nil
+        leagueCandidateAttentionTask?.cancel()
+        leagueCandidateAttentionTask = nil
+        leagueCandidateAttentionPulse = false
+        leagueLookaheadWarmTask?.cancel()
+        leagueLookaheadWarmTask = nil
         leagueInputIsLocked = false
         leagueLockedAnswerText = ""
         leagueTypingLockedUntil = .distantPast
@@ -267,16 +525,21 @@ extension ContentView {
         let result = LeagueMatchResult(
             id: UUID(),
             date: Date(),
-            opponentName: L("Highscore", "High score"),
-            ownScore: leagueScore,
+            opponentName: finishedVariant == .daily ? dailyRunTitle : L("Übung", "Practice"),
+            ownScore: finishedScore,
             opponentScore: 0,
-            correct: leagueCorrect,
-            wrong: leagueWrong,
+            correct: finishedCorrect,
+            wrong: finishedWrong,
             duration: 60,
-            answerDetails: leagueAnswerRecords,
+            answerDetails: finishedAnswerRecords,
             ratingBefore: nil,
             ratingAfter: nil,
-            ratingDelta: nil
+            ratingDelta: nil,
+            runVariant: finishedVariant,
+            dailyAttemptNumber: finishedReservation?.attemptNumber,
+            dailyDateKey: finishedReservation?.dateKey,
+            subject: finishedReservation?.subject ?? selectedSubject,
+            wasAborted: aborted
         )
 
         leagueSummaryResult = result
@@ -284,25 +547,161 @@ extension ContentView {
         updateActiveProfile { profile in
             profile.recordLeagueMatch(result)
         }
-        scheduleOnlineStatsSync()
+        if finishedVariant == .daily, let finishedReservation {
+            let completion = DailyRunCompletion(
+                reservation: finishedReservation,
+                displayName: onlineDisplayName,
+                score: finishedScore,
+                correctCount: finishedCorrect,
+                wrongCount: finishedWrong,
+                duration: max(0, 60 - finishedRemainingTime),
+                remainingTime: finishedRemainingTime,
+                completed: !aborted,
+                aborted: aborted,
+                // The upload retry queue is durable and may contain several
+                // offline runs. The service only submits the first 20 answers,
+                // so retaining a small safety margin avoids needless growth.
+                answerRecords: Array(finishedAnswerRecords.prefix(40)),
+                completedAt: result.date
+            )
+            DailyCompletionQueue.enqueue(completion)
+            Task { @MainActor in
+                await completeDailyLeagueMatch(completion)
+            }
+        }
         Haptics.notify(.success)
         playLeagueSound(success: true)
     }
 
+    func abortActiveDailyLeagueMatchIfNeeded() {
+        guard leagueMatchActive, leagueRunVariant == .daily else { return }
+        finishLeagueMatch(aborted: true)
+    }
+
+    @MainActor
+    func completeDailyLeagueMatch(_ completion: DailyRunCompletion) async {
+        do {
+            let leaderboard = try await DailyFlaggenrunService.completeAttempt(
+                completion,
+                gameCenterPlayerID: gameCenterPlayerID
+            )
+            DailyCompletionQueue.remove(id: completion.id)
+            if completion.reservation.subject == selectedSubject {
+                dailyLeagueLeaderboard = leaderboard
+                lastDailyLeagueResultWasBest = leaderboard.first(where: { $0.userId == completion.reservation.userId })?.bestAttemptNumber == completion.reservation.attemptNumber
+                await refreshDailyLeagueStatus()
+            }
+        } catch {
+            dailyLeagueStatusMessage = OnlineStatsService.userFacingMessage(for: error)
+        }
+        dailyLeagueReservation = nil
+        dailyLeagueFlagOrder = []
+        dailyLeagueFlagIndex = 0
+    }
+
+    @MainActor
+    func retryPendingDailyCompletions() async {
+        guard onlineFeaturesEnabled, !isRetryingPendingDailyCompletions else { return }
+        let pending = DailyCompletionQueue.load()
+        guard !pending.isEmpty else { return }
+        isRetryingPendingDailyCompletions = true
+        defer { isRetryingPendingDailyCompletions = false }
+
+        for completion in pending {
+            do {
+                let leaderboard = try await DailyFlaggenrunService.completeAttempt(
+                    completion,
+                    gameCenterPlayerID: gameCenterPlayerID
+                )
+                DailyCompletionQueue.remove(id: completion.id)
+                if completion.reservation.subject == selectedSubject,
+                   completion.reservation.dateKey == DailyFlaggenrunService.dateKey() {
+                    dailyLeagueLeaderboard = leaderboard
+                }
+            } catch {
+                dailyLeagueStatusMessage = OnlineStatsService.userFacingMessage(for: error)
+                break
+            }
+        }
+    }
+
+    @MainActor
+    func refreshDailyLeagueStatus() async {
+        dailyLeagueRefreshID += 1
+        let refreshID = dailyLeagueRefreshID
+        let requestedSubject = selectedSubject
+        isLoadingDailyLeague = true
+        defer {
+            if dailyLeagueRefreshID == refreshID {
+                isLoadingDailyLeague = false
+            }
+        }
+        do {
+            let daily = try await DailyFlaggenrunService.status(subject: requestedSubject, gameCenterPlayerID: gameCenterPlayerID, countries: dailyLeagueCountries)
+            guard dailyLeagueRefreshID == refreshID,
+                  selectedSubject == requestedSubject,
+                  daily.status.dateKey == DailyFlaggenrunService.dateKey(),
+                  daily.status.mode == DailyFlaggenrunService.mode(for: requestedSubject) else { return }
+            dailyLeagueChallenge = daily.challenge
+            dailyLeagueStatus = daily.status
+            dailyLeagueLeaderboard = daily.leaderboard
+            dailyLeagueAttempts = daily.attempts
+            dailyLeagueStatusMessage = nil
+        } catch {
+            guard dailyLeagueRefreshID == refreshID, selectedSubject == requestedSubject else { return }
+            dailyLeagueStatusMessage = OnlineStatsService.userFacingMessage(for: error)
+        }
+    }
+
+    @MainActor
+    func refreshTrophyLeaderboard() async {
+        guard onlineFeaturesEnabled, !isLoadingTrophyLeaderboard else { return }
+        isLoadingTrophyLeaderboard = true
+        defer { isLoadingTrophyLeaderboard = false }
+        do {
+            trophyLeaderboard = try await DailyFlaggenrunService.fetchTrophyLeaderboard()
+            trophyLeaderboardMessage = nil
+        } catch {
+            trophyLeaderboardMessage = OnlineStatsService.userFacingMessage(for: error)
+        }
+    }
+
+    var dailyLeagueCountries: [Country] {
+        allCountries
+    }
+
+    func countries(forDailyOrder order: [String]) -> [Country] {
+        let byCode = Dictionary(uniqueKeysWithValues: dailyLeagueCountries.map { ($0.code, $0) })
+        let ordered = order.compactMap { byCode[$0] }
+        return ordered.isEmpty ? dailyLeagueCountries : ordered
+    }
+
     func nextLeagueCountry() -> Country {
+        if !dailyLeagueFlagOrder.isEmpty {
+            let country = dailyLeagueFlagOrder[dailyLeagueFlagIndex % dailyLeagueFlagOrder.count]
+            dailyLeagueFlagIndex += 1
+            return country
+        }
+
         let candidates = availableCountries.filter { !leagueRecentCountryCodes.contains($0.code) }
         return (candidates.isEmpty ? availableCountries : candidates).randomElement() ?? allCountries[0]
     }
 
     func evaluateLeagueAnswer(_ value: String) {
         leagueAutoSubmitTask?.cancel()
+        leagueCandidateAttentionTask?.cancel()
+        leagueCandidateAttentionTask = nil
+        leagueCandidateAttentionPulse = false
         let match = bestLeagueAnswerMatch(for: value)
         leagueAnswerMatch = match
+        let candidates = leagueCandidateCountries(for: value)
+        leagueAnswerCandidates = candidates
 
         guard
             leagueMatchActive,
             let match,
             !leagueInputIsLocked,
+            candidates.isEmpty,
             match.isCertain
         else {
             return
@@ -311,16 +710,116 @@ extension ContentView {
         let submittedText = value
         leagueAutoSubmitTask = Task { @MainActor in
             await Task.yield()
-            guard leagueMatchActive, leagueAnswerText == submittedText, leagueAnswerMatch?.isCertain == true else { return }
+            guard leagueMatchActive,
+                  leagueAnswerText == submittedText,
+                  leagueAnswerCandidates.isEmpty,
+                  leagueAnswerMatch?.isCertain == true else { return }
             submitLeagueAnswer()
         }
+    }
+
+    func chooseLeagueCandidate(_ country: Country) {
+        guard leagueMatchActive, leagueTimerIsRunning, !leagueInputIsLocked else { return }
+        Haptics.tap()
+        let answerName = leagueExpectedAnswerName(for: country)
+        leagueAnswerText = answerName
+        leagueAnswerMatch = bestLeagueAnswerMatch(for: answerName)
+        leagueAnswerCandidates = []
+        submitLeagueAnswer(forcedCorrectness: nil, keepsTypedAnswer: true)
+    }
+
+    func leagueCandidateCountries(for rawAnswer: String) -> [Country] {
+        let answer = normalizedLeagueAnswer(rawAnswer)
+        guard answer.count >= 2 else { return [] }
+
+        let prefixCandidates = availableCountries
+            .filter { country in
+                leagueAnswerAliases(for: country).contains { alias in
+                    alias.normalizedName.hasPrefix(answer)
+                }
+            }
+            .sorted { first, second in
+                leagueExpectedAnswerName(for: first) < leagueExpectedAnswerName(for: second)
+            }
+
+        let exactCountryCodes = Set(prefixCandidates.compactMap { country -> String? in
+            leagueAnswerAliases(for: country).contains { $0.normalizedName == answer } ? country.code : nil
+        })
+        if !exactCountryCodes.isEmpty {
+            let longerPrefixCandidates = prefixCandidates.filter { !exactCountryCodes.contains($0.code) }
+            return longerPrefixCandidates.isEmpty ? [] : Array(prefixCandidates.prefix(4))
+        }
+
+        if prefixCandidates.count >= 2 {
+            return Array(prefixCandidates.prefix(4))
+        }
+
+        let rankedMatches = scoredLeagueAnswerMatches(for: answer)
+        guard let bestMatch = rankedMatches.first else { return [] }
+
+        if let prefixCountry = prefixCandidates.first {
+            let plausibleAlternative = rankedMatches.first { match in
+                match.country.code != prefixCountry.code
+                    && match.confidence >= 0.82
+                    && bestMatch.confidence - match.confidence <= 0.12
+            }
+            guard let plausibleAlternative else { return [] }
+            return [prefixCountry, plausibleAlternative.country]
+                .sorted { leagueExpectedAnswerName(for: $0) < leagueExpectedAnswerName(for: $1) }
+        }
+
+        let plausibleMatches = rankedMatches.prefix(while: { match in
+            match.confidence >= 0.80
+                && bestMatch.confidence - match.confidence <= 0.10
+        })
+        let candidates = plausibleMatches.prefix(4).map(\.country)
+        return candidates.count >= 2 ? candidates : []
     }
 
     func bestLeagueAnswerMatch(for rawAnswer: String) -> LeagueAnswerMatch? {
         let answer = normalizedLeagueAnswer(rawAnswer)
         guard answer.count >= 2 else { return nil }
 
-        let scoredMatches = availableCountries.compactMap { country -> LeagueAnswerMatch? in
+        // An exact country/capital name must always win, even when another name
+        // shares the same prefix (for example Niger and Nigeria).
+        if let exactCountry = availableCountries.first(where: { country in
+            leagueAnswerAliases(for: country).contains { $0.normalizedName == answer }
+        }), let exactAlias = leagueAnswerAliases(for: exactCountry).first(where: { $0.normalizedName == answer }) {
+            let hasLongerPrefixCollision = availableCountries.contains { country in
+                guard country.code != exactCountry.code else { return false }
+                return leagueAnswerAliases(for: country).contains { alias in
+                    alias.normalizedName.count > answer.count && alias.normalizedName.hasPrefix(answer)
+                }
+            }
+            return LeagueAnswerMatch(
+                country: exactCountry,
+                matchedName: exactAlias.displayName,
+                normalizedAnswer: answer,
+                normalizedMatchedName: exactAlias.normalizedName,
+                confidence: 1,
+                // Keep the exact answer valid when it is selected, but do not
+                // auto-submit while a longer country name is still possible
+                // (Niger/Nigeria, Guinea/Guinea-Bissau, etc.).
+                runnerUpConfidence: hasLongerPrefixCollision ? 0.95 : 0
+            )
+        }
+
+        let scoredMatches = scoredLeagueAnswerMatches(for: answer)
+
+        guard let best = scoredMatches.first else { return nil }
+        let runnerUp = scoredMatches.dropFirst().first?.confidence ?? 0
+        return LeagueAnswerMatch(
+            country: best.country,
+            matchedName: best.matchedName,
+            normalizedAnswer: best.normalizedAnswer,
+            normalizedMatchedName: best.normalizedMatchedName,
+            confidence: best.confidence,
+            runnerUpConfidence: runnerUp
+        )
+    }
+
+    func scoredLeagueAnswerMatches(for answer: String) -> [LeagueAnswerMatch] {
+        availableCountries.compactMap { country -> LeagueAnswerMatch? in
             let aliases = leagueAnswerAliases(for: country)
             guard let bestAlias = aliases
                 .map({ alias in (name: alias.displayName, normalizedName: alias.normalizedName, score: leagueSimilarity(answer: answer, candidate: alias.normalizedName)) })
@@ -345,17 +844,6 @@ extension ContentView {
             }
             return first.confidence > second.confidence
         }
-
-        guard let best = scoredMatches.first else { return nil }
-        let runnerUp = scoredMatches.dropFirst().first?.confidence ?? 0
-        return LeagueAnswerMatch(
-            country: best.country,
-            matchedName: best.matchedName,
-            normalizedAnswer: best.normalizedAnswer,
-            normalizedMatchedName: best.normalizedMatchedName,
-            confidence: best.confidence,
-            runnerUpConfidence: runnerUp
-        )
     }
 
     func leagueExpectedAnswerName(for country: Country) -> String {
@@ -393,13 +881,48 @@ extension ContentView {
             if name.contains("("), let prefix = name.split(separator: "(").first {
                 values.append(String(prefix))
             }
-            return values
+            return values.flatMap { leagueCountrySpellingVariants(for: $0) }
         })
 
         return aliases.map { alias in
             (displayName: alias, normalizedName: normalizedLeagueAnswer(alias))
         }
         .filter { !$0.normalizedName.isEmpty }
+    }
+
+    func leagueCountrySpellingVariants(for rawName: String) -> [String] {
+        let normalized = normalizedLeagueAnswer(rawName)
+        guard !normalized.isEmpty else { return [] }
+
+        var connectorVariants: Set<String> = [normalized]
+        if normalized.contains(" and ") {
+            connectorVariants.insert(normalized.replacingOccurrences(of: " and ", with: " und "))
+        }
+        if normalized.contains(" und ") {
+            connectorVariants.insert(normalized.replacingOccurrences(of: " und ", with: " and "))
+        }
+
+        var variants = connectorVariants
+        for value in connectorVariants {
+            let remainder: String?
+            if value.hasPrefix("st ") {
+                remainder = String(value.dropFirst(3))
+            } else if value.hasPrefix("saint ") {
+                remainder = String(value.dropFirst(6))
+            } else if value.hasPrefix("sankt ") {
+                remainder = String(value.dropFirst(6))
+            } else {
+                remainder = nil
+            }
+
+            if let remainder, !remainder.isEmpty {
+                variants.insert("st \(remainder)")
+                variants.insert("saint \(remainder)")
+                variants.insert("sankt \(remainder)")
+            }
+        }
+
+        return Array(variants)
     }
 
     func leagueCapitalExtraAliases(for country: Country) -> [String] {
@@ -441,6 +964,7 @@ extension ContentView {
 
     func leagueExtraAliases(for country: Country) -> [String] {
         switch country.code {
+        case "CH": return ["Swiss", "Suisse", "Svizzera", "Schweizerische Eidgenossenschaft"]
         case "US": return ["USA", "U.S.A.", "America", "United States of America", "Vereinigte Staaten von Amerika"]
         case "GB": return ["UK", "U.K.", "Great Britain", "Britain", "England", "Großbritannien", "Grossbritannien"]
         case "AE": return ["UAE", "Emirates", "VAE"]
@@ -492,6 +1016,17 @@ extension ContentView {
             return min(0.97, 0.80 + completeness * 0.18)
         }
 
+        // Prefer an almost complete country name with one or two mistakes over
+        // a merely similar beginning of a different, longer name. This covers
+        // inputs such as "dischi" for "Fidschi" without hard-coded countries.
+        if abs(answer.count - candidate.count) <= 1, longerCount >= 5 {
+            let nearCompleteDistance = levenshteinDistance(answer, candidate, maxDistance: 2)
+            if nearCompleteDistance <= 2 {
+                let nearCompleteSimilarity = 1 - (Double(nearCompleteDistance) / Double(longerCount))
+                return min(0.96, 0.76 + nearCompleteSimilarity * 0.16)
+            }
+        }
+
         if answer.count < candidate.count, answer.count >= 3 {
             let candidatePrefix = String(candidate.prefix(answer.count))
             let prefixDistance = levenshteinDistance(answer, candidatePrefix, maxDistance: 2)
@@ -499,7 +1034,7 @@ extension ContentView {
                 let prefixSimilarity = 1 - (Double(prefixDistance) / Double(max(answer.count, candidatePrefix.count)))
                 let completeness = Double(answer.count) / Double(candidate.count)
                 if prefixSimilarity >= 0.58 {
-                    return min(0.96, 0.72 + prefixSimilarity * 0.20 + completeness * 0.08)
+                    return min(0.94, 0.62 + prefixSimilarity * 0.20 + completeness * 0.12)
                 }
             }
         }
@@ -611,15 +1146,21 @@ extension ContentView {
     }
 
     func normalizedLeagueAnswer(_ value: String) -> String {
-        value
+        let stableLocale = Locale(identifier: "en_US_POSIX")
+        return value
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "ß", with: "ss")
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .lowercased()
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: stableLocale)
+            .lowercased(with: stableLocale)
             .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "–", with: " ")
+            .replacingOccurrences(of: "—", with: " ")
+            .replacingOccurrences(of: "/", with: " ")
             .replacingOccurrences(of: ".", with: "")
             .replacingOccurrences(of: ",", with: "")
             .replacingOccurrences(of: "'", with: "")
+            .replacingOccurrences(of: "’", with: "")
+            .replacingOccurrences(of: "ʻ", with: "")
             .replacingOccurrences(of: "(", with: " ")
             .replacingOccurrences(of: ")", with: " ")
             .split(separator: " ")

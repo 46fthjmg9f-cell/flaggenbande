@@ -93,8 +93,6 @@ extension ContentView {
         }
         .task {
             guard onlineFeaturesEnabled else { return }
-            await requestLeagueNotificationPermissionIfNeeded()
-            try? await Task.sleep(for: .milliseconds(350))
             guard onlineFeaturesEnabled, onlineLeaderboard.isEmpty else { return }
             if !isGameCenterAuthenticated {
                 authenticateGameCenter(syncAfterAuthentication: true)
@@ -426,7 +424,10 @@ extension ContentView {
         case .week:
             return selectedSubject == .capitals ? L("Hauptstädte gewusst", "Capitals known") : L("Flaggen gewusst", "Flags known")
         case .flaggenrun:
-            return L("Bester Run", "Best run")
+            if let date = player.runBestScoreDate(for: selectedSubject) {
+                return L("Bester Daily Run · \(formattedLeagueRunDate(date))", "Best Daily run · \(formattedLeagueRunDate(date))")
+            }
+            return L("Bester Daily Run", "Best Daily run")
         case .flaggenscore:
             return ""
         case .learningStreak:
@@ -437,7 +438,7 @@ extension ContentView {
     func onlineMetricValue(for player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> String {
         switch metric {
         case .week: return "\(displayedOnlineSubjectStats(for: player).learnedThisWeek)"
-        case .flaggenrun: return "\(player.leagueBestScore)"
+        case .flaggenrun: return "\(player.runBestScore(for: selectedSubject))"
         case .flaggenscore: return String(format: "%.1f", onlineFlaggenbossScore(for: player) * 100)
         case .learningStreak: return "\(onlineLearningStreak(for: player))"
         }

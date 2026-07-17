@@ -4,6 +4,42 @@ import Foundation
 // MARK: - Practice And Show Logic
 
 extension ContentView {
+    func continentSelection(from rawValue: String) -> Set<String> {
+        let values = rawValue
+            .split(separator: ",")
+            .map(String.init)
+            .filter { $0 == CountryScope.worldwide || continentOptions.contains($0) }
+        return values.isEmpty ? [CountryScope.worldwide] : Set(values)
+    }
+
+    func rawValue(fromContinentSelection selection: Set<String>) -> String {
+        let normalizedSelection = selection.isEmpty ? [CountryScope.worldwide] : selection
+        if normalizedSelection.contains(CountryScope.worldwide) {
+            return CountryScope.worldwide
+        }
+        return normalizedSelection.sorted().joined(separator: ",")
+    }
+
+    func restorePersistedPracticeContinents() {
+        // V1 only reset the exact legacy value "Europa". On installations
+        // where that migration had already run, Europe could still remain
+        // persisted. V2 deliberately establishes the new default once for
+        // every existing installation.
+        let migrationKey = "didMigratePracticeContinentDefaultToWorldwideV2"
+        if !UserDefaults.standard.bool(forKey: migrationKey) {
+            selectedPracticeContinentsRawValue = CountryScope.worldwide
+            selectedPracticeContinents = [CountryScope.worldwide]
+            UserDefaults.standard.set(true, forKey: migrationKey)
+            return
+        }
+
+        selectedPracticeContinents = continentSelection(from: selectedPracticeContinentsRawValue)
+    }
+
+    func persistPracticeContinents() {
+        selectedPracticeContinentsRawValue = rawValue(fromContinentSelection: selectedPracticeContinents)
+    }
+
     func cardLimitTitle(_ limit: Int) -> String {
         limit == 0 ? L("Endlos", "Endless") : L("\(limit) Karten", "\(limit) cards")
     }
@@ -144,20 +180,44 @@ extension ContentView {
             currentCountry = nextShowCountry()
             cardIsFlipped = false
             resetCurrentCardHint()
+            showCardDragOffset = 0
+            showCardEntryOffset = 0
+            showCardEntryOpacity = 1
+            isFinishingShowSwipe = false
         }
     }
 
-    func nextShowCard() {
-        guard !showLimitReached else {
+    func recordShowCard(isKnown: Bool) {
+        guard showSessionActive, !showLimitReached else {
             if freeDailyFlagLimitReached {
                 showFreeDailyFlagLimitUpsell()
             }
             return
         }
+        let reviewedCountry = currentCountry
+        let tierBefore = tier(for: reviewedCountry)
+        showUndoSnapshot = ShowUndoSnapshot(
+            appData: appData,
+            currentCountry: reviewedCountry,
+            showSessionCount: showSessionCount,
+            showSessionEntries: showSessionEntries,
+            showRecentCountryCodes: showRecentCountryCodes,
+            showDeckCountryCodes: showDeckCountryCodes,
+            cardIsFlipped: cardIsFlipped,
+            cardHintIsVisible: cardHintIsVisible,
+            currentCardUsedHint: currentCardUsedHint
+        )
+        let sessionChange = PracticeSessionChange(
+            country: reviewedCountry,
+            wasKnown: isKnown,
+            fromTier: tierBefore,
+            toTier: tierBefore
+        )
+
         showSessionCount += 1
-        showSessionEntries.append(ShowSessionEntry(country: currentCountry))
+        showSessionEntries.append(sessionChange)
         updateActiveProfile { profile in
-            profile.recordShowmasterCard(country: currentCountry, subject: selectedSubject)
+            profile.recordShowmasterCard(country: reviewedCountry, subject: selectedSubject)
             if showSessionCount == 10 {
                 profile.recordCompletedTenBlock()
             }
@@ -168,9 +228,45 @@ extension ContentView {
             if freeDailyFlagLimitReached {
                 showFreeDailyFlagLimitUpsell()
             }
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                showCardDragOffset = 0
+                showCardEntryOffset = 0
+                showCardEntryOpacity = 1
+                isFinishingShowSwipe = false
+                showHistoryPreview = PracticeHistoryPreview(change: sessionChange, index: max(showSessionCount - 1, 0), total: max(selectedShowCardLimit, showSessionCount))
+            }
             return
         }
-        prepareShowCard()
+        nextShowCard(entryDirection: isKnown ? 1 : -1)
+    }
+
+    func nextShowCard(entryDirection: CGFloat = 0) {
+        if entryDirection != 0 {
+            showCardEntryOffset = -58
+            showCardEntryOpacity = 0
+        } else {
+            showCardEntryOffset = 0
+            showCardEntryOpacity = 1
+        }
+
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
+            currentCountry = nextShowCountry()
+            cardIsFlipped = false
+            resetCurrentCardHint()
+            showHistoryPreview = nil
+            practiceHistoryGlobeCountry = nil
+            selectedHistoryPillFrame = nil
+            showCardDragOffset = 0
+            isFinishingShowSwipe = false
+        }
+
+        guard entryDirection != 0 else { return }
+        DispatchQueue.main.async {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                showCardEntryOffset = 0
+                showCardEntryOpacity = 1
+            }
+        }
     }
 
     func nextShowCountry() -> Country {
@@ -395,9 +491,13 @@ extension ContentView {
     }
 
     func showHintKnownBlockedFeedback() {
+        showHintKnownBlockedFeedback(dragOffset: $practiceCardDragOffset)
+    }
+
+    func showHintKnownBlockedFeedback(dragOffset: Binding<CGFloat>) {
         Haptics.notify(.warning)
         withAnimation(.spring(response: 0.28, dampingFraction: 0.62)) {
-            practiceCardDragOffset = 0
+            dragOffset.wrappedValue = 0
             hintBlockFeedbackIsVisible = true
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {

@@ -8,6 +8,12 @@ enum AppLanguage: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    static var systemDefault: AppLanguage {
+        let preferredIdentifier = Locale.preferredLanguages.first ?? Locale.current.identifier
+        let languageCode = Locale(identifier: preferredIdentifier).language.languageCode?.identifier ?? preferredIdentifier
+        return languageCode.lowercased().hasPrefix("de") ? .german : .english
+    }
+
     var title: String {
         switch self {
         case .german: return "Deutsch"

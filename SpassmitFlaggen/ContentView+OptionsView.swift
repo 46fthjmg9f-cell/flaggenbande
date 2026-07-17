@@ -48,9 +48,15 @@ extension ContentView {
             }
 
             Section(L("Sprache", "Language")) {
-                Picker(L("Sprache", "Language"), selection: $appLanguageRawValue) {
+                Picker(L("Sprache", "Language"), selection: Binding(
+                    get: { appLanguage },
+                    set: { language in
+                        Haptics.tap()
+                        appLanguageRawValue = language.rawValue
+                    }
+                )) {
                     ForEach(AppLanguage.allCases) { language in
-                        Text(language.title).tag(language.rawValue)
+                        Text(language.title).tag(language)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -145,6 +151,10 @@ extension ContentView {
             }
 
             Section(L("Online", "Online")) {
+                Toggle(isOn: $onlineFeaturesEnabled) {
+                    Label(L("Onlinefunktionen", "Online features"), systemImage: "icloud")
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         Text(L("Spitzname", "Nickname"))

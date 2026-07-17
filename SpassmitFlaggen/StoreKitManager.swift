@@ -16,6 +16,7 @@ final class StoreKitManager: ObservableObject {
     @Published var statusText: String?
 
     private var transactionUpdatesTask: Task<Void, Never>?
+    private var lastEntitlementRefreshAt: Date?
     private static let localFullVersionPurchasedKey = "storeKitFullVersionPurchasedV1"
     private let unavailableFullVersionMessage = """
     Vollversion-Kauf nicht gefunden. Product-ID stimmt im Code. Prüfe in App Store Connect: gleiche App/Bundle-ID, In-App-Kauf-Status, Preis/Verfügbarkeit und Paid-Apps-Vertrag. Danach kann TestFlight bis zu 1 Stunde brauchen.
@@ -24,9 +25,6 @@ final class StoreKitManager: ObservableObject {
     init() {
         purchasedFullVersion = Self.loadLocalFullVersionPurchase()
         startTransactionListener()
-        Task { [weak self] in
-            await self?.refreshPurchasedProducts()
-        }
     }
 
     deinit {
@@ -48,11 +46,19 @@ final class StoreKitManager: ObservableObject {
     // MARK: - Produkte laden
 
     func loadProducts(reportErrors: Bool = false, refreshPurchasedEntitlements: Bool = true) async {
+        guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
 
         if refreshPurchasedEntitlements {
             await refreshPurchasedProducts()
+        }
+
+        if fullVersionProduct != nil {
+            if reportErrors {
+                statusText = nil
+            }
+            return
         }
 
         do {
@@ -143,7 +149,7 @@ final class StoreKitManager: ObservableObject {
         do {
             try await AppStore.sync()
             debugLog("Restore purchases synced AppStore successfully.")
-            await refreshPurchasedProducts(clearLocalPurchaseIfMissing: true)
+            await refreshPurchasedProducts(clearLocalPurchaseIfMissing: true, force: true)
 
             if purchasedFullVersion {
                 statusText = "Vollversion wiederhergestellt."
@@ -159,11 +165,18 @@ final class StoreKitManager: ObservableObject {
 
     // MARK: - Berechtigungen prüfen
 
-    func refreshPurchasedProducts(clearLocalPurchaseIfMissing: Bool = false) async {
-        await refreshEntitlements(clearLocalPurchaseIfMissing: clearLocalPurchaseIfMissing)
+    func refreshPurchasedProducts(clearLocalPurchaseIfMissing: Bool = false, force: Bool = false) async {
+        await refreshEntitlements(clearLocalPurchaseIfMissing: clearLocalPurchaseIfMissing, force: force)
     }
 
-    private func refreshEntitlements(clearLocalPurchaseIfMissing: Bool = false) async {
+    private func refreshEntitlements(clearLocalPurchaseIfMissing: Bool = false, force: Bool = false) async {
+        guard !isRefreshingEntitlements else { return }
+        if !force,
+           let lastEntitlementRefreshAt,
+           Date().timeIntervalSince(lastEntitlementRefreshAt) < 5 * 60 {
+            return
+        }
+
         isRefreshingEntitlements = true
         defer { isRefreshingEntitlements = false }
 
@@ -196,6 +209,8 @@ final class StoreKitManager: ObservableObject {
             setPurchasedFullVersion(false, persistLocalCache: true)
         }
 
+        lastEntitlementRefreshAt = Date()
+
         debugLog("Current entitlements: \(entitlementProductIDs). StoreKit premium: \(ownsFullVersion). Local premium: \(purchasedFullVersion)")
     }
 
@@ -227,7 +242,7 @@ final class StoreKitManager: ObservableObject {
         }
 
         await transaction.finish()
-        await refreshEntitlements(clearLocalPurchaseIfMissing: isRevoked)
+        await refreshEntitlements(clearLocalPurchaseIfMissing: isRevoked, force: true)
 
         let ownsUpdatedFullVersion = productID == StoreProductID.fullVersion.rawValue && !isRevoked && purchasedFullVersion
         return ownsUpdatedFullVersion

@@ -243,19 +243,13 @@ extension ContentView {
     }
 
     func fixedMenuLayout<Content: View>(maxWidth: CGFloat, @ViewBuilder content: @escaping () -> Content) -> some View {
-        GeometryReader { geometry in
-            let baseHeight: CGFloat = maxWidth <= 520 ? 650 : 430
-            let availableHeight = max(geometry.size.height - 28, 1)
-            let scale = min(1, availableHeight / baseHeight)
-
+        ScrollView {
             content()
                 .padding()
                 .frame(maxWidth: maxWidth)
                 .frame(maxWidth: .infinity)
-                .scaleEffect(scale, anchor: .top)
-                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
-                .allowsHitTesting(true)
         }
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     var mainMenuScreens: [AppScreen] {
@@ -263,7 +257,7 @@ extension ContentView {
     }
 
     var gameModeScreens: [AppScreen] {
-        [.practice, .showmaster, .miniWorldCup, .league]
+        [.practice, .bloodyBeginner, .showmaster, .miniWorldCup, .league]
     }
 
     func menuScreenRow(_ screen: AppScreen) -> some View {

@@ -5,36 +5,100 @@ import GameKit
 // MARK: - App Actions
 
 extension ContentView {
+    @MainActor
     func runStartupWorkAfterFirstRender() async {
+        let startupStartedAt = Date()
         await Task.yield()
         AppStorageService.removeLegacyLocalPremiumFlagIfNeeded()
-        if !UserDefaults.standard.bool(forKey: "didApplyGermanDefaultLanguage") {
-            appLanguageRawValue = AppLanguage.german.rawValue
-            UserDefaults.standard.set(true, forKey: "didApplyGermanDefaultLanguage")
-        }
+        restorePersistedPracticeContinents()
+        migrateLegacyForcedGermanLanguageIfNeeded()
 
-        fullVersionUnlocked = false
-        await storeKit.loadProducts()
         fullVersionUnlocked = storeKit.purchasedFullVersion
+        ensureTrainerProfile()
         if !availableCountries.contains(currentCountry) {
             currentCountry = nextRandomCountry(excluding: currentCountry, from: availableCountries)
             leagueCurrentCountry = currentCountry
             miniWorldCupCurrentCountry = currentCountry
         }
-        ensureTrainerProfile()
+        preloadedFirstPracticeCountry = nextPracticeCountry()
         if !didEnableOnlineByDefault {
             didEnableOnlineByDefault = true
         }
-        if !onlineFeaturesEnabled {
-            disableOnlineRuntimeState()
+        if !onlineLeaderboard.isEmpty {
+            onlineStatusText = L("Gespeicherte Rangliste geladen", "Saved leaderboard loaded")
         }
-        await hideStartupScreenAfterDelay()
+
         #if DEBUG
         applyWeeklyTierDecay(showPopup: false)
         showDebugTierDecayInfoOnNextLaunchIfNeeded()
         #else
         applyWeeklyTierDecay(showPopup: true)
         #endif
+
+        if onlineFeaturesEnabled {
+            authenticateGameCenter(syncAfterAuthentication: true)
+        } else {
+            disableOnlineRuntimeState()
+        }
+
+        // Store metadata is useful but not required for using the app. Keep the
+        // locally verified purchase state and refresh StoreKit in parallel.
+        Task { @MainActor in
+            await storeKit.loadProducts()
+            fullVersionUnlocked = storeKit.purchasedFullVersion
+        }
+
+        let countriesToPreload = availableCountries
+        startupPreloadCompleted = 0
+        startupPreloadTotal = max(countriesToPreload.compactMap(\.flagImageURL).count, 1)
+
+        let flagPreloadTask = Task { @MainActor in
+            await FlagImageCache.shared.preloadToDisk(
+                countries: countriesToPreload,
+                maximumConcurrentDownloads: 6,
+                maximumDuration: 5.5
+            ) { completed, total in
+                startupPreloadCompleted = completed
+                startupPreloadTotal = max(total, 1)
+            }
+        }
+        let globePreloadTask = Task { @MainActor in
+            await GlobeBoundaryCache.preload()
+        }
+
+        _ = await flagPreloadTask.value
+        await globePreloadTask.value
+
+        if let preloadedFirstPracticeCountry {
+            await FlagImageCache.shared.warmInMemory([preloadedFirstPracticeCountry])
+        }
+
+        startupPreloadCompleted = startupPreloadTotal
+        await hideStartupScreenAfterDelay(startedAt: startupStartedAt)
+
+        // On a slow connection the splash remains bounded. Continue quietly and
+        // also cache optional territories for users who enable them later.
+        Task(priority: .utility) { @MainActor in
+            _ = await FlagImageCache.shared.preloadToDisk(
+                countries: allPracticeCountries,
+                maximumConcurrentDownloads: 3,
+                maximumDuration: 45
+            )
+        }
+    }
+
+    func migrateLegacyForcedGermanLanguageIfNeeded() {
+        let migrationKey = "didMigrateLanguageDefaultToSystemV2"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
+        defer { UserDefaults.standard.set(true, forKey: migrationKey) }
+
+        let wasForcedByLegacyDefault = UserDefaults.standard.bool(forKey: "didApplyGermanDefaultLanguage")
+        let storedLanguage = UserDefaults.standard.string(forKey: "appLanguage")
+        if wasForcedByLegacyDefault,
+           storedLanguage == AppLanguage.german.rawValue,
+           AppLanguage.systemDefault != .german {
+            appLanguageRawValue = AppLanguage.systemDefault.rawValue
+        }
     }
 
     func resetCountryPoolDependentState() {
@@ -45,6 +109,13 @@ extension ContentView {
         showSessionCount = 0
         showSessionEntries = []
         showHistoryPreview = nil
+        showUndoSnapshot = nil
+        practiceHistoryGlobeCountry = nil
+        selectedHistoryPillFrame = nil
+        showCardDragOffset = 0
+        showCardEntryOffset = 0
+        showCardEntryOpacity = 1
+        isFinishingShowSwipe = false
         showRecentCountryCodes = []
         showDeckCountryCodes = []
         statisticsSearchText = ""
@@ -86,6 +157,7 @@ extension ContentView {
         let now = Date()
         var alreadyAnnounced = Set(appData.profiles[index].announcedAchievementIDs ?? [])
         var achievedDates = appData.profiles[index].achievedAchievementDates ?? [:]
+        let previousAchievedDates = achievedDates
         let unlockedItems = achievementItems.filter(\.isUnlocked)
 
         for item in unlockedItems {
@@ -96,8 +168,10 @@ extension ContentView {
         }
 
         guard let unlockedItem = unlockedItems.first(where: { !alreadyAnnounced.contains(achievementAnnouncementID(for: $0)) }) else {
-            appData.profiles[index].achievedAchievementDates = achievedDates
-            saveLocalCache()
+            if achievedDates != previousAchievedDates {
+                appData.profiles[index].achievedAchievementDates = achievedDates
+                saveLocalCache()
+            }
             return
         }
 
@@ -134,6 +208,15 @@ extension ContentView {
             return
         }
 
+        if didConfigureGameCenterAuthentication {
+            if GKLocalPlayer.local.isAuthenticated, !isGameCenterAuthenticated {
+                finishGameCenterAuthentication(syncAfterAuthentication: syncAfterAuthentication)
+            }
+            return
+        }
+
+        didConfigureGameCenterAuthentication = true
+
         GKLocalPlayer.local.authenticateHandler = { viewController, error in
             guard onlineFeaturesEnabled else { return }
 
@@ -143,24 +226,49 @@ extension ContentView {
             }
 
             if GKLocalPlayer.local.isAuthenticated {
-                isGameCenterAuthenticated = true
-                gameCenterPlayerID = GKLocalPlayer.local.gamePlayerID
-                gameCenterAlias = GKLocalPlayer.local.alias
-                gameCenterStatusText = L("Verbunden als \(GKLocalPlayer.local.alias)", "Connected as \(GKLocalPlayer.local.alias)")
-                Task {
-                    await restoreCloudBackupIfNeeded()
-                    await loadGameCenterFriends()
-                    if syncAfterAuthentication {
-                        await syncOnlineStats()
-                    }
-                }
+                finishGameCenterAuthentication(syncAfterAuthentication: syncAfterAuthentication)
             } else {
+                didConfigureGameCenterAuthentication = false
                 isGameCenterAuthenticated = false
                 gameCenterPlayerID = ""
                 gameCenterAlias = ""
                 cloudBackupRestoreAttemptedPlayerID = ""
                 gameCenterFriendIDs = []
                 gameCenterStatusText = error?.localizedDescription ?? L("Game Center nicht verbunden", "Game Center not connected")
+                Task { @MainActor in
+                    await retryPendingDailyCompletions()
+                    await loadOnlineStats(forceRefresh: true)
+                    if dailyLeagueChallenge == nil {
+                        await refreshDailyLeagueStatus()
+                    }
+                }
+            }
+        }
+    }
+
+    func finishGameCenterAuthentication(syncAfterAuthentication: Bool) {
+        let authenticatedPlayerID = GKLocalPlayer.local.gamePlayerID
+        let shouldPreloadOnlineData = !isGameCenterAuthenticated || gameCenterPlayerID != authenticatedPlayerID
+        isGameCenterAuthenticated = true
+        gameCenterPlayerID = authenticatedPlayerID
+        gameCenterAlias = GKLocalPlayer.local.alias
+        gameCenterStatusText = L("Verbunden als \(GKLocalPlayer.local.alias)", "Connected as \(GKLocalPlayer.local.alias)")
+        guard shouldPreloadOnlineData else { return }
+
+        Task { @MainActor in
+            async let friendsLoad: Void = loadGameCenterFriends()
+            await restoreCloudBackupIfNeeded()
+            await retryPendingDailyCompletions()
+            _ = await friendsLoad
+
+            if syncAfterAuthentication {
+                await syncOnlineStats(showFeedback: false)
+            } else if onlineLeaderboard.isEmpty {
+                await loadOnlineStats()
+            }
+
+            if dailyLeagueChallenge == nil {
+                await refreshDailyLeagueStatus()
             }
         }
     }
@@ -201,9 +309,13 @@ extension ContentView {
     }
 
     func applyWeeklyTierDecay(showPopup: Bool = false) {
-        var decayChanges: [TierDecayChange] = []
-        updateActiveProfile { profile in
-            decayChanges = profile.applyWeeklyTierDecay()
+        ensureTrainerProfile()
+        guard let activeProfileID = appData.activeProfileID,
+              let profileIndex = appData.profiles.firstIndex(where: { $0.id == activeProfileID }) else { return }
+
+        let decayChanges = appData.profiles[profileIndex].applyWeeklyTierDecay()
+        if !decayChanges.isEmpty {
+            saveLocalCache()
         }
 
         if showPopup, !decayChanges.isEmpty {
@@ -248,8 +360,20 @@ extension ContentView {
     #endif
 
     func saveLocalCache() {
-        AppStorageService.save(appData)
         scheduleOnlineStatsSync()
+        pendingLocalSaveTask?.cancel()
+        pendingLocalSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard !Task.isCancelled else { return }
+            AppStorageService.save(appData)
+            pendingLocalSaveTask = nil
+        }
+    }
+
+    func flushLocalCache() {
+        pendingLocalSaveTask?.cancel()
+        pendingLocalSaveTask = nil
+        AppStorageService.saveSynchronously(appData)
     }
 
     @MainActor
@@ -324,8 +448,12 @@ extension ContentView {
     }
 
     @MainActor
-    func hideStartupScreenAfterDelay() async {
-        try? await Task.sleep(for: .seconds(1.45))
+    func hideStartupScreenAfterDelay(startedAt: Date) async {
+        let minimumVisibleDuration: TimeInterval = 1.45
+        let remainingDuration = max(0, minimumVisibleDuration - Date().timeIntervalSince(startedAt))
+        if remainingDuration > 0 {
+            try? await Task.sleep(for: .seconds(remainingDuration))
+        }
         withAnimation(.spring(response: 0.62, dampingFraction: 0.9)) {
             isShowingStartupScreen = false
         }
@@ -362,6 +490,7 @@ extension ContentView {
 
             do {
                 onlineLeaderboard = try await OnlineStatsService.fetchLeaderboard()
+                OnlineLeaderboardCache.save(onlineLeaderboard)
                 onlineLeaderboardRefreshID += 1
                 onlineStatusText = L("Statistik hochgeladen. Rangliste geladen: \(deduplicatedOnlineLeaderboard.count) Spieler", "Stats uploaded. Leaderboard loaded: \(deduplicatedOnlineLeaderboard.count) players")
             } catch {
@@ -394,6 +523,7 @@ extension ContentView {
 
         do {
             onlineLeaderboard = try await OnlineStatsService.fetchLeaderboard()
+            OnlineLeaderboardCache.save(onlineLeaderboard)
             onlineLeaderboardRefreshID += 1
             onlineStatusText = L("Online-Rangliste geladen: \(deduplicatedOnlineLeaderboard.count) Spieler", "Online leaderboard loaded: \(deduplicatedOnlineLeaderboard.count) players")
         } catch {
@@ -415,6 +545,7 @@ extension ContentView {
         practiceSessionChanges = []
         practiceHistoryGlobeCountry = nil
         practiceHistoryPreview = nil
+        selectedHistoryPillFrame = nil
         practiceForcedNextCountry = nil
         practiceUndoSnapshot = nil
         practiceSessionActive = false
@@ -424,6 +555,15 @@ extension ContentView {
         isFinishingPracticeSwipe = false
         showSessionActive = false
         showSessionCount = 0
+        showSessionEntries = []
+        showHistoryPreview = nil
+        showUndoSnapshot = nil
+        practiceHistoryGlobeCountry = nil
+        selectedHistoryPillFrame = nil
+        showCardDragOffset = 0
+        showCardEntryOffset = 0
+        showCardEntryOpacity = 1
+        isFinishingShowSwipe = false
         showRecap = false
         practiceRecapPromptIsVisible = false
         achievementPopupItem = nil
@@ -455,6 +595,7 @@ extension ContentView {
             resetCurrentCardHint()
             practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = nil
+            selectedHistoryPillFrame = nil
             practiceCardDragOffset = 0
             isFinishingPracticeSwipe = false
         }
@@ -485,17 +626,26 @@ extension ContentView {
         practiceSessionChanges = []
         practiceHistoryGlobeCountry = nil
         practiceHistoryPreview = nil
+        selectedHistoryPillFrame = nil
         practiceForcedNextCountry = nil
         practiceUndoSnapshot = nil
         practiceSessionSeenCountryCodes = []
         selectedPracticeCardLimit = min(10, freeDailyFlagCardsRemaining)
         recapStartCounts = activeProfile.tierCounts(in: availableCountries)
         recapEndCounts = recapStartCounts
-        currentCountry = nextPracticeCountry()
+        let practiceCandidates = countries(inContinents: selectedPracticeContinents)
+        if let preloadedFirstPracticeCountry,
+           practiceCandidates.contains(preloadedFirstPracticeCountry) {
+            currentCountry = preloadedFirstPracticeCountry
+        } else {
+            currentCountry = nextPracticeCountry()
+        }
+        preloadedFirstPracticeCountry = nil
         cardIsFlipped = false
         resetCurrentCardHint()
         practiceHistoryGlobeCountry = nil
         practiceHistoryPreview = nil
+        selectedHistoryPillFrame = nil
         practiceCardDragOffset = 0
         practiceCardEntryOffset = 0
         practiceCardEntryOpacity = 1
@@ -544,6 +694,7 @@ extension ContentView {
             practiceRecapPromptIsVisible = false
             practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = nil
+            selectedHistoryPillFrame = nil
         }
     }
 
@@ -563,6 +714,7 @@ extension ContentView {
             practiceSessionChanges = snapshot.practiceSessionChanges
             practiceHistoryGlobeCountry = nil
             practiceHistoryPreview = nil
+            selectedHistoryPillFrame = nil
             practiceSessionSeenCountryCodes = snapshot.practiceSessionSeenCountryCodes
             practiceForcedNextCountry = nextCountryAfterUndo
             cardIsFlipped = snapshot.cardIsFlipped
@@ -581,11 +733,45 @@ extension ContentView {
         }
     }
 
+    func undoLastShowSwipe() {
+        guard let snapshot = showUndoSnapshot else { return }
+        appData = snapshot.appData
+        saveLocalCache()
+
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            currentCountry = snapshot.currentCountry
+            showSessionCount = snapshot.showSessionCount
+            showSessionEntries = snapshot.showSessionEntries
+            showHistoryPreview = nil
+            showUndoSnapshot = nil
+            practiceHistoryGlobeCountry = nil
+            selectedHistoryPillFrame = nil
+            showRecentCountryCodes = snapshot.showRecentCountryCodes
+            showDeckCountryCodes = snapshot.showDeckCountryCodes
+            cardIsFlipped = snapshot.cardIsFlipped
+            cardHintIsVisible = snapshot.cardHintIsVisible
+            currentCardUsedHint = snapshot.currentCardUsedHint
+            hintBlockFeedbackIsVisible = false
+            showCardDragOffset = 0
+            showCardEntryOffset = 0
+            showCardEntryOpacity = 1
+            isFinishingShowSwipe = false
+            showSessionActive = true
+        }
+    }
+
     func resetShowSession(clearDeck: Bool = false) {
         showSessionActive = false
         showSessionCount = 0
         showSessionEntries = []
         showHistoryPreview = nil
+        showUndoSnapshot = nil
+        practiceHistoryGlobeCountry = nil
+        selectedHistoryPillFrame = nil
+        showCardDragOffset = 0
+        showCardEntryOffset = 0
+        showCardEntryOpacity = 1
+        isFinishingShowSwipe = false
         if clearDeck {
             showRecentCountryCodes = []
             showDeckCountryCodes = []
@@ -603,6 +789,13 @@ extension ContentView {
         showSessionCount = 0
         showSessionEntries = []
         showHistoryPreview = nil
+        showUndoSnapshot = nil
+        practiceHistoryGlobeCountry = nil
+        selectedHistoryPillFrame = nil
+        showCardDragOffset = 0
+        showCardEntryOffset = 0
+        showCardEntryOpacity = 1
+        isFinishingShowSwipe = false
         resetCurrentCardHint()
         prepareShowCard()
         showSessionActive = true

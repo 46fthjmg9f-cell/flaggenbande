@@ -8,11 +8,7 @@ extension ContentView {
     }
 
     var appLanguage: AppLanguage {
-        #if DEBUG
-        return .german
-        #else
-        return AppLanguage(rawValue: appLanguageRawValue) ?? .german
-        #endif
+        AppLanguage(rawValue: appLanguageRawValue) ?? .german
     }
 
     var appTheme: AppTheme {
@@ -21,6 +17,40 @@ extension ContentView {
 
     var appAccent: AppAccent {
         AppAccent(rawValue: appAccentRawValue) ?? .teal
+    }
+
+    var shouldDisableInteractiveBackSwipe: Bool {
+        shouldDisableInteractiveBackSwipe(on: navigationPath.last)
+    }
+
+    func shouldDisableInteractiveBackSwipe(on screen: AppScreen?) -> Bool {
+        guard let screen else { return false }
+
+        switch screen {
+        case .practice:
+            return practiceSessionActive
+                && !practiceRecapPromptIsVisible
+                && practiceHistoryPreview == nil
+                && practiceHistoryGlobeCountry == nil
+        case .bloodyBeginner:
+            return beginnerSessionActive
+                && beginnerHistoryPreview == nil
+                && practiceHistoryGlobeCountry == nil
+        case .showmaster:
+            return showSessionActive
+                && showHistoryPreview == nil
+                && practiceHistoryGlobeCountry == nil
+        case .miniWorldCup:
+            return miniWorldCupPhase == .question && miniWorldCupAnswerFeedback == nil
+        case .league:
+            return leagueMatchActive
+        default:
+            return false
+        }
+    }
+
+    func shouldRestoreProtectedNavigationPath(from oldPath: [AppScreen], to newPath: [AppScreen]) -> Bool {
+        newPath.count < oldPath.count && shouldDisableInteractiveBackSwipe(on: oldPath.last)
     }
 
     func L(_ german: String, _ english: String) -> String {

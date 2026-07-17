@@ -1,0 +1,10 @@
+# Xcode build products and local user state
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+
+# Local generated files
+output/
+tmp/
+.DS_Store

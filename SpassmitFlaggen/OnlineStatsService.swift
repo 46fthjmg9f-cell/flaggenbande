@@ -2,7 +2,7 @@ import SwiftUI
 import Foundation
 import CloudKit
 
-struct OnlineSubjectStats {
+struct OnlineSubjectStats: Codable {
     let totalPracticed: Int
     let known: Int
     let unknown: Int
@@ -22,7 +22,7 @@ struct OnlineSubjectStats {
     }
 }
 
-struct OnlinePlayerStats: Identifiable {
+struct OnlinePlayerStats: Identifiable, Codable {
     let id: String
     let playerName: String
     let gameCenterPlayerID: String
@@ -48,6 +48,12 @@ struct OnlinePlayerStats: Identifiable {
     let leagueBestScore: Int
     let leagueAverageScore: Double
     let leagueAccuracy: Double
+    let countryRunPlayed: Int
+    let countryRunBestScore: Int
+    let countryRunBestScoreDate: Date?
+    let capitalRunPlayed: Int
+    let capitalRunBestScore: Int
+    let capitalRunBestScoreDate: Date?
     let bestLearningStreak: Int
     let countryStats: OnlineSubjectStats
     let capitalStats: OnlineSubjectStats
@@ -69,10 +75,52 @@ struct OnlinePlayerStats: Identifiable {
     func stats(for subject: LearningSubject) -> OnlineSubjectStats {
         subject == .capitals ? capitalStats : countryStats
     }
+
+    func runPlayed(for subject: LearningSubject) -> Int {
+        subject == .capitals ? capitalRunPlayed : countryRunPlayed
+    }
+
+    func runBestScore(for subject: LearningSubject) -> Int {
+        subject == .capitals ? capitalRunBestScore : countryRunBestScore
+    }
+
+    func runBestScoreDate(for subject: LearningSubject) -> Date? {
+        subject == .capitals ? capitalRunBestScoreDate : countryRunBestScoreDate
+    }
+}
+
+enum OnlineLeaderboardCache {
+    private struct Payload: Codable {
+        let fetchedAt: Date
+        let players: [OnlinePlayerStats]
+    }
+
+    private static var cacheURL: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("online-leaderboard-v1.json")
+    }
+
+    static func load(maxAge: TimeInterval = 7 * 24 * 60 * 60) -> [OnlinePlayerStats] {
+        guard let cacheURL,
+              let data = try? Data(contentsOf: cacheURL),
+              let payload = try? JSONDecoder().decode(Payload.self, from: data),
+              Date().timeIntervalSince(payload.fetchedAt) <= maxAge else { return [] }
+        return payload.players
+    }
+
+    static func save(_ players: [OnlinePlayerStats]) {
+        guard let cacheURL else { return }
+        let payload = Payload(fetchedAt: Date(), players: players)
+        guard let data = try? JSONEncoder().encode(payload) else { return }
+        Task.detached(priority: .utility) {
+            try? data.write(to: cacheURL, options: .atomic)
+        }
+    }
 }
 
 enum OnlineStatsService {
     static let recordType = "PlayerStats"
+    static let backupRecordType = "PlayerBackup"
     static let nicknameRecordType = "NicknameClaim"
     static let playerIDKey = "onlinePlayerID"
     #if DEBUG
@@ -82,12 +130,15 @@ enum OnlineStatsService {
     static let containerIdentifier = "iCloud.de.phil.SpassmitFlaggen"
     static let container = CKContainer(identifier: containerIdentifier)
     static let database = container.publicCloudDatabase
+    static let privateDatabase = container.privateCloudDatabase
+    private static var cachedAccountStatus: (status: CKAccountStatus, checkedAt: Date)?
 
     enum OnlineStatsError: LocalizedError {
         case iCloudAccountUnavailable(CKAccountStatus)
         case timeout
         case profileSnapshotEncodingFailed
         case nicknameAlreadyTaken
+        case dailyAttemptsExhausted
 
         var errorDescription: String? {
             switch self {
@@ -107,6 +158,8 @@ enum OnlineStatsService {
                 return "Die lokale Statistik konnte nicht für iCloud vorbereitet werden."
             case .nicknameAlreadyTaken:
                 return "Dieser Spitzname ist schon vergeben."
+            case .dailyAttemptsExhausted:
+                return "Du hast deine 2 Versuche für heute verbraucht."
             }
         }
     }
@@ -146,6 +199,11 @@ enum OnlineStatsService {
         let countrySubjectStats = subjectStats(profile: profile, countries: countries, subject: .countries)
         let capitalSubjectStats = subjectStats(profile: profile, countries: countries, subject: .capitals)
         let selectedSubjectStats = subject == .capitals ? capitalSubjectStats : countrySubjectStats
+        let leagueStats = profile.leagueStats ?? LeagueStats()
+        let countryDailyMatches = leagueStats.matches(variant: .daily, subject: .countries).filter { !$0.wasAborted }
+        let capitalDailyMatches = leagueStats.matches(variant: .daily, subject: .capitals).filter { !$0.wasAborted }
+        let countryBestRun = leagueStats.bestDailyMatch(subject: .countries)
+        let capitalBestRun = leagueStats.bestDailyMatch(subject: .capitals)
         if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             try await claimNickname(displayName, ownerRecordName: playerRecordName)
         }
@@ -161,11 +219,17 @@ enum OnlineStatsService {
         record["achievementCount"] = achievementIDs.count as CKRecordValue
         record["achievementIDs"] = achievementIDs.sorted().joined(separator: "|") as CKRecordValue
         record["leagueRating"] = (profile.leagueStats?.rating ?? 1000) as CKRecordValue
-        record["leaguePlayed"] = (profile.leagueStats?.played ?? 0) as CKRecordValue
+        record["leaguePlayed"] = countryDailyMatches.count as CKRecordValue
         record["leagueWins"] = (profile.leagueStats?.wins ?? 0) as CKRecordValue
-        record["leagueBestScore"] = (profile.leagueStats?.bestScore ?? 0) as CKRecordValue
-        record["leagueAverageScore"] = (profile.leagueStats?.averageScore ?? 0) as CKRecordValue
-        record["leagueAccuracy"] = (profile.leagueStats?.accuracy ?? 0) as CKRecordValue
+        record["leagueBestScore"] = (countryBestRun?.ownScore ?? 0) as CKRecordValue
+        record["leagueAverageScore"] = (countryDailyMatches.isEmpty ? 0 : Double(countryDailyMatches.reduce(0) { $0 + $1.ownScore }) / Double(countryDailyMatches.count)) as CKRecordValue
+        record["leagueAccuracy"] = leagueStats.dailyAccuracy(subject: .countries) as CKRecordValue
+        record["countryRunPlayed"] = countryDailyMatches.count as CKRecordValue
+        record["countryRunBestScore"] = (countryBestRun?.ownScore ?? 0) as CKRecordValue
+        record["countryRunBestScoreDate"] = countryBestRun?.date as CKRecordValue?
+        record["capitalRunPlayed"] = capitalDailyMatches.count as CKRecordValue
+        record["capitalRunBestScore"] = (capitalBestRun?.ownScore ?? 0) as CKRecordValue
+        record["capitalRunBestScoreDate"] = capitalBestRun?.date as CKRecordValue?
         record["bestLearningStreak"] = (profile.bestLearningStreak ?? 0) as CKRecordValue
         record["tierS"] = selectedSubjectStats.tierS as CKRecordValue
         record["tierA"] = selectedSubjectStats.tierA as CKRecordValue
@@ -177,32 +241,33 @@ enum OnlineStatsService {
         record["sTierHistory"] = selectedSubjectStats.sTierHistory.map(String.init).joined(separator: "|") as CKRecordValue
         writeSubjectStats(countrySubjectStats, prefix: "country", to: record)
         writeSubjectStats(capitalSubjectStats, prefix: "capital", to: record)
+        // Public profiles power friend comparisons, but never expose a local
+        // profile PIN. The complete multi-profile backup belongs in the
+        // user's private CloudKit database.
         record["profileSnapshot"] = profileSnapshot
         record["profileSnapshotVersion"] = 1 as CKRecordValue
-        record["appDataSnapshot"] = try appDataSnapshotData(appData)
-        record["appDataSnapshotVersion"] = 1 as CKRecordValue
+        record["appDataSnapshot"] = nil
+        record["appDataSnapshotVersion"] = nil
         record["updatedAt"] = Date() as CKRecordValue
 
         try await save(record: record)
+        try await savePrivateBackup(appData, playerRecordName: playerRecordName)
         try? await deleteLegacyAnonymousRecordIfNeeded(currentRecordName: playerRecordName, gameCenterPlayerID: gameCenterPlayerID)
     }
 
     static func fetchAppDataSnapshot(gameCenterPlayerID: String?) async throws -> AppData? {
         try await ensureAccountAvailable()
         let playerRecordName = playerID(gameCenterPlayerID: gameCenterPlayerID)
-        guard let record = try await fetchRecord(recordID: CKRecord.ID(recordName: playerRecordName)) else {
-            return nil
+        let backupRecordID = CKRecord.ID(recordName: "current_user_backup")
+        if let privateRecord = try await fetchRecord(recordID: backupRecordID, from: privateDatabase),
+           let privateSnapshot = decodeAppDataSnapshot(from: privateRecord) {
+            return privateSnapshot
         }
 
-        if let snapshotData = record["appDataSnapshot"] as? Data,
-           let snapshot = try? JSONDecoder().decode(AppData.self, from: snapshotData) {
-            return snapshot
-        }
-
-        if let snapshotData = record["appDataSnapshot"] as? NSData,
-           let snapshot = try? JSONDecoder().decode(AppData.self, from: snapshotData as Data) {
-            return snapshot
-        }
+        // One-time compatibility path for backups written by older builds to
+        // PlayerStats. The next successful upload migrates them to private DB.
+        guard let record = try await fetchRecord(recordID: CKRecord.ID(recordName: playerRecordName)) else { return nil }
+        if let snapshot = decodeAppDataSnapshot(from: record) { return snapshot }
 
         if let profileData = record["profileSnapshot"] as? Data,
            let profile = try? JSONDecoder().decode(UserProfile.self, from: profileData) {
@@ -217,10 +282,31 @@ enum OnlineStatsService {
         return nil
     }
 
+    private static func savePrivateBackup(_ appData: AppData, playerRecordName: String) async throws {
+        let recordID = CKRecord.ID(recordName: "current_user_backup")
+        let record = try await fetchRecord(recordID: recordID, from: privateDatabase)
+            ?? CKRecord(recordType: backupRecordType, recordID: recordID)
+        record["ownerRecordName"] = playerRecordName as CKRecordValue
+        record["appDataSnapshot"] = try appDataSnapshotData(appData)
+        record["appDataSnapshotVersion"] = 1 as CKRecordValue
+        record["updatedAt"] = Date() as CKRecordValue
+        try await save(record: record, policy: .changedKeys, in: privateDatabase)
+    }
+
+    private static func decodeAppDataSnapshot(from record: CKRecord) -> AppData? {
+        if let data = record["appDataSnapshot"] as? Data {
+            return try? JSONDecoder().decode(AppData.self, from: data)
+        }
+        if let data = record["appDataSnapshot"] as? NSData {
+            return try? JSONDecoder().decode(AppData.self, from: data as Data)
+        }
+        return nil
+    }
+
     static func fetchLeaderboard() async throws -> [OnlinePlayerStats] {
         try await ensureAccountAvailable()
         let query = CKQuery(recordType: recordType, predicate: NSPredicate(value: true))
-        let records = try await queryRecords(query)
+        let records = try await queryRecords(query, desiredKeys: leaderboardDesiredKeys)
         return records
             .compactMap(OnlinePlayerStats.init(record:))
             .sorted {
@@ -229,6 +315,14 @@ enum OnlineStatsService {
                 }
                 return $0.totalPracticed > $1.totalPracticed
             }
+    }
+
+    static func fetchPlayerStats(recordName: String) async throws -> OnlinePlayerStats? {
+        try await ensureAccountAvailable()
+        guard let record = try await fetchRecord(recordID: CKRecord.ID(recordName: recordName)) else {
+            return nil
+        }
+        return OnlinePlayerStats(record: record)
     }
 
     #if DEBUG
@@ -318,6 +412,12 @@ enum OnlineStatsService {
         record["leagueBestScore"] = 1240 as CKRecordValue
         record["leagueAverageScore"] = 840.0 as CKRecordValue
         record["leagueAccuracy"] = 0.82 as CKRecordValue
+        record["countryRunPlayed"] = 12 as CKRecordValue
+        record["countryRunBestScore"] = 1240 as CKRecordValue
+        record["countryRunBestScoreDate"] = Date().addingTimeInterval(-86_400) as CKRecordValue
+        record["capitalRunPlayed"] = 6 as CKRecordValue
+        record["capitalRunBestScore"] = 880 as CKRecordValue
+        record["capitalRunBestScoreDate"] = Date().addingTimeInterval(-172_800) as CKRecordValue
         record["bestLearningStreak"] = 14 as CKRecordValue
         record["tierS"] = (tierCounts[.s] ?? 0) as CKRecordValue
         record["tierA"] = (tierCounts[.a] ?? 0) as CKRecordValue
@@ -336,58 +436,120 @@ enum OnlineStatsService {
     #endif
 
     static func fetchRecord(recordID: CKRecord.ID) async throws -> CKRecord? {
+        try await fetchRecord(recordID: recordID, from: database)
+    }
+
+    static func fetchRecord(recordID: CKRecord.ID, from targetDatabase: CKDatabase) async throws -> CKRecord? {
         try await withTimeout {
-            try await withCheckedThrowingContinuation { continuation in
-                database.fetch(withRecordID: recordID) { record, error in
-                    if let cloudError = error as? CKError, cloudError.code == .unknownItem {
-                        continuation.resume(returning: nil)
-                    } else if let error {
-                        continuation.resume(throwing: error)
-                    } else {
-                        continuation.resume(returning: record)
+            let operation = CKFetchRecordsOperation(recordIDs: [recordID])
+            operation.qualityOfService = .userInitiated
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    let lock = NSLock()
+                    var matchedResult: Result<CKRecord, Error>?
+                    operation.perRecordResultBlock = { _, result in
+                        lock.lock()
+                        matchedResult = result
+                        lock.unlock()
                     }
+                    operation.fetchRecordsResultBlock = { result in
+                        switch result {
+                        case .success:
+                            lock.lock()
+                            let finalResult = matchedResult
+                            lock.unlock()
+                            switch finalResult {
+                            case .success(let record):
+                                continuation.resume(returning: record)
+                            case .failure(let error as CKError) where error.code == .unknownItem:
+                                continuation.resume(returning: nil)
+                            case .failure(let error):
+                                continuation.resume(throwing: error)
+                            case nil:
+                                continuation.resume(returning: nil)
+                            }
+                        case .failure(let error as CKError) where error.code == .unknownItem:
+                            continuation.resume(returning: nil)
+                        case .failure(let error):
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                    targetDatabase.add(operation)
                 }
+            } onCancel: {
+                operation.cancel()
             }
         }
     }
 
     static func save(record: CKRecord) async throws {
+        try await save(record: record, policy: .changedKeys)
+    }
+
+    static func saveNew(record: CKRecord) async throws {
+        try await save(record: record, policy: .ifServerRecordUnchanged)
+    }
+
+    static func saveIfUnchanged(record: CKRecord) async throws {
+        try await save(record: record, policy: .ifServerRecordUnchanged)
+    }
+
+    private static func save(
+        record: CKRecord,
+        policy: CKModifyRecordsOperation.RecordSavePolicy
+    ) async throws {
+        try await save(record: record, policy: policy, in: database)
+    }
+
+    private static func save(
+        record: CKRecord,
+        policy: CKModifyRecordsOperation.RecordSavePolicy,
+        in targetDatabase: CKDatabase
+    ) async throws {
         try await withTimeout {
-            try await withCheckedThrowingContinuation { continuation in
-                let operation = CKModifyRecordsOperation(recordsToSave: [record], recordIDsToDelete: nil)
-                operation.savePolicy = .changedKeys
-                operation.qualityOfService = .userInitiated
-                operation.modifyRecordsResultBlock = { result in
-                    switch result {
-                    case .success:
-                        continuation.resume()
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
+            let operation = CKModifyRecordsOperation(recordsToSave: [record], recordIDsToDelete: nil)
+            operation.savePolicy = policy
+            operation.qualityOfService = .userInitiated
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    operation.modifyRecordsResultBlock = { result in
+                        switch result {
+                        case .success:
+                            continuation.resume()
+                        case .failure(let error):
+                            continuation.resume(throwing: error)
+                        }
                     }
+                    targetDatabase.add(operation)
                 }
-                database.add(operation)
+            } onCancel: {
+                operation.cancel()
             }
         }
     }
 
     static func delete(recordID: CKRecord.ID) async throws {
         try await withTimeout {
-            try await withCheckedThrowingContinuation { continuation in
-                let operation = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: [recordID])
-                operation.qualityOfService = .utility
-                operation.modifyRecordsResultBlock = { result in
-                    switch result {
-                    case .success:
-                        continuation.resume()
-                    case .failure(let error):
-                        if let cloudError = error as? CKError, cloudError.code == .unknownItem {
+            let operation = CKModifyRecordsOperation(recordsToSave: nil, recordIDsToDelete: [recordID])
+            operation.qualityOfService = .utility
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    operation.modifyRecordsResultBlock = { result in
+                        switch result {
+                        case .success:
                             continuation.resume()
-                        } else {
-                            continuation.resume(throwing: error)
+                        case .failure(let error):
+                            if let cloudError = error as? CKError, cloudError.code == .unknownItem {
+                                continuation.resume()
+                            } else {
+                                continuation.resume(throwing: error)
+                            }
                         }
                     }
+                    database.add(operation)
                 }
-                database.add(operation)
+            } onCancel: {
+                operation.cancel()
             }
         }
     }
@@ -400,44 +562,53 @@ enum OnlineStatsService {
         try await delete(recordID: CKRecord.ID(recordName: legacyRecordName))
     }
 
-    static func queryRecords(_ query: CKQuery) async throws -> [CKRecord] {
-        try await withTimeout {
-            var allRecords: [CKRecord] = []
-            var cursor: CKQueryOperation.Cursor?
+    static func queryRecords(_ query: CKQuery, desiredKeys: [String]? = nil) async throws -> [CKRecord] {
+        do {
+            return try await withTimeout {
+                var allRecords: [CKRecord] = []
+                var cursor: CKQueryOperation.Cursor?
 
-            repeat {
-                let page = try await queryRecordPage(query: query, cursor: cursor)
-                allRecords.append(contentsOf: page.records)
-                cursor = page.cursor
-            } while cursor != nil
+                repeat {
+                    let page = try await queryRecordPage(query: query, cursor: cursor, desiredKeys: desiredKeys)
+                    allRecords.append(contentsOf: page.records)
+                    cursor = page.cursor
+                } while cursor != nil
 
-            return allRecords
+                return allRecords
+            }
+        } catch let cloudError as CKError where cloudError.code == .unknownItem {
+            return []
         }
     }
 
-    static func queryRecordPage(query: CKQuery, cursor: CKQueryOperation.Cursor?) async throws -> (records: [CKRecord], cursor: CKQueryOperation.Cursor?) {
-        try await withCheckedThrowingContinuation { continuation in
-            var records: [CKRecord] = []
-            let lock = NSLock()
-            let operation = cursor.map(CKQueryOperation.init(cursor:)) ?? CKQueryOperation(query: query)
-            operation.resultsLimit = 100
-            operation.qualityOfService = .userInitiated
-            operation.recordMatchedBlock = { _, result in
-                if case .success(let record) = result {
-                    lock.lock()
-                    records.append(record)
-                    lock.unlock()
+    static func queryRecordPage(query: CKQuery, cursor: CKQueryOperation.Cursor?, desiredKeys: [String]? = nil) async throws -> (records: [CKRecord], cursor: CKQueryOperation.Cursor?) {
+        let operation = cursor.map(CKQueryOperation.init(cursor:)) ?? CKQueryOperation(query: query)
+        operation.resultsLimit = 100
+        operation.desiredKeys = desiredKeys
+        operation.qualityOfService = .userInitiated
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                var records: [CKRecord] = []
+                let lock = NSLock()
+                operation.recordMatchedBlock = { _, result in
+                    if case .success(let record) = result {
+                        lock.lock()
+                        records.append(record)
+                        lock.unlock()
+                    }
                 }
-            }
-            operation.queryResultBlock = { result in
-                switch result {
-                case .success(let cursor):
-                    continuation.resume(returning: (records, cursor))
-                case .failure(let error):
-                    continuation.resume(throwing: error)
+                operation.queryResultBlock = { result in
+                    switch result {
+                    case .success(let cursor):
+                        continuation.resume(returning: (records, cursor))
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
                 }
+                database.add(operation)
             }
-            database.add(operation)
+        } onCancel: {
+            operation.cancel()
         }
     }
 
@@ -447,6 +618,67 @@ enum OnlineStatsService {
         return trimmed.isEmpty ? (fallbackName.isEmpty ? "Spieler" : fallbackName) : trimmed
     }
 
+    static let leaderboardDesiredKeys: [String] = [
+        "playerName",
+        "gameCenterPlayerID",
+        "gameCenterAlias",
+        "totalPracticed",
+        "known",
+        "unknown",
+        "showmasterPlayed",
+        "learnedThisWeek",
+        "achievementCount",
+        "achievementIDs",
+        "leagueRating",
+        "leaguePlayed",
+        "leagueWins",
+        "leagueBestScore",
+        "leagueAverageScore",
+        "leagueAccuracy",
+        "countryRunPlayed",
+        "countryRunBestScore",
+        "countryRunBestScoreDate",
+        "capitalRunPlayed",
+        "capitalRunBestScore",
+        "capitalRunBestScoreDate",
+        "bestLearningStreak",
+        "tierS",
+        "tierA",
+        "tierB",
+        "tierC",
+        "tierD",
+        "tierF",
+        "tierSnapshot",
+        "sTierHistory",
+        "countryTotalPracticed",
+        "countryKnown",
+        "countryUnknown",
+        "countryShowmasterPlayed",
+        "countryLearnedThisWeek",
+        "countryTierS",
+        "countryTierA",
+        "countryTierB",
+        "countryTierC",
+        "countryTierD",
+        "countryTierF",
+        "countryTierSnapshot",
+        "countrySTierHistory",
+        "capitalTotalPracticed",
+        "capitalKnown",
+        "capitalUnknown",
+        "capitalShowmasterPlayed",
+        "capitalLearnedThisWeek",
+        "capitalTierS",
+        "capitalTierA",
+        "capitalTierB",
+        "capitalTierC",
+        "capitalTierD",
+        "capitalTierF",
+        "capitalTierSnapshot",
+        "capitalSTierHistory",
+        "updatedAt"
+    ]
+
     static func claimNickname(_ nickname: String, ownerRecordName: String) async throws {
         let key = nicknameKey(for: nickname)
         guard !key.isEmpty else { return }
@@ -455,7 +687,13 @@ enum OnlineStatsService {
         if let existingRecord = try await fetchRecord(recordID: recordID) {
             let owner = existingRecord["ownerRecordName"] as? String ?? ""
             if owner != ownerRecordName {
-                throw OnlineStatsError.nicknameAlreadyTaken
+                let legacyOwner = UserDefaults.standard.string(forKey: playerIDKey) ?? ""
+                guard !legacyOwner.isEmpty, owner == legacyOwner, ownerRecordName.hasPrefix("gc_") else {
+                    throw OnlineStatsError.nicknameAlreadyTaken
+                }
+                existingRecord["ownerRecordName"] = ownerRecordName as CKRecordValue
+                existingRecord["updatedAt"] = Date() as CKRecordValue
+                try await save(record: existingRecord)
             }
             return
         }
@@ -464,7 +702,14 @@ enum OnlineStatsService {
         record["nickname"] = nickname as CKRecordValue
         record["ownerRecordName"] = ownerRecordName as CKRecordValue
         record["updatedAt"] = Date() as CKRecordValue
-        try await save(record: record)
+        do {
+            try await saveNew(record: record)
+        } catch let error as CKError where error.code == .serverRecordChanged {
+            guard let existing = try await fetchRecord(recordID: recordID),
+                  existing["ownerRecordName"] as? String == ownerRecordName else {
+                throw OnlineStatsError.nicknameAlreadyTaken
+            }
+        }
     }
 
     static func nicknameKey(for nickname: String) -> String {
@@ -586,7 +831,9 @@ enum OnlineStatsService {
     }
 
     static func profileSnapshotData(profile: UserProfile) throws -> CKRecordValue {
-        guard let data = try? JSONEncoder().encode(profile) else {
+        var publicProfile = profile
+        publicProfile.pin = ""
+        guard let data = try? JSONEncoder().encode(publicProfile) else {
             throw OnlineStatsError.profileSnapshotEncodingFailed
         }
         return data as NSData
@@ -600,6 +847,14 @@ enum OnlineStatsService {
     }
 
     static func ensureAccountAvailable() async throws {
+        if let cachedAccountStatus,
+           Date().timeIntervalSince(cachedAccountStatus.checkedAt) < 60 {
+            guard cachedAccountStatus.status == .available else {
+                throw OnlineStatsError.iCloudAccountUnavailable(cachedAccountStatus.status)
+            }
+            return
+        }
+
         let status: CKAccountStatus = try await withTimeout(seconds: 8) {
             try await withCheckedThrowingContinuation { continuation in
                 container.accountStatus { status, error in
@@ -611,6 +866,8 @@ enum OnlineStatsService {
                 }
             }
         }
+
+        cachedAccountStatus = (status, Date())
 
         guard status == .available else {
             throw OnlineStatsError.iCloudAccountUnavailable(status)
@@ -664,6 +921,12 @@ extension OnlinePlayerStats {
         leagueBestScore = (record["leagueBestScore"] as? NSNumber)?.intValue ?? 0
         leagueAverageScore = (record["leagueAverageScore"] as? NSNumber)?.doubleValue ?? 0
         leagueAccuracy = (record["leagueAccuracy"] as? NSNumber)?.doubleValue ?? 0
+        countryRunPlayed = (record["countryRunPlayed"] as? NSNumber)?.intValue ?? 0
+        countryRunBestScore = (record["countryRunBestScore"] as? NSNumber)?.intValue ?? 0
+        countryRunBestScoreDate = record["countryRunBestScoreDate"] as? Date
+        capitalRunPlayed = (record["capitalRunPlayed"] as? NSNumber)?.intValue ?? 0
+        capitalRunBestScore = (record["capitalRunBestScore"] as? NSNumber)?.intValue ?? 0
+        capitalRunBestScoreDate = record["capitalRunBestScoreDate"] as? Date
         bestLearningStreak = (record["bestLearningStreak"] as? NSNumber)?.intValue ?? 0
         let legacyStats = OnlineSubjectStats(
             totalPracticed: totalPracticed,
@@ -712,11 +975,11 @@ extension OnlinePlayerStats {
 
     private static func parseTierSnapshot(_ snapshot: String?) -> [String: MasteryTier] {
         guard let snapshot else { return [:] }
-        return Dictionary(uniqueKeysWithValues: snapshot.split(separator: "|").compactMap { entry in
+        return snapshot.split(separator: "|").reduce(into: [String: MasteryTier]()) { result, entry in
             let parts = entry.split(separator: ":")
-            guard parts.count == 2, let tier = MasteryTier(rawValue: String(parts[1])) else { return nil }
-            return (String(parts[0]), tier)
-        })
+            guard parts.count == 2, let tier = MasteryTier(rawValue: String(parts[1])) else { return }
+            result[String(parts[0])] = tier
+        }
     }
 
     private static func parseIntSnapshot(_ snapshot: String?, fallback: Int) -> [Int] {

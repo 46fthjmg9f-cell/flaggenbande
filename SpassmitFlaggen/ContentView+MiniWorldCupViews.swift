@@ -272,10 +272,12 @@ extension ContentView {
     var miniWorldCupAttemptReviewView: some View {
         HStack(spacing: 7) {
             ForEach(0..<miniWorldCupEffectiveFlagCount, id: \.self) { index in
+                let mark = miniWorldCupHistoryMark(for: index)
                 PracticeHistoryPill(
-                    mark: miniWorldCupHistoryMark(for: index),
+                    mark: mark,
                     accentColor: miniWorldCupMustKnowNextFlag ? .orange : tealAccentColor,
-                    isSelected: false
+                    isSelected: false,
+                    animationTrigger: mark == .current ? miniWorldCupCurrentAttemptResults.count : 0
                 )
             }
         }
@@ -288,7 +290,7 @@ extension ContentView {
             RoundedRectangle(cornerRadius: 12)
                 .stroke((miniWorldCupMustKnowNextFlag ? Color.orange : tealAccentColor).opacity(0.2), lineWidth: 1)
         )
-        .animation(.spring(response: 0.3, dampingFraction: 0.72), value: miniWorldCupCurrentAttemptResults)
+        .animation(.spring(response: 0.44, dampingFraction: 0.76), value: miniWorldCupCurrentAttemptResults)
     }
 
     var miniWorldCupIntermediateResultsView: some View {

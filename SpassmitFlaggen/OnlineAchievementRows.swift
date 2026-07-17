@@ -46,6 +46,7 @@ struct LeagueLeaderboardRow: View {
     let player: OnlinePlayerStats
     let isCurrentPlayer: Bool
     let language: AppLanguage
+    let subject: LearningSubject
 
     var body: some View {
         HStack(spacing: 10) {
@@ -59,7 +60,7 @@ struct LeagueLeaderboardRow: View {
                 Text(player.displayName)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text(localized("\(player.leaguePlayed) Runden", "\(player.leaguePlayed) rounds", language: language))
+                Text(localized("\(player.runPlayed(for: subject)) Daily Runs", "\(player.runPlayed(for: subject)) Daily runs", language: language))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -67,10 +68,10 @@ struct LeagueLeaderboardRow: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(player.leagueBestScore)")
+                Text("\(player.runBestScore(for: subject))")
                     .font(.subheadline.monospacedDigit().weight(.bold))
                     .foregroundStyle(rankAccentColor)
-                Text(localized("Bestscore", "Best score", language: language))
+                Text(bestScoreDateText)
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -82,6 +83,13 @@ struct LeagueLeaderboardRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(rankAccentColor.opacity(rank <= 3 ? 0.35 : 0), lineWidth: 1)
         )
+    }
+
+    var bestScoreDateText: String {
+        guard let date = player.runBestScoreDate(for: subject) else {
+            return localized("Daily-Bestscore", "Daily best score", language: language)
+        }
+        return date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year(.twoDigits))
     }
 
     var rankAccentColor: Color {

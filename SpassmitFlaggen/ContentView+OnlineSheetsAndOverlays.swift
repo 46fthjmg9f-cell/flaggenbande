@@ -6,6 +6,17 @@ extension ContentView {
         NavigationStack {
             let playerSubjectStats = displayedOnlineSubjectStats(for: player)
             List {
+                if isLoadingOnlinePlayerDetail {
+                    Section {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text(L("Details werden geladen ...", "Loading details ..."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(player.displayName)
@@ -174,6 +185,29 @@ extension ContentView {
                     }
                 }
             }
+            .task(id: player.id) {
+                await loadSelectedOnlinePlayerDetailIfNeeded(for: player)
+            }
+        }
+    }
+
+    @MainActor
+    func loadSelectedOnlinePlayerDetailIfNeeded(for player: OnlinePlayerStats) async {
+        guard player.profileSnapshot == nil, !isLoadingOnlinePlayerDetail else { return }
+        isLoadingOnlinePlayerDetail = true
+        defer { isLoadingOnlinePlayerDetail = false }
+
+        do {
+            guard let detailedPlayer = try await OnlineStatsService.fetchPlayerStats(recordName: player.id) else { return }
+            if selectedOnlineGlobePlayer?.id == player.id {
+                selectedOnlineGlobePlayer = detailedPlayer
+            }
+            if let index = onlineLeaderboard.firstIndex(where: { $0.id == player.id }) {
+                onlineLeaderboard[index] = detailedPlayer
+                onlineLeaderboardRefreshID += 1
+            }
+        } catch {
+            onlineStatusText = L("Spieler-Details nicht geladen: \(OnlineStatsService.userFacingMessage(for: error))", "Player details not loaded: \(OnlineStatsService.userFacingMessage(for: error))")
         }
     }
 

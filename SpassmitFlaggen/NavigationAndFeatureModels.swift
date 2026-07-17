@@ -9,6 +9,7 @@ enum CountryScope {
 enum AppScreen: String, CaseIterable, Hashable, Identifiable {
     case games = "games"
     case practice = "practice"
+    case bloodyBeginner = "bloodyBeginner"
     case showmaster = "showmaster"
     case miniWorldCup = "miniWorldCup"
     case league = "league"
@@ -22,9 +23,10 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .games: return localized("Spielen", "Play", language: language)
         case .practice: return localized("Üben", "Practice", language: language)
+        case .bloodyBeginner: return localized("Anfänger", "Beginner", language: language)
         case .showmaster: return "Showmaster"
         case .miniWorldCup: return localized("Partymodus Beta", "Party Mode Beta", language: language)
-        case .league: return localized("Flaggenrun Beta", "Flag Run Beta", language: language)
+        case .league: return localized("Flaggenrun", "Flag Run", language: language)
         case .statistics: return localized("Statistik", "Statistics", language: language)
         case .globe: return localized("Globus", "Globe", language: language)
         case .achievements: return localized("Achievements", "Achievements", language: language)
@@ -37,6 +39,7 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .games: return "play.rectangle.fill"
         case .practice: return "rectangle.stack.fill"
+        case .bloodyBeginner: return "4.circle.fill"
         case .showmaster: return "rectangle.on.rectangle"
         case .miniWorldCup: return "person.3.fill"
         case .league: return "trophy.circle.fill"
@@ -56,12 +59,14 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
             return localized("Hier liegen alle aktiven Spielmodi. Üben ist für deinen Lernfortschritt, Showmaster für schnelles Abfragen, Partymodus für mehrere Personen an einem Handy und Flaggenrun für Punkte auf Zeit.", "All active game modes are here. Practice is for learning progress, Showmaster is for quick self-check rounds, Party Mode is for several people on one phone, and Flag Run is for timed scoring.", language: language)
         case .practice:
             return localized("Trainiere Flaggen oder Hauptstädte mit Karten. Wische nach rechts, wenn du es wusstest, und nach links, wenn nicht. Die App passt daraus die Stufen an, fragt unsichere Länder häufiger ab und zählt deinen Fortschritt für Statistik und Achievements.", "Train flags or capitals with cards. Swipe right when you knew it and left when you did not. The app adjusts levels from that, repeats uncertain countries more often, and counts progress for statistics and achievements.", language: language)
+        case .bloodyBeginner:
+            return localized("Anfänger-Modus mit vier Antwortmöglichkeiten. Du wählst je nach Lernbereich die passende Flagge, Hauptstadt oder das passende Land. Die Ergebnisse bleiben getrennt von Üben, Flaggenboss und Online-Rankings.", "Beginner mode with four answer choices. Depending on the study area, pick the matching flag, capital, or country. Results stay separate from Practice, Flaggenboss, and online rankings.", language: language)
         case .showmaster:
             return localized("Showmaster ist der schnelle Abfrage-Modus. Du bekommst eine feste Anzahl Karten, sagst die Antwort laut oder im Kopf und deckst danach auf. Dann markierst du selbst, ob es richtig war. Gut für kurze Tests, aber entspannter als Flaggenrun, weil kein Timer Druck macht.", "Showmaster is the fast self-check mode. You get a fixed number of cards, say the answer out loud or in your head, then reveal it. After that you mark whether it was correct. Good for quick tests, but calmer than Flag Run because there is no timer pressure.", language: language)
         case .miniWorldCup:
             return localized("Party-Modus für mehrere Spieler an einem Handy. Jede Person bekommt ihre Flaggen, danach wird weitergegeben. Wer zu wenig richtig hat, fliegt raus. Am Ende siehst du, wer in welcher Runde weiterkam oder ausgeschieden ist.", "Party mode for multiple players on one phone. Each person gets their flags, then passes the phone on. Whoever gets too few correct is eliminated. At the end you see who advanced or dropped out in each round.", language: language)
         case .league:
-            return localized("Beta-Modus für deinen besten Flaggenrun. Du spielst gegen die Zeit, bekommst Punkte für richtige Antworten und mehr Punkte, wenn du schnell bist. Der beste Highscore kann online verglichen werden.", "Beta mode for your best Flag Run. You play against the clock, get points for correct answers, and more points when you are fast. Your best high score can be compared online.", language: language)
+            return localized("Flaggenrun bündelt Üben und Daily: trainiere unbegrenzt gegen die Zeit oder spiele die tägliche Challenge mit 2 Versuchen und globaler Tagesbestenliste.", "Flag Run combines practice and daily play: train against the clock without limits or play the daily challenge with 2 attempts and a global daily leaderboard.", language: language)
         case .statistics:
             return localized("Hier siehst du deinen Lernstand kompakt: Stufen von F bis S, Trefferquoten, Streaks, Verläufe und einzelne Länder. So erkennst du schnell, was sicher sitzt und was wiederholt werden sollte.", "This shows your learning state compactly: F to S levels, accuracy, streaks, history, and individual countries. It helps you see what is solid and what should be repeated.", language: language)
         case .globe:
@@ -113,6 +118,33 @@ struct PracticeHistoryPreview: Identifiable, Equatable {
     static func == (lhs: PracticeHistoryPreview, rhs: PracticeHistoryPreview) -> Bool {
         lhs.id == rhs.id && lhs.index == rhs.index && lhs.total == rhs.total
     }
+}
+
+enum BeginnerDirection: String, CaseIterable, Identifiable, Codable {
+    case countryToFlag
+    case flagToCountry
+
+    var id: String { rawValue }
+
+    func title(language: AppLanguage, subject: LearningSubject) -> String {
+        switch (self, subject) {
+        case (.countryToFlag, .countries): return localized("Landesname anzeigen", "Show country name", language: language)
+        case (.flagToCountry, .countries): return localized("Flagge anzeigen", "Show flag", language: language)
+        case (.countryToFlag, .capitals): return localized("Land anzeigen", "Show country", language: language)
+        case (.flagToCountry, .capitals): return localized("Hauptstadt anzeigen", "Show capital", language: language)
+        }
+    }
+}
+
+struct BeginnerRoundResult: Identifiable, Equatable {
+    let id = UUID()
+    let country: Country
+    let selectedCountry: Country
+    let correctCountry: Country
+    let direction: BeginnerDirection
+    let subject: LearningSubject
+
+    var wasKnown: Bool { selectedCountry.code == correctCountry.code }
 }
 
 struct GameCenterAuthPresentation: Identifiable {
@@ -209,23 +241,6 @@ enum AchievementSortMode: String, CaseIterable, Identifiable {
     }
 }
 
-struct ShowSessionEntry: Identifiable {
-    let id = UUID()
-    let country: Country
-}
-
-struct ShowHistoryPreview: Identifiable, Equatable {
-    let entry: ShowSessionEntry
-    let index: Int
-    let total: Int
-
-    var id: UUID { entry.id }
-
-    static func == (lhs: ShowHistoryPreview, rhs: ShowHistoryPreview) -> Bool {
-        lhs.id == rhs.id && lhs.index == rhs.index && lhs.total == rhs.total
-    }
-}
-
 struct MiniWorldCupPlayer: Identifiable, Equatable {
     let id = UUID()
     var name: String
@@ -297,6 +312,18 @@ struct PracticeUndoSnapshot {
     let cardHintIsVisible: Bool
     let currentCardUsedHint: Bool
     let recapEndCounts: [MasteryTier: Int]
+}
+
+struct ShowUndoSnapshot {
+    let appData: AppData
+    let currentCountry: Country
+    let showSessionCount: Int
+    let showSessionEntries: [PracticeSessionChange]
+    let showRecentCountryCodes: [String]
+    let showDeckCountryCodes: [String]
+    let cardIsFlipped: Bool
+    let cardHintIsVisible: Bool
+    let currentCardUsedHint: Bool
 }
 
 enum StoreProductID: String, CaseIterable {

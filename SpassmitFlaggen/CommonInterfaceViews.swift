@@ -1,6 +1,7 @@
 import SwiftUI
 import Foundation
 import UIKit
+import ImageIO
 
 struct MiniLocationGlobe: View {
     let country: Country
@@ -29,7 +30,6 @@ struct MiniLocationGlobe: View {
             )
 
             context.clip(to: circlePath)
-            drawGrid(in: &context, size: size)
 
             guard let boundaryData else {
                 if let localSnapshot {
@@ -40,33 +40,21 @@ struct MiniLocationGlobe: View {
                 return
             }
 
-            let availableCodes = Set(allPracticeCountries.map(\.code))
             let selectedRings = boundaryData.ringsByCountryCode[country.code] ?? []
             guard let focusBounds = miniGlobeFocusBounds(for: selectedRings, fallbackCenter: boundaryData.centroidsByCountryCode[country.code] ?? fallbackCoordinate) else {
                 drawFallbackFocus(in: &context, size: size)
                 return
             }
 
-            for code in availableCodes where code != country.code {
-                guard let rings = boundaryData.ringsByCountryCode[code] else { continue }
-                for ring in rings {
-                    let path = mapPath(for: ring, in: focusBounds, size: size)
-                    guard !path.boundingRect.isNull, path.boundingRect.intersects(rect.insetBy(dx: -8, dy: -8)) else { continue }
-                    context.fill(path, with: .color(Color.white.opacity(0.15)))
-                    context.stroke(path, with: .color(Color.white.opacity(0.18)), lineWidth: 0.35)
-                }
-            }
+            let contextRings = miniGlobeContextRings(in: focusBounds, boundaryData: boundaryData)
+            drawContextRings(contextRings, in: &context, bounds: focusBounds, size: size)
 
             let selectedPaths = selectedRings.map { mapPath(for: $0, in: focusBounds, size: size) }
             let selectedBounds = selectedPaths.reduce(CGRect.null) { $0.union($1.boundingRect) }
 
-            for path in selectedPaths {
-                context.fill(path, with: .color(accentColor.opacity(0.97)))
-                context.stroke(path, with: .color(.white), lineWidth: 2.2)
-                context.stroke(path, with: .color(accentColor), lineWidth: 0.9)
-            }
+            drawSelectedCountry(selectedPaths, in: &context)
 
-            if selectedBounds.isNull || min(selectedBounds.width, selectedBounds.height) < min(size.width, size.height) * 0.14 {
+            if shouldDrawFocusBeacon(for: selectedBounds, size: size) {
                 drawFocusBeacon(in: &context, size: size)
             }
 
@@ -86,19 +74,6 @@ struct MiniLocationGlobe: View {
                 .padding(8)
                 .transition(.opacity)
             }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Text(country.code)
-                .font(.system(size: 8, weight: .black))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(accentColor, in: RoundedRectangle(cornerRadius: 4))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.white.opacity(0.55), lineWidth: 0.7)
-                )
-                .offset(x: 3, y: 3)
         }
         .onAppear {
             startLoadingPulse()
@@ -179,7 +154,8 @@ struct MiniLocationGlobe: View {
     private func cacheSnapshot(from boundaryData: GlobeBoundaryData) {
         let rings = boundaryData.ringsByCountryCode[country.code] ?? []
         guard let focusBounds = miniGlobeFocusBounds(for: rings, fallbackCenter: boundaryData.centroidsByCountryCode[country.code] ?? fallbackCoordinate) else { return }
-        let snapshot = MiniLocationSnapshot(countryCode: country.code, rings: rings, bounds: MiniLocationSnapshotBounds(focusBounds))
+        let contextRings = miniGlobeContextRings(in: focusBounds, boundaryData: boundaryData)
+        let snapshot = MiniLocationSnapshot(countryCode: country.code, rings: rings, contextRings: contextRings, bounds: MiniLocationSnapshotBounds(focusBounds))
         MiniLocationSnapshotStore.store(snapshot)
         localSnapshot = snapshot
     }
@@ -188,27 +164,94 @@ struct MiniLocationGlobe: View {
         drawFocusBeacon(in: &context, size: size)
     }
 
+    private func shouldDrawFocusBeacon(for bounds: CGRect, size: CGSize) -> Bool {
+        guard !bounds.isNull else { return true }
+        let minimumVisibleSide = min(size.width, size.height) * 0.055
+        return bounds.width < minimumVisibleSide && bounds.height < minimumVisibleSide
+    }
+
     private func drawFocusBeacon(in context: inout GraphicsContext, size: CGSize) {
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        context.fill(Path(ellipseIn: CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 14)), with: .color(accentColor.opacity(0.28)))
-        context.fill(Path(ellipseIn: CGRect(x: center.x - 4, y: center.y - 4, width: 8, height: 8)), with: .color(accentColor))
-        context.stroke(Path(ellipseIn: CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18)), with: .color(.white.opacity(0.92)), lineWidth: 1.6)
-        context.stroke(Path(ellipseIn: CGRect(x: center.x - 13, y: center.y - 13, width: 26, height: 26)), with: .color(accentColor.opacity(0.5)), lineWidth: 1)
+        context.fill(Path(ellipseIn: CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)), with: .color(accentColor.opacity(0.24)))
+        context.fill(Path(ellipseIn: CGRect(x: center.x - 3, y: center.y - 3, width: 6, height: 6)), with: .color(accentColor))
+        context.stroke(Path(ellipseIn: CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 14)), with: .color(.white.opacity(0.82)), lineWidth: 1.1)
     }
 
     private func drawLocalSnapshot(_ snapshot: MiniLocationSnapshot, in context: inout GraphicsContext, size: CGSize) {
         let bounds = snapshot.bounds.cgRect
+        drawContextRings(snapshot.contextRings ?? [], in: &context, bounds: bounds, size: size)
         let selectedPaths = snapshot.rings.map { mapPath(for: $0, in: bounds, size: size) }
         let selectedBounds = selectedPaths.reduce(CGRect.null) { $0.union($1.boundingRect) }
 
-        for path in selectedPaths {
-            context.fill(path, with: .color(accentColor.opacity(0.97)))
-            context.stroke(path, with: .color(.white), lineWidth: 2.2)
-            context.stroke(path, with: .color(accentColor), lineWidth: 0.9)
-        }
+        drawSelectedCountry(selectedPaths, in: &context)
 
         if selectedBounds.isNull || min(selectedBounds.width, selectedBounds.height) < min(size.width, size.height) * 0.14 {
             drawFocusBeacon(in: &context, size: size)
+        }
+    }
+
+    private func drawSelectedCountry(_ paths: [Path], in context: inout GraphicsContext) {
+        for path in paths {
+            context.fill(path, with: .color(accentColor.opacity(0.92)))
+            context.stroke(path, with: .color(Color.white.opacity(0.78)), lineWidth: 0.8)
+        }
+    }
+
+    private func drawContextRings(_ rings: [[GlobeCoordinate]], in context: inout GraphicsContext, bounds: CGRect, size: CGSize) {
+        for ring in rings.prefix(220) {
+            let path = mapPath(for: ring, in: bounds, size: size)
+            guard !path.boundingRect.isNull else { continue }
+            context.fill(path, with: .color(Color.white.opacity(0.18)))
+            context.stroke(path, with: .color(Color.white.opacity(0.36)), lineWidth: 0.55)
+        }
+    }
+
+    private func miniGlobeContextRings(in bounds: CGRect, boundaryData: GlobeBoundaryData) -> [[GlobeCoordinate]] {
+        let paddedBounds = bounds.insetBy(dx: -bounds.width * 0.08, dy: -bounds.height * 0.08)
+
+        return boundaryData.ringsByCountryCode
+            .filter { $0.key != country.code }
+            .flatMap { _, rings in rings }
+            .filter { ring in
+                guard let ringBounds = coordinateBounds(for: ring) else { return false }
+                return ringBounds.intersects(paddedBounds)
+            }
+    }
+
+    private func coordinateBounds(for ring: [GlobeCoordinate]) -> CGRect? {
+        guard !ring.isEmpty else { return nil }
+        let latitudes = ring.map(\.latitude)
+        let longitudes = ring.map(\.longitude)
+        guard let minimumLatitude = latitudes.min(),
+              let maximumLatitude = latitudes.max(),
+              let minimumLongitude = longitudes.min(),
+              let maximumLongitude = longitudes.max() else { return nil }
+
+        return CGRect(
+            x: minimumLongitude,
+            y: minimumLatitude,
+            width: max(maximumLongitude - minimumLongitude, 0.01),
+            height: max(maximumLatitude - minimumLatitude, 0.01)
+        )
+    }
+
+    private var minimumMiniGlobeSpan: Double {
+        switch country.continent {
+        case "Europa": return 34
+        case "Afrika": return 46
+        case "Asien": return 58
+        case "Nordamerika": return 58
+        case "Südamerika": return 50
+        case "Ozeanien": return 64
+        default: return 42
+        }
+    }
+
+    private var maximumMiniGlobeSpan: Double {
+        switch country.continent {
+        case "Europa": return 80
+        case "Ozeanien": return 120
+        default: return 105
         }
     }
 
@@ -224,11 +267,12 @@ struct MiniLocationGlobe: View {
         let maximumLatitude = latitudes.max() ?? fallbackCenter.latitude
         let minimumLongitude = longitudes.min() ?? fallbackCenter.longitude
         let maximumLongitude = longitudes.max() ?? fallbackCenter.longitude
-        let centerLatitude = (minimumLatitude + maximumLatitude) / 2
-        let centerLongitude = (minimumLongitude + maximumLongitude) / 2
+        let centerLatitude = fallbackCenter.latitude
+        let centerLongitude = fallbackCenter.longitude
         let latitudeSpan = max(maximumLatitude - minimumLatitude, 0.6)
         let longitudeSpan = max(maximumLongitude - minimumLongitude, 0.6)
-        let span = min(max(max(latitudeSpan, longitudeSpan) * 2.45, 16), 130)
+        let countrySpan = max(latitudeSpan, longitudeSpan)
+        let span = min(max(countrySpan * 2.15, minimumMiniGlobeSpan), maximumMiniGlobeSpan)
 
         return CGRect(
             x: centerLongitude - span / 2,
@@ -325,6 +369,7 @@ struct MiniLocationGlobe: View {
 struct MiniLocationSnapshot: Codable {
     let countryCode: String
     let rings: [[GlobeCoordinate]]
+    var contextRings: [[GlobeCoordinate]]? = nil
     let bounds: MiniLocationSnapshotBounds
 }
 
@@ -347,30 +392,88 @@ struct MiniLocationSnapshotBounds: Codable {
 }
 
 enum MiniLocationSnapshotStore {
-    private static let storageKey = "miniLocationSnapshotsV1"
+    private static let legacyStorageKeys = [
+        "miniLocationSnapshotsV1",
+        "miniLocationSnapshotsV2",
+        "miniLocationSnapshotsV3",
+        "miniLocationSnapshotsV4"
+    ]
+    private static let legacyFileName = "miniLocationSnapshotsV4.json"
+    private static let snapshotDirectory = "MiniLocationSnapshots"
+    private static var memoryCache: [String: MiniLocationSnapshot] = [:]
+
+    static func migrateLegacyIfNeeded() {
+        for key in legacyStorageKeys {
+            guard let data = UserDefaults.standard.data(forKey: key) else { continue }
+            if let decoded = try? JSONDecoder().decode([String: MiniLocationSnapshot].self, from: data) {
+                if persist(decoded) {
+                    LegacyDefaultsMigration.removeData(forKey: key, migratedData: data)
+                }
+            } else {
+                // These are rebuildable map previews, not user progress. A
+                // corrupt legacy cache is therefore safe to discard.
+                LegacyDefaultsMigration.removeData(forKey: key, migratedData: data)
+            }
+        }
+
+        guard let fileData = DataFileStore.read(fileName: legacyFileName) else { return }
+        if let decoded = try? JSONDecoder().decode([String: MiniLocationSnapshot].self, from: fileData) {
+            if persist(decoded) {
+                DataFileStore.remove(fileName: legacyFileName)
+            }
+        } else {
+            DataFileStore.remove(fileName: legacyFileName)
+        }
+    }
 
     static func snapshot(for countryCode: String) -> MiniLocationSnapshot? {
-        snapshots()[countryCode]
+        let normalizedCode = normalizedCountryCode(countryCode)
+        if let cached = memoryCache[normalizedCode] {
+            return cached
+        }
+
+        guard let data = DataFileStore.read(fileName: fileName(for: normalizedCode)),
+              let snapshot = try? JSONDecoder().decode(MiniLocationSnapshot.self, from: data) else {
+            return nil
+        }
+        memoryCache[normalizedCode] = snapshot
+        return snapshot
     }
 
     static func store(_ snapshot: MiniLocationSnapshot) {
-        var currentSnapshots = snapshots()
-        currentSnapshots[snapshot.countryCode] = snapshot
-        guard let data = try? JSONEncoder().encode(currentSnapshots) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
+        let code = normalizedCountryCode(snapshot.countryCode)
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        let targetFileName = fileName(for: code)
+        if DataFileStore.read(fileName: targetFileName) != data {
+            _ = DataFileStore.write(data, fileName: targetFileName)
+        }
+        memoryCache[code] = snapshot
     }
 
-    private static func snapshots() -> [String: MiniLocationSnapshot] {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([String: MiniLocationSnapshot].self, from: data) else {
-            return [:]
+    private static func persist(_ snapshots: [String: MiniLocationSnapshot]) -> Bool {
+        for (countryCode, snapshot) in snapshots {
+            guard let data = try? JSONEncoder().encode(snapshot),
+                  DataFileStore.write(data, fileName: fileName(for: normalizedCountryCode(countryCode))) else {
+                return false
+            }
         }
-        return decoded
+        return true
+    }
+
+    private static func normalizedCountryCode(_ code: String) -> String {
+        let safe = code.uppercased().filter { $0.isLetter || $0.isNumber || $0 == "-" }
+        return safe.isEmpty ? "UNKNOWN" : safe
+    }
+
+    private static func fileName(for countryCode: String) -> String {
+        "\(snapshotDirectory)/\(countryCode).json"
     }
 }
 
 struct StartupScreen: View {
     let language: AppLanguage
+    let completedItemCount: Int
+    let totalItemCount: Int
     @State private var logoScale: CGFloat = 0.88
     @State private var logoOpacity: Double = 0
     @State private var contentOffset: CGFloat = 24
@@ -382,6 +485,25 @@ struct StartupScreen: View {
                 ? UIColor(red: 0.23, green: 0.88, blue: 0.86, alpha: 1)
                 : UIColor(red: 0.0, green: 0.62, blue: 0.58, alpha: 1)
         })
+    }
+
+    private var preloadProgress: Double {
+        guard totalItemCount > 0 else { return 0 }
+        return min(max(Double(completedItemCount) / Double(totalItemCount), 0), 1)
+    }
+
+    private var preloadStatusText: String {
+        if completedItemCount >= totalItemCount, totalItemCount > 1 {
+            return localized("Fast fertig …", "Almost ready …", language: language)
+        }
+        if totalItemCount > 1 {
+            return localized(
+                "Flaggen werden vorbereitet (\(min(completedItemCount, totalItemCount))/\(totalItemCount))",
+                "Preparing flags (\(min(completedItemCount, totalItemCount))/\(totalItemCount))",
+                language: language
+            )
+        }
+        return localized("App wird vorbereitet …", "Preparing app …", language: language)
     }
 
     var body: some View {
@@ -433,6 +555,18 @@ struct StartupScreen: View {
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
                     .opacity(logoOpacity)
+
+                VStack(spacing: 8) {
+                    ProgressView(value: preloadProgress)
+                        .tint(.white)
+                        .frame(maxWidth: 250)
+                    Text(preloadStatusText)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.88))
+                        .monospacedDigit()
+                }
+                .opacity(logoOpacity)
+                .animation(.easeInOut(duration: 0.2), value: completedItemCount)
             }
             .offset(y: contentOffset)
             .padding()
@@ -792,7 +926,20 @@ struct FlagImage: View {
 }
 
 enum FlagZoomInteractionState {
-    static var isPinching = false
+    private static var activeOwnerID: ObjectIdentifier?
+
+    static var isPinching: Bool {
+        activeOwnerID != nil
+    }
+
+    static func begin(owner: AnyObject) {
+        activeOwnerID = ObjectIdentifier(owner)
+    }
+
+    static func end(owner: AnyObject) {
+        guard activeOwnerID == ObjectIdentifier(owner) else { return }
+        activeOwnerID = nil
+    }
 }
 
 struct ZoomableFlagImageView: View {
@@ -835,6 +982,12 @@ private struct WindowPinchGestureReader: UIViewRepresentable {
         context.coordinator.attachIfPossible()
     }
 
+    static func dismantleUIView(_ uiView: PinchMarkerView, coordinator: Coordinator) {
+        uiView.onMoveToWindow = nil
+        coordinator.markerView = nil
+        coordinator.detach()
+    }
+
     final class PinchMarkerView: UIView {
         var onMoveToWindow: (() -> Void)?
 
@@ -852,13 +1005,16 @@ private struct WindowPinchGestureReader: UIViewRepresentable {
         private var initialOverlayFrame: CGRect = .zero
         private var initialPinchLocation: CGPoint = .zero
         private var isHandlingPinch = false
+        private var returnAnimator: UIViewPropertyAnimator?
+        private var zoomSessionID = 0
         private let hitSlop: CGFloat = 24
+        private let maximumScale: CGFloat = 4.4
 
         private lazy var pinchGesture: UIPinchGestureRecognizer = {
             let gesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-            gesture.cancelsTouchesInView = true
-            gesture.delaysTouchesBegan = true
-            gesture.delaysTouchesEnded = true
+            gesture.cancelsTouchesInView = false
+            gesture.delaysTouchesBegan = false
+            gesture.delaysTouchesEnded = false
             gesture.delegate = self
             return gesture
         }()
@@ -870,41 +1026,61 @@ private struct WindowPinchGestureReader: UIViewRepresentable {
         func updateImage(_ newImage: UIImage) {
             guard image !== newImage else { return }
             image = newImage
-            overlayImageView?.removeFromSuperview()
-            overlayImageView = nil
-            isHandlingPinch = false
-            FlagZoomInteractionState.isPinching = false
+            cancelZoom()
         }
 
         func attachIfPossible() {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, let markerView = self.markerView, let targetView = markerView.window else { return }
-                guard self.attachedView !== targetView else { return }
-                self.attachedView?.removeGestureRecognizer(self.pinchGesture)
-                targetView.addGestureRecognizer(self.pinchGesture)
-                self.attachedView = targetView
+            guard let markerView else { return }
+            guard let targetView = markerView.window else {
+                attachedView?.removeGestureRecognizer(pinchGesture)
+                attachedView = nil
+                cancelZoom()
+                return
             }
+            guard attachedView !== targetView else { return }
+            attachedView?.removeGestureRecognizer(pinchGesture)
+            cancelZoom()
+            targetView.addGestureRecognizer(pinchGesture)
+            attachedView = targetView
+        }
+
+        func detach() {
+            attachedView?.removeGestureRecognizer(pinchGesture)
+            attachedView = nil
+            cancelZoom()
         }
 
         @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-            guard let markerView, let window = markerView.window else { return }
+            guard let markerView, let window = markerView.window else {
+                cancelZoom()
+                return
+            }
             let markerLocation = gesture.location(in: markerView)
 
             switch gesture.state {
             case .began:
                 guard expandedHitRect(for: markerView).contains(markerLocation) else { return }
+                cancelZoom()
+                zoomSessionID += 1
                 isHandlingPinch = true
-                FlagZoomInteractionState.isPinching = true
+                FlagZoomInteractionState.begin(owner: self)
                 initialPinchLocation = gesture.location(in: window)
-                beginOverlay(in: window, from: markerView)
+                guard beginOverlay(in: window, from: markerView) else {
+                    cancelZoom()
+                    return
+                }
                 gesture.scale = 1
             case .changed:
                 guard isHandlingPinch, let overlayImageView else { return }
-                let scale = min(max(gesture.scale, 1), 4.8)
+                let scale = rubberBandedScale(gesture.scale)
                 let windowLocation = gesture.location(in: window)
+                let baseOffset = CGPoint(
+                    x: initialOverlayFrame.midX - initialPinchLocation.x,
+                    y: initialOverlayFrame.midY - initialPinchLocation.y
+                )
                 overlayImageView.center = CGPoint(
-                    x: initialOverlayFrame.midX + (windowLocation.x - initialPinchLocation.x),
-                    y: initialOverlayFrame.midY + (windowLocation.y - initialPinchLocation.y)
+                    x: windowLocation.x + baseOffset.x * scale,
+                    y: windowLocation.y + baseOffset.y * scale
                 )
                 overlayImageView.transform = CGAffineTransform(scaleX: scale, y: scale)
             case .ended, .cancelled, .failed:
@@ -917,10 +1093,25 @@ private struct WindowPinchGestureReader: UIViewRepresentable {
             }
         }
 
-        private func beginOverlay(in window: UIView, from markerView: UIView) {
+        private func cancelZoom() {
+            zoomSessionID += 1
+            returnAnimator?.stopAnimation(true)
+            returnAnimator = nil
+            overlayImageView?.layer.removeAllAnimations()
+            overlayImageView?.removeFromSuperview()
+            overlayImageView = nil
+            isHandlingPinch = false
+            pinchGesture.scale = 1
+            FlagZoomInteractionState.end(owner: self)
+        }
+
+        private func beginOverlay(in window: UIView, from markerView: UIView) -> Bool {
+            returnAnimator?.stopAnimation(true)
+            returnAnimator = nil
             overlayImageView?.removeFromSuperview()
             let markerFrame = markerView.convert(markerView.bounds, to: window)
             initialOverlayFrame = aspectFitRect(imageSize: image.size, in: markerFrame)
+            guard initialOverlayFrame.width > 1, initialOverlayFrame.height > 1 else { return false }
 
             let imageView = UIImageView(image: image)
             imageView.contentMode = .scaleAspectFit
@@ -932,28 +1123,54 @@ private struct WindowPinchGestureReader: UIViewRepresentable {
             imageView.layer.shadowOffset = CGSize(width: 0, height: 6)
             window.addSubview(imageView)
             overlayImageView = imageView
+            return true
         }
 
         private func endOverlay() {
             guard let overlayImageView else {
-                FlagZoomInteractionState.isPinching = false
+                FlagZoomInteractionState.end(owner: self)
                 return
             }
 
-            UIView.animate(
-                withDuration: 0.28,
-                delay: 0,
-                usingSpringWithDamping: 0.94,
-                initialSpringVelocity: 0,
-                options: [.beginFromCurrentState, .allowUserInteraction]
-            ) {
-                overlayImageView.transform = .identity
-                overlayImageView.center = CGPoint(x: self.initialOverlayFrame.midX, y: self.initialOverlayFrame.midY)
-            } completion: { _ in
-                overlayImageView.removeFromSuperview()
-                self.overlayImageView = nil
-                FlagZoomInteractionState.isPinching = false
+            let finishingSessionID = zoomSessionID
+            let targetFrame: CGRect
+            if let markerView, let window = markerView.window {
+                targetFrame = aspectFitRect(
+                    imageSize: image.size,
+                    in: markerView.convert(markerView.bounds, to: window)
+                )
+            } else {
+                targetFrame = initialOverlayFrame
             }
+
+            let animator = UIViewPropertyAnimator(duration: 0.30, dampingRatio: 0.88) {
+                overlayImageView.transform = .identity
+                overlayImageView.bounds = CGRect(origin: .zero, size: targetFrame.size)
+                overlayImageView.center = CGPoint(x: targetFrame.midX, y: targetFrame.midY)
+                overlayImageView.layer.shadowOpacity = 0
+            }
+            animator.addCompletion { [weak self, weak overlayImageView] _ in
+                guard let overlayImageView else { return }
+                overlayImageView.removeFromSuperview()
+                guard let self,
+                      self.zoomSessionID == finishingSessionID,
+                      self.overlayImageView === overlayImageView else { return }
+                self.overlayImageView = nil
+                self.returnAnimator = nil
+                FlagZoomInteractionState.end(owner: self)
+            }
+            returnAnimator = animator
+            animator.startAnimation()
+        }
+
+        private func rubberBandedScale(_ rawScale: CGFloat) -> CGFloat {
+            if rawScale < 1 {
+                return max(0.92, 1 - (1 - rawScale) * 0.20)
+            }
+            if rawScale > maximumScale {
+                return min(maximumScale + 0.35, maximumScale + (rawScale - maximumScale) * 0.12)
+            }
+            return rawScale
         }
 
         private func aspectFitRect(imageSize: CGSize, in rect: CGRect) -> CGRect {
@@ -969,12 +1186,8 @@ private struct WindowPinchGestureReader: UIViewRepresentable {
         }
 
         func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            guard gestureRecognizer === pinchGesture, let markerView else { return true }
-            let shouldBegin = expandedHitRect(for: markerView).contains(gestureRecognizer.location(in: markerView))
-            if shouldBegin {
-                FlagZoomInteractionState.isPinching = true
-            }
-            return shouldBegin
+            guard gestureRecognizer === pinchGesture, let markerView, markerView.window != nil else { return false }
+            return expandedHitRect(for: markerView).contains(gestureRecognizer.location(in: markerView))
         }
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -986,12 +1199,26 @@ private struct WindowPinchGestureReader: UIViewRepresentable {
 final class FlagImageCache {
     static let shared = FlagImageCache()
 
+    struct PreloadReport {
+        let totalCount: Int
+        let cachedCount: Int
+        let failedCount: Int
+
+        var isComplete: Bool {
+            cachedCount >= totalCount
+        }
+    }
+
     private let cache = NSCache<NSURL, UIImage>()
     private var loadingTasks: [URL: Task<UIImage, Error>] = [:]
+    private var validatedDiskURLs: Set<URL> = []
     private let diskCacheDirectory: URL
 
     private init() {
-        cache.countLimit = 220
+        // A w1280 flag can occupy several MB after decoding. Keep only a small
+        // decoded working set in RAM; the complete catalogue is warmed on disk.
+        cache.countLimit = 64
+        cache.totalCostLimit = 96 * 1_024 * 1_024
         let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         diskCacheDirectory = cachesDirectory.appendingPathComponent("FlagImageCache", isDirectory: true)
         try? FileManager.default.createDirectory(at: diskCacheDirectory, withIntermediateDirectories: true, attributes: nil)
@@ -999,12 +1226,7 @@ final class FlagImageCache {
 
     @MainActor
     func image(for url: URL) -> UIImage? {
-        if let cachedImage = cache.object(forKey: url as NSURL) {
-            return cachedImage
-        }
-        guard let diskImage = loadImageFromDisk(for: url) else { return nil }
-        cache.setObject(diskImage, forKey: url as NSURL)
-        return diskImage
+        cache.object(forKey: url as NSURL)
     }
 
     @MainActor
@@ -1017,27 +1239,112 @@ final class FlagImageCache {
             return try await task.value
         }
 
-        let task = Task.detached(priority: .utility) {
-            var request = URLRequest(url: url)
-            request.cachePolicy = .returnCacheDataElseLoad
-            request.timeoutInterval = 8
-            let (data, _) = try await URLSession.shared.data(for: request)
-            guard let image = UIImage(data: data) else {
-                throw URLError(.cannotDecodeContentData)
-            }
-            return image
+        let fileURL = diskURL(for: url)
+        let task = Task.detached(priority: .userInitiated) {
+            try await Self.loadOrDownloadImage(from: url, fileURL: fileURL)
         }
 
         loadingTasks[url] = task
         do {
-            let loadedImage = try await task.value
-            cache.setObject(loadedImage, forKey: url as NSURL)
-            saveImageToDisk(loadedImage, for: url)
+            let loadedImage = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            storeInMemory(loadedImage, for: url)
             loadingTasks[url] = nil
             return loadedImage
         } catch {
             loadingTasks[url] = nil
             throw error
+        }
+    }
+
+    @MainActor
+    func preloadToDisk(
+        countries: [Country],
+        maximumConcurrentDownloads: Int = 6,
+        maximumDuration: TimeInterval = 6,
+        progress: (@MainActor (_ completed: Int, _ total: Int) -> Void)? = nil
+    ) async -> PreloadReport {
+        var seenURLs: Set<URL> = []
+        let urls = countries.compactMap(\.flagImageURL).filter { seenURLs.insert($0).inserted }
+        let total = urls.count
+        guard total > 0 else {
+            progress?(0, 0)
+            return PreloadReport(totalCount: 0, cachedCount: 0, failedCount: 0)
+        }
+
+        let items = urls.map { (url: $0, fileURL: diskURL(for: $0)) }
+        let stillValidatedURLs = Set(items.compactMap { item -> URL? in
+            guard validatedDiskURLs.contains(item.fileURL),
+                  Self.hasNonemptyCacheFile(at: item.fileURL) else { return nil }
+            return item.fileURL
+        })
+        let validationCandidates = items
+            .map(\.fileURL)
+            .filter { !stillValidatedURLs.contains($0) && Self.hasNonemptyCacheFile(at: $0) }
+        let newlyValidatedURLs = await Self.validatedCacheFileURLs(
+            validationCandidates,
+            maximumConcurrentValidations: maximumConcurrentDownloads
+        )
+        let validCachedURLs = stillValidatedURLs.union(newlyValidatedURLs)
+        validatedDiskURLs.formUnion(validCachedURLs)
+
+        for invalidURL in validationCandidates where !newlyValidatedURLs.contains(invalidURL) {
+            validatedDiskURLs.remove(invalidURL)
+            try? FileManager.default.removeItem(at: invalidURL)
+        }
+
+        let pendingItems = items.filter { !validCachedURLs.contains($0.fileURL) }
+        var completed = validCachedURLs.count
+        var failed = 0
+        progress?(completed, total)
+
+        let startedAt = Date()
+        let batchSize = max(1, min(maximumConcurrentDownloads, 8))
+
+        for batchStart in stride(from: 0, to: pendingItems.count, by: batchSize) {
+            guard Date().timeIntervalSince(startedAt) < maximumDuration else { break }
+            let batchEnd = min(batchStart + batchSize, pendingItems.count)
+            let batch = Array(pendingItems[batchStart..<batchEnd])
+
+            await withTaskGroup(of: URL?.self) { group in
+                for item in batch {
+                    group.addTask(priority: .utility) {
+                        do {
+                            try await Self.downloadImageData(
+                                from: item.url,
+                                to: item.fileURL,
+                                timeoutInterval: 4
+                            )
+                            return item.fileURL
+                        } catch {
+                            return nil
+                        }
+                    }
+                }
+
+                for await downloadedURL in group {
+                    if let downloadedURL {
+                        completed += 1
+                        validatedDiskURLs.insert(downloadedURL)
+                    } else {
+                        failed += 1
+                    }
+                    progress?(completed + failed, total)
+                }
+            }
+        }
+
+        return PreloadReport(totalCount: total, cachedCount: completed, failedCount: failed)
+    }
+
+    @MainActor
+    func warmInMemory(_ countries: [Country]) async {
+        for country in countries {
+            guard !Task.isCancelled, let url = country.flagImageURL else { continue }
+            _ = try? await loadImage(from: url)
         }
     }
 
@@ -1050,20 +1357,130 @@ final class FlagImageCache {
         return diskCacheDirectory.appendingPathComponent(encoded).appendingPathExtension("png")
     }
 
-    private func loadImageFromDisk(for url: URL) -> UIImage? {
-        guard let data = try? Data(contentsOf: diskURL(for: url)) else { return nil }
-        return UIImage(data: data)
+    @MainActor
+    private func storeInMemory(_ image: UIImage, for url: URL) {
+        let pixelWidth = max(Int(image.size.width * image.scale), 1)
+        let pixelHeight = max(Int(image.size.height * image.scale), 1)
+        cache.setObject(
+            image,
+            forKey: url as NSURL,
+            cost: pixelWidth * pixelHeight * 4
+        )
     }
 
-    private func saveImageToDisk(_ image: UIImage, for url: URL) {
-        guard let data = image.pngData() else { return }
-        try? data.write(to: diskURL(for: url), options: [.atomic])
+    nonisolated private static func loadOrDownloadImage(from url: URL, fileURL: URL) async throws -> UIImage {
+        if let data = try? Data(contentsOf: fileURL), let image = displayReadyImage(from: data) {
+            return image
+        }
+
+        try? FileManager.default.removeItem(at: fileURL)
+        try await downloadImageData(from: url, to: fileURL, timeoutInterval: 6)
+        try Task.checkCancellation()
+
+        let data = try Data(contentsOf: fileURL)
+        guard let image = displayReadyImage(from: data) else {
+            try? FileManager.default.removeItem(at: fileURL)
+            throw URLError(.cannotDecodeContentData)
+        }
+        return image
+    }
+
+    nonisolated private static func displayReadyImage(from data: Data) -> UIImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceShouldCache: true,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let source = CGImageSourceCreateWithData(data as CFData, options as CFDictionary),
+              CGImageSourceGetCount(source) > 0,
+              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        // ImageIO has already decoded the pixels because shouldCacheImmediately
+        // is enabled, so SwiftUI does not decompress the image on first render.
+        return UIImage(cgImage: cgImage)
+    }
+
+    nonisolated private static func downloadImageData(
+        from url: URL,
+        to fileURL: URL,
+        timeoutInterval: TimeInterval
+    ) async throws {
+        try Task.checkCancellation()
+        var request = URLRequest(url: url)
+        request.cachePolicy = .returnCacheDataElseLoad
+        request.timeoutInterval = timeoutInterval
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Task.checkCancellation()
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode),
+              !data.isEmpty,
+              isDecodableImageData(data) else {
+            throw URLError(.badServerResponse)
+        }
+
+        try data.write(to: fileURL, options: [.atomic])
+    }
+
+    nonisolated private static func hasNonemptyCacheFile(at url: URL) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let fileSize = attributes[.size] as? NSNumber else { return false }
+        return fileSize.intValue > 0
+    }
+
+    /// Forces ImageIO to decode the image while retaining only a tiny pixel
+    /// buffer. This preserves corruption detection without materializing every
+    /// cached w1280 flag at full resolution during preload validation.
+    nonisolated private static func isDecodableImageData(_ data: Data) -> Bool {
+        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary),
+              CGImageSourceGetCount(source) > 0 else { return false }
+
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 32,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) != nil
+    }
+
+    nonisolated private static func validatedCacheFileURLs(
+        _ urls: [URL],
+        maximumConcurrentValidations: Int
+    ) async -> Set<URL> {
+        guard !urls.isEmpty else { return [] }
+        let batchSize = max(1, min(maximumConcurrentValidations, 8))
+        var validURLs: Set<URL> = []
+
+        for batchStart in stride(from: 0, to: urls.count, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, urls.count)
+            let batch = Array(urls[batchStart..<batchEnd])
+            await withTaskGroup(of: URL?.self) { group in
+                for url in batch {
+                    group.addTask(priority: .utility) {
+                        autoreleasepool {
+                            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+                                  isDecodableImageData(data) else { return nil }
+                            return url
+                        }
+                    }
+                }
+                for await validURL in group {
+                    if let validURL {
+                        validURLs.insert(validURL)
+                    }
+                }
+            }
+        }
+
+        return validURLs
     }
 }
 
 struct ActionButtonStyle: ButtonStyle {
     let color: Color
     var isProminent: Bool = true
+    var verticalPadding: CGFloat = 13
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
@@ -1071,7 +1488,7 @@ struct ActionButtonStyle: ButtonStyle {
             .font(.headline.weight(.semibold))
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
-            .padding(.vertical, 13)
+            .padding(.vertical, verticalPadding)
             .background(backgroundColor(isPressed: configuration.isPressed))
             .foregroundStyle(foregroundColor)
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -1098,4 +1515,3 @@ struct ActionButtonStyle: ButtonStyle {
         return isProminent ? .white : color
     }
 }
-

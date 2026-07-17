@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct SpassmitFlaggenApp: App {
+    init() {
+        AppStorageService.migrateLargeDefaultsToFilesIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

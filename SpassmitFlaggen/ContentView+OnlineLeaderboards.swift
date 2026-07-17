@@ -77,10 +77,10 @@ extension ContentView {
     var scopedFlaggenrunLeaderboard: [OnlinePlayerStats] {
         let source = selectedOnlineScope == .friends ? friendLeaderboard : deduplicatedOnlineLeaderboard
         return source.sorted {
-            if $0.leagueBestScore == $1.leagueBestScore {
+            if $0.runBestScore(for: selectedSubject) == $1.runBestScore(for: selectedSubject) {
                 return displayedOnlineSubjectStats(for: $0).learnedThisWeek > displayedOnlineSubjectStats(for: $1).learnedThisWeek
             }
-            return $0.leagueBestScore > $1.leagueBestScore
+            return $0.runBestScore(for: selectedSubject) > $1.runBestScore(for: selectedSubject)
         }
     }
 
