@@ -1,15 +1,48 @@
 {
   "schemaVersion": 1,
-  "generatedAt": null,
-  "status": "waiting_for_first_sync",
-  "messages": [
-    "Warte auf den ersten sicheren Cloud-Export aus GitHub Actions."
-  ],
-  "availability": {},
-  "kpis": {},
+  "generatedAt": "2026-07-17T16:18:34Z",
+  "status": "ok",
+  "messages": [],
+  "availability": {
+    "App Analytics": {
+      "available": false,
+      "reason": "Apple hat noch keine Analytics-Instanzen bereitgestellt.",
+      "updatedAt": "2026-07-17T16:18:34Z"
+    },
+    "App Store Feedback & Release": {
+      "available": true,
+      "updatedAt": "2026-07-17T16:18:34Z"
+    },
+    "Sales & Trends": {
+      "available": false,
+      "reason": "ASC_VENDOR_NUMBER fehlt.",
+      "updatedAt": "2026-07-17T16:18:34Z"
+    },
+    "CloudKit Public DB": {
+      "available": false,
+      "reason": "CloudKit-Server-to-Server-Secrets fehlen.",
+      "updatedAt": "2026-07-17T16:18:34Z"
+    },
+    "Finance": {
+      "available": false,
+      "reason": "Separater Finance-Key oder ASC_VENDOR_NUMBER fehlt.",
+      "updatedAt": "2026-07-17T16:18:34Z"
+    }
+  },
+  "kpis": {
+    "reviewAverage": null,
+    "reviewCount": 0
+  },
   "daily": [],
   "countries": [],
   "devices": [],
   "versions": [],
+  "release": {
+    "appStoreVersion": "1.0",
+    "appStoreState": "READY_FOR_SALE",
+    "build": "101",
+    "buildProcessingState": "VALID"
+  },
+  "finance": null,
   "cloudKit": {}
 }
