@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-17T16:36:29Z",
+  "generatedAt": "2026-07-17T16:38:43Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
       "available": false,
       "reason": "Apple hat noch keine Analytics-Instanzen bereitgestellt.",
-      "updatedAt": "2026-07-17T16:36:29Z"
+      "updatedAt": "2026-07-17T16:38:43Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-17T16:36:29Z"
+      "updatedAt": "2026-07-17T16:38:43Z"
     },
     "Sales & Trends": {
       "available": false,
       "reason": "Apple meldet für den abgefragten Tag noch keine Verkäufe.",
-      "updatedAt": "2026-07-17T16:36:29Z"
+      "updatedAt": "2026-07-17T16:38:43Z"
     },
     "CloudKit Public DB": {
       "available": false,
-      "reason": "CloudKit-Query fehlgeschlagen: 400: {\n  \"uuid\" : \"0bd4ba9e-1570-4a14-a714-97ad4fe64e0a\",\n  \"serverErrorCode\" : \"BAD_REQUEST\",\n  \"reason\" : \"Field 'recordName' is not marked queryable\"\n}",
-      "updatedAt": "2026-07-17T16:36:29Z"
+      "reason": "CloudKit-Query fehlgeschlagen: 400: {\n  \"uuid\" : \"cdb5bfe3-1d5b-4d7c-897a-398fd2794e0b\",\n  \"serverErrorCode\" : \"BAD_REQUEST\",\n  \"reason\" : \"Field 'recordName' is not marked queryable\"\n}",
+      "updatedAt": "2026-07-17T16:38:43Z"
     },
     "Finance": {
       "available": false,
       "reason": "Separater Finance-Key oder ASC_VENDOR_NUMBER fehlt.",
-      "updatedAt": "2026-07-17T16:36:29Z"
+      "updatedAt": "2026-07-17T16:38:43Z"
     }
   },
   "kpis": {
