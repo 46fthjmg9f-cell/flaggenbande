@@ -24,4 +24,4 @@ CloudKit muss dafür im CloudKit Dashboard unter **API Access → Server-to-Serv
 
 Der Collector fragt aus CloudKit nur die für Aggregate notwendigen Felder ab. Er veröffentlicht weder Namen, Game-Center-IDs, Record-Namen, Profil-Snapshots noch Antwortverläufe. App Analytics kann aufgrund Apples Datenschutzschwellen und Reporting-Latenzen zunächst leer sein; das Dashboard kennzeichnet das statt Nullwerte zu erfinden.
 
-Der Abruf folgt den paginierten Analytics-Instanzen und CloudKit-Continuation-Markern, nutzt exponentielle Wiederholungsversuche bei temporären API-Fehlern und schreibt die JSON-Datei atomar. Schlägt ein Abruf fehl, bleibt die letzte sichere Aggregation sichtbar.
+Der Abruf läuft täglich um 06:17 UTC (08:17 Uhr in Berlin während der Sommerzeit), folgt den paginierten Analytics-Instanzen und CloudKit-Continuation-Markern, nutzt exponentielle Wiederholungsversuche bei temporären API-Fehlern und schreibt die JSON-Datei atomar. Schlägt ein Abruf fehl, bleibt die letzte sichere Aggregation sichtbar. Bei Bedarf kann er in GitHub Actions manuell gestartet werden.

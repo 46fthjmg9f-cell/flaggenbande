@@ -203,7 +203,7 @@ export default function Dashboard() {
       <Panel eyebrow="SCORES" title="Punkteverteilung" detail="anonym aggregiert"><Chart option={scoreOption} label="Punkteverteilung" /></Panel>
       <Panel eyebrow="TERRITORIES" title="Downloads nach Land" detail="aktiver Filter berücksichtigt"><Chart option={countryOption} label="Downloads nach Land" /></Panel>
       <Panel eyebrow="SPIELMODI" title="Versuche nach Modus" detail="CloudKit DailyAttempt"><Chart option={modeOption} label="Versuche nach Spielmodus" /></Panel>
-      <Panel eyebrow="DATENABDECKUNG" title="Verfügbare Quellen" detail="Sicherer, stündlicher Abruf">
+      <Panel eyebrow="DATENABDECKUNG" title="Verfügbare Quellen" detail="Sicherer, täglicher Abruf">
         <div className="metric-list">{Object.entries(data.availability).length ? <ul>{Object.entries(data.availability).map(([name, entry]) => <li key={name}><span className={entry.available ? 'available-dot' : 'unavailable-dot'} /><b>{name}</b><small>{entry.available ? 'Verfügbar' : entry.reason ?? 'Noch nicht verfügbar'}</small></li>)}</ul> : <p>Der erste Abruf füllt hier transparent die verfügbaren Apple- und CloudKit-Quellen ein.</p>}</div>
       </Panel>
     </section>
