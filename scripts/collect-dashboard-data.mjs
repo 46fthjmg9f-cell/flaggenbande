@@ -196,12 +196,12 @@ function cloudKitHeaders(path, body) {
   return { 'content-type': 'application/json', 'X-Apple-CloudKit-Request-KeyID': process.env.CLOUDKIT_KEY_ID, 'X-Apple-CloudKit-Request-ISO8601Date': date, 'X-Apple-CloudKit-Request-SignatureV1': signature }
 }
 function field(record, key) { const value = record.fields?.[key]?.value; return typeof value === 'object' && value?.timestamp ? value.timestamp : value }
-async function cloudKitQuery(recordType, desiredKeys, sortField) {
+async function cloudKitQuery(recordType, desiredKeys, sortField, filterBy) {
   const path = `/database/1/${cloudKitContainer}/production/public/records/query`
   const all = []
   let continuationMarker
   do {
-    const payload = JSON.stringify({ query: { recordType, filterBy: [], sortBy: [{ fieldName: sortField, ascending: true }] }, desiredKeys, resultsLimit: 200, continuationMarker })
+    const payload = JSON.stringify({ query: { recordType, filterBy, sortBy: [{ fieldName: sortField, ascending: true }] }, desiredKeys, resultsLimit: 200, continuationMarker })
     const response = await fetchWithRetry(`https://api.apple-cloudkit.com${path}`, { method: 'POST', headers: cloudKitHeaders(path, payload), body: payload })
     const page = await response.json()
     all.push(...(page.records ?? []))
@@ -223,11 +223,12 @@ function aggregateBy(items, mapper) {
 async function collectCloudKit() {
   if (!isConfigured('CLOUDKIT_KEY_ID', 'CLOUDKIT_PRIVATE_KEY')) return { cloudKit: {}, available: false, reason: 'CloudKit-Server-to-Server-Secrets fehlen.' }
   try {
-    const [players, attempts, userStats] = await Promise.all([
-      cloudKitQuery('PlayerStats', ['updatedAt'], 'updatedAt'),
-      cloudKitQuery('DailyAttempt', ['dateKey', 'mode', 'score', 'duration', 'completed'], 'dateKey'),
-      cloudKitQuery('UserStats', ['dailyFlaggenrunTrophies', 'dailyStaedterunTrophies', 'totalTrophies', 'updatedAt'], 'updatedAt'),
-    ])
+    const attempts = await cloudKitQuery(
+      'DailyAttempt',
+      ['dateKey', 'mode', 'score', 'duration', 'completed'],
+      'dateKey',
+      [{ fieldName: 'dateKey', comparator: 'NOT_EQUALS', fieldValue: { value: '', type: 'STRING' } }],
+    )
     const dailyMap = new Map()
     for (const record of attempts) {
       const date = isoDate(field(record, 'dateKey'))
@@ -245,10 +246,8 @@ async function collectCloudKit() {
     const daily = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date) || a.mode.localeCompare(b.mode)).map(state => ({ date: state.date, mode: state.mode, players: state.players.size, attempts: state.attempts, completed: state.completed, averageScore: state.attempts ? state.scoreTotal / state.attempts : null, averageDuration: state.attempts ? state.durationTotal / state.attempts : null, abortRate: state.attempts ? 1 - state.completed / state.attempts : null }))
     const scores = aggregateBy(attempts, record => ({ key: String(Math.floor(asNumber(field(record, 'score')) / 10) * 10), value: 1 }))
     const modes = aggregateBy(attempts, record => ({ key: String(field(record, 'mode') ?? 'Unbekannt'), value: 1 }))
-    const trophies = [{ key: 'Flaggenrun', value: userStats.reduce((sum, record) => sum + asNumber(field(record, 'dailyFlaggenrunTrophies')), 0) }, { key: 'Städterun', value: userStats.reduce((sum, record) => sum + asNumber(field(record, 'dailyStaedterunTrophies')), 0) }]
-    const today = new Date().toISOString().slice(0, 10)
     const averageScore = attempts.length ? attempts.reduce((sum, record) => sum + asNumber(field(record, 'score')), 0) / attempts.length : null
-    return { cloudKit: { daily, scoreDistribution: scores, modes, trophies, players: players.length, profilesUpdatedToday: players.filter(record => String(field(record, 'updatedAt') ?? '').startsWith(today)).length, totalAttempts: attempts.length, averageScore }, available: true }
+    return { cloudKit: { daily, scoreDistribution: scores, modes, trophies: [], totalAttempts: attempts.length, averageScore }, available: true }
   } catch (error) { return { cloudKit: {}, available: false, reason: `CloudKit-Query fehlgeschlagen: ${error.message}` } }
 }
 
