@@ -1,32 +1,31 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-17T16:38:43Z",
+  "generatedAt": "2026-07-17T16:40:37Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
       "available": false,
       "reason": "Apple hat noch keine Analytics-Instanzen bereitgestellt.",
-      "updatedAt": "2026-07-17T16:38:43Z"
+      "updatedAt": "2026-07-17T16:40:37Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-17T16:38:43Z"
+      "updatedAt": "2026-07-17T16:40:37Z"
     },
     "Sales & Trends": {
       "available": false,
       "reason": "Apple meldet für den abgefragten Tag noch keine Verkäufe.",
-      "updatedAt": "2026-07-17T16:38:43Z"
+      "updatedAt": "2026-07-17T16:40:37Z"
     },
     "CloudKit Public DB": {
-      "available": false,
-      "reason": "CloudKit-Query fehlgeschlagen: 400: {\n  \"uuid\" : \"cdb5bfe3-1d5b-4d7c-897a-398fd2794e0b\",\n  \"serverErrorCode\" : \"BAD_REQUEST\",\n  \"reason\" : \"Field 'recordName' is not marked queryable\"\n}",
-      "updatedAt": "2026-07-17T16:38:43Z"
+      "available": true,
+      "updatedAt": "2026-07-17T16:40:37Z"
     },
     "Finance": {
       "available": false,
       "reason": "Separater Finance-Key oder ASC_VENDOR_NUMBER fehlt.",
-      "updatedAt": "2026-07-17T16:38:43Z"
+      "updatedAt": "2026-07-17T16:40:37Z"
     }
   },
   "kpis": {
@@ -44,5 +43,219 @@
     "buildProcessingState": "VALID"
   },
   "finance": null,
-  "cloudKit": {}
+  "cloudKit": {
+    "daily": [
+      {
+        "date": "2026-07-09",
+        "mode": "daily_flaggenrun",
+        "players": 4,
+        "attempts": 4,
+        "completed": 2,
+        "averageScore": 1930.5,
+        "averageDuration": 30.25,
+        "abortRate": 0.5
+      },
+      {
+        "date": "2026-07-09",
+        "mode": "daily_staedterun",
+        "players": 2,
+        "attempts": 2,
+        "completed": 0,
+        "averageScore": 0,
+        "averageDuration": 8,
+        "abortRate": 1
+      },
+      {
+        "date": "2026-07-10",
+        "mode": "daily_flaggenrun",
+        "players": 1,
+        "attempts": 1,
+        "completed": 1,
+        "averageScore": 4095,
+        "averageDuration": 60,
+        "abortRate": 0
+      },
+      {
+        "date": "2026-07-11",
+        "mode": "daily_flaggenrun",
+        "players": 5,
+        "attempts": 5,
+        "completed": 5,
+        "averageScore": 3096.4,
+        "averageDuration": 60,
+        "abortRate": 0
+      },
+      {
+        "date": "2026-07-12",
+        "mode": "daily_flaggenrun",
+        "players": 2,
+        "attempts": 2,
+        "completed": 1,
+        "averageScore": 1886.5,
+        "averageDuration": 37,
+        "abortRate": 0.5
+      },
+      {
+        "date": "2026-07-13",
+        "mode": "daily_flaggenrun",
+        "players": 5,
+        "attempts": 5,
+        "completed": 4,
+        "averageScore": 3376.6,
+        "averageDuration": 54.8,
+        "abortRate": 0.19999999999999996
+      },
+      {
+        "date": "2026-07-15",
+        "mode": "daily_flaggenrun",
+        "players": 4,
+        "attempts": 4,
+        "completed": 3,
+        "averageScore": 3370.75,
+        "averageDuration": 45,
+        "abortRate": 0.25
+      },
+      {
+        "date": "2026-07-16",
+        "mode": "daily_flaggenrun",
+        "players": 2,
+        "attempts": 2,
+        "completed": 1,
+        "averageScore": 2702.5,
+        "averageDuration": 30,
+        "abortRate": 0.5
+      },
+      {
+        "date": "2026-07-17",
+        "mode": "daily_flaggenrun",
+        "players": 4,
+        "attempts": 4,
+        "completed": 3,
+        "averageScore": 1886,
+        "averageDuration": 45,
+        "abortRate": 0.25
+      },
+      {
+        "date": "2026-07-17",
+        "mode": "daily_staedterun",
+        "players": 2,
+        "attempts": 2,
+        "completed": 1,
+        "averageScore": 482,
+        "averageDuration": 30,
+        "abortRate": 0.5
+      }
+    ],
+    "scoreDistribution": [
+      {
+        "key": "0",
+        "value": 8
+      },
+      {
+        "key": "3570",
+        "value": 1
+      },
+      {
+        "key": "4140",
+        "value": 1
+      },
+      {
+        "key": "4090",
+        "value": 1
+      },
+      {
+        "key": "1610",
+        "value": 1
+      },
+      {
+        "key": "2500",
+        "value": 1
+      },
+      {
+        "key": "3150",
+        "value": 1
+      },
+      {
+        "key": "3910",
+        "value": 1
+      },
+      {
+        "key": "4290",
+        "value": 1
+      },
+      {
+        "key": "3610",
+        "value": 1
+      },
+      {
+        "key": "150",
+        "value": 1
+      },
+      {
+        "key": "2110",
+        "value": 1
+      },
+      {
+        "key": "3650",
+        "value": 1
+      },
+      {
+        "key": "4060",
+        "value": 1
+      },
+      {
+        "key": "1980",
+        "value": 1
+      },
+      {
+        "key": "5050",
+        "value": 1
+      },
+      {
+        "key": "3780",
+        "value": 1
+      },
+      {
+        "key": "4460",
+        "value": 1
+      },
+      {
+        "key": "5230",
+        "value": 1
+      },
+      {
+        "key": "5400",
+        "value": 1
+      },
+      {
+        "key": "410",
+        "value": 1
+      },
+      {
+        "key": "3860",
+        "value": 1
+      },
+      {
+        "key": "3250",
+        "value": 1
+      },
+      {
+        "key": "960",
+        "value": 1
+      }
+    ],
+    "modes": [
+      {
+        "key": "daily_flaggenrun",
+        "value": 27
+      },
+      {
+        "key": "daily_staedterun",
+        "value": 4
+      }
+    ],
+    "trophies": [],
+    "totalAttempts": 31,
+    "averageScore": 2430.6774193548385
+  }
 }
