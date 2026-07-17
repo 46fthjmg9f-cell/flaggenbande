@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": null,
+  "status": "waiting_for_first_sync",
+  "messages": [
+    "Warte auf den ersten sicheren Cloud-Export aus GitHub Actions."
+  ],
+  "availability": {},
+  "kpis": {},
+  "daily": [],
+  "countries": [],
+  "devices": [],
+  "versions": [],
+  "cloudKit": {}
+}
