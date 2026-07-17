@@ -192,7 +192,7 @@ function cloudKitHeaders(path, body) {
   const date = now()
   const bodyHash = crypto.createHash('sha256').update(body).digest('base64')
   const message = `${date}:${bodyHash}:${path}`
-  const signature = crypto.sign('sha256', Buffer.from(message), { key: process.env.CLOUDKIT_PRIVATE_KEY.replace(/\\n/g, '\n'), dsaEncoding: 'ieee-p1363' }).toString('base64')
+  const signature = crypto.sign('sha256', Buffer.from(message), { key: process.env.CLOUDKIT_PRIVATE_KEY.replace(/\\n/g, '\n') }).toString('base64')
   return { 'content-type': 'application/json', 'X-Apple-CloudKit-Request-KeyID': process.env.CLOUDKIT_KEY_ID, 'X-Apple-CloudKit-Request-ISO8601Date': date, 'X-Apple-CloudKit-Request-SignatureV1': signature }
 }
 function field(record, key) { const value = record.fields?.[key]?.value; return typeof value === 'object' && value?.timestamp ? value.timestamp : value }
