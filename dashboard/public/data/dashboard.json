@@ -1,31 +1,31 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-17T16:40:37Z",
+  "generatedAt": "2026-07-17T16:51:37Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
       "available": false,
       "reason": "Apple hat noch keine Analytics-Instanzen bereitgestellt.",
-      "updatedAt": "2026-07-17T16:40:37Z"
+      "updatedAt": "2026-07-17T16:51:37Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-17T16:40:37Z"
+      "updatedAt": "2026-07-17T16:51:37Z"
     },
     "Sales & Trends": {
       "available": false,
       "reason": "Apple meldet für den abgefragten Tag noch keine Verkäufe.",
-      "updatedAt": "2026-07-17T16:40:37Z"
+      "updatedAt": "2026-07-17T16:51:37Z"
     },
     "CloudKit Public DB": {
       "available": true,
-      "updatedAt": "2026-07-17T16:40:37Z"
+      "updatedAt": "2026-07-17T16:51:37Z"
     },
     "Finance": {
       "available": false,
-      "reason": "Separater Finance-Key oder ASC_VENDOR_NUMBER fehlt.",
-      "updatedAt": "2026-07-17T16:40:37Z"
+      "reason": "Der monatliche Finanzreport ist noch nicht verfügbar.",
+      "updatedAt": "2026-07-17T16:51:37Z"
     }
   },
   "kpis": {
