@@ -1,40 +1,68 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-17T16:51:37Z",
+  "generatedAt": "2026-07-18T07:32:04Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
-      "available": false,
-      "reason": "Apple hat noch keine Analytics-Instanzen bereitgestellt.",
-      "updatedAt": "2026-07-17T16:51:37Z"
+      "available": true,
+      "updatedAt": "2026-07-18T07:32:04Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-17T16:51:37Z"
+      "updatedAt": "2026-07-18T07:32:04Z"
     },
     "Sales & Trends": {
       "available": false,
       "reason": "Apple meldet für den abgefragten Tag noch keine Verkäufe.",
-      "updatedAt": "2026-07-17T16:51:37Z"
+      "updatedAt": "2026-07-18T07:32:04Z"
     },
     "CloudKit Public DB": {
       "available": true,
-      "updatedAt": "2026-07-17T16:51:37Z"
+      "updatedAt": "2026-07-18T07:32:04Z"
     },
     "Finance": {
       "available": false,
       "reason": "Der monatliche Finanzreport ist noch nicht verfügbar.",
-      "updatedAt": "2026-07-17T16:51:37Z"
+      "updatedAt": "2026-07-18T07:32:04Z"
     }
   },
   "kpis": {
     "reviewAverage": null,
     "reviewCount": 0
   },
-  "daily": [],
-  "countries": [],
-  "devices": [],
+  "daily": [
+    {
+      "date": "2026-07-17",
+      "country": "DE",
+      "device": "iPhone",
+      "osVersion": "iOS 26.5",
+      "downloads": 0,
+      "firstTimeDownloads": 0,
+      "redownloads": 0,
+      "impressions": 0,
+      "productPageViews": 0,
+      "sessions": 0,
+      "activeDevices": 0,
+      "activeUsers": 0,
+      "installations": 0,
+      "deletions": 0,
+      "crashes": 0,
+      "retention": 0
+    }
+  ],
+  "countries": [
+    {
+      "key": "DE",
+      "value": 0
+    }
+  ],
+  "devices": [
+    {
+      "key": "iPhone",
+      "value": 0
+    }
+  ],
   "versions": [],
   "release": {
     "appStoreVersion": "1.0",
@@ -128,12 +156,12 @@
       {
         "date": "2026-07-17",
         "mode": "daily_flaggenrun",
-        "players": 4,
-        "attempts": 4,
-        "completed": 3,
-        "averageScore": 1886,
-        "averageDuration": 45,
-        "abortRate": 0.25
+        "players": 5,
+        "attempts": 5,
+        "completed": 4,
+        "averageScore": 2378.4,
+        "averageDuration": 48,
+        "abortRate": 0.19999999999999996
       },
       {
         "date": "2026-07-17",
@@ -240,6 +268,10 @@
         "value": 1
       },
       {
+        "key": "4340",
+        "value": 1
+      },
+      {
         "key": "960",
         "value": 1
       }
@@ -247,7 +279,7 @@
     "modes": [
       {
         "key": "daily_flaggenrun",
-        "value": 27
+        "value": 28
       },
       {
         "key": "daily_staedterun",
@@ -255,7 +287,7 @@
       }
     ],
     "trophies": [],
-    "totalAttempts": 31,
-    "averageScore": 2430.6774193548385
+    "totalAttempts": 32,
+    "averageScore": 2490.59375
   }
 }
