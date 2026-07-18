@@ -64,12 +64,26 @@ export default function Dashboard() {
   const [appVersion, setAppVersion] = useState('all')
   const [mode, setMode] = useState('all')
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const refreshDashboard = async () => {
+    setRefreshing(true)
+    setError(null)
+    try {
+      const response = await fetch(`./data/dashboard.json?refresh=${Date.now()}`, { cache: 'no-store' })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const payload: DashboardData = await response.json()
+      setData({ ...emptyDashboard, ...payload, cloudKit: { ...emptyDashboard.cloudKit, ...payload.cloudKit } })
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : String(reason)
+      setError(`Dashboard-Daten konnten nicht geladen werden: ${message}`)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
-    fetch('./data/dashboard.json', { cache: 'no-store' })
-      .then(async response => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
-      .then((payload: DashboardData) => setData({ ...emptyDashboard, ...payload, cloudKit: { ...emptyDashboard.cloudKit, ...payload.cloudKit } }))
-      .catch(reason => setError(`Dashboard-Daten konnten nicht geladen werden: ${reason.message}`))
+    void refreshDashboard()
   }, [])
 
   const countries = useMemo(() => unique(data.daily.map(row => row.country)), [data.daily])
@@ -171,7 +185,11 @@ export default function Dashboard() {
   return <main>
     <header className="hero">
       <div><span className="eyebrow">FLAGGENBANDE · APP & CLOUD ANALYTICS</span><h1>Alles Wichtige. Ohne Datenleck.</h1><p>Öffentlich sichtbar sind ausschließlich datensparsam aggregierte Kennzahlen aus App Store Connect und der öffentlichen CloudKit-Datenbank.</p></div>
-      <div className={`sync-state ${data.status}`}><span className="pulse" />{data.generatedAt ? `Aktualisiert ${new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.generatedAt))}` : 'Warte auf ersten Cloud-Sync'}</div>
+      <div className="sync-controls">
+        <div className={`sync-state ${data.status}`}><span className="pulse" />{data.generatedAt ? `Aktualisiert ${new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.generatedAt))}` : 'Warte auf ersten Cloud-Sync'}</div>
+        <button className="refresh" onClick={() => void refreshDashboard()} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Dashboard aktualisieren'}</button>
+        <small>Automatischer Datenabruf täglich gegen 08:17 Uhr (Berlin).</small>
+      </div>
     </header>
     <section className="filters" aria-label="Dashboard-Filter">
       <label>Zeitraum<select aria-label="Zeitraum" value={days} onChange={event => setDays(event.target.value)}><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="90">90 Tage</option><option value="all">Gesamt</option></select></label>
