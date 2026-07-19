@@ -453,8 +453,28 @@ extension ContentView {
         max(deduplicatedOnlineLeaderboard.count, activeAchievementIDs.isEmpty ? 0 : 1)
     }
 
+    /// Online records use a subject-qualified key. The old unqualified key is
+    /// still recognised for records from earlier app versions, but all new
+    /// uploads keep flag and capital achievements separate.
+    func onlineAchievementID(for achievementID: String) -> String {
+        "\(selectedSubject.rawValue)::\(achievementID)"
+    }
+
+    func player(_ player: OnlinePlayerStats, hasOnlineAchievement achievementID: String) -> Bool {
+        let qualifiedID = onlineAchievementID(for: achievementID)
+        if player.achievementIDs.contains(qualifiedID) {
+            return true
+        }
+
+        // Earlier records had no subject component. They remain visible until
+        // their owner next syncs, rather than disappearing from the global
+        // view during the rollout.
+        let isLegacyRecord = !player.achievementIDs.contains { $0.contains("::") }
+        return isLegacyRecord && player.achievementIDs.contains(achievementID)
+    }
+
     func globalUnlockCount(for achievementID: String) -> Int {
-        var count = deduplicatedOnlineLeaderboard.filter { $0.achievementIDs.contains(achievementID) }.count
+        var count = deduplicatedOnlineLeaderboard.filter { player($0, hasOnlineAchievement: achievementID) }.count
         if activeAchievementIDs.contains(achievementID) && !deduplicatedOnlineLeaderboard.contains(where: { isCurrentOnlinePlayer($0) }) {
             count += 1
         }
@@ -470,7 +490,7 @@ extension ContentView {
         var counts: [String: Int] = [:]
 
         for player in players {
-            for achievementID in player.achievementIDs {
+            for achievementID in activeIDs where self.player(player, hasOnlineAchievement: achievementID) {
                 counts[achievementID, default: 0] += 1
             }
         }

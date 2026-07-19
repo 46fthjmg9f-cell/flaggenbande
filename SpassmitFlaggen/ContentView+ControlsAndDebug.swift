@@ -62,8 +62,10 @@ extension ContentView {
                                 .font(.caption.weight(.bold))
                         }
                     }
-                    .blur(radius: isLocked ? 3 : 0)
-                    .opacity(isLocked ? 0.58 : 1)
+                    // Keep locked choices legible. The lock badge already
+                    // communicates availability; blurred text looks broken
+                    // and makes the colour names inaccessible at a glance.
+                    .opacity(isLocked ? 0.68 : 1)
 
                     if isLocked {
                         Image(systemName: "lock.fill")
@@ -75,7 +77,7 @@ extension ContentView {
                 }
                 .padding(.horizontal, 10)
             }
-            .frame(maxWidth: .infinity, minHeight: 40)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .foregroundStyle(isSelected && !isLocked ? .white : .primary)
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
@@ -256,13 +258,13 @@ extension ContentView {
     #endif
 
     func modeHeader(title: String, subtitle: String) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 7) {
             Text(title)
-                .font(.largeTitle)
-                .bold()
+                .font(.largeTitle.weight(.bold))
+                .multilineTextAlignment(.center)
             if !subtitle.isEmpty {
                 Text(subtitle)
-                    .font(.subheadline)
+                    .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -277,10 +279,10 @@ extension ContentView {
         .padding(6)
         .frame(maxWidth: .infinity)
         .background(panelBackgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(tealAccentColor.opacity(0.24), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -300,22 +302,17 @@ extension ContentView {
                     .font(.subheadline.weight(.bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.caption.weight(.bold))
-                        .transition(.scale.combined(with: .opacity))
-                }
             }
-            .frame(maxWidth: .infinity, minHeight: 46)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, 10)
             .background(isSelected ? tealAccentColor : Color.clear)
             .foregroundStyle(isSelected ? .white : .primary)
-            .clipShape(RoundedRectangle(cornerRadius: 11))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 11)
-                    .stroke(isSelected ? Color.white.opacity(0.22) : tealAccentColor.opacity(0.28), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isSelected ? Color.white.opacity(0.18) : Color.primary.opacity(0.08), lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 11))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
     }

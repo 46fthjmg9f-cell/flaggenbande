@@ -184,6 +184,12 @@ enum DailyCompletionQueue {
         persist(load().filter { $0.id != id })
     }
 
+    /// A full local reset must not leave an offline Daily completion behind.
+    /// Otherwise it could be uploaded after the user deliberately starts over.
+    static func clear() {
+        persist([])
+    }
+
     private static func persist(_ completions: [DailyRunCompletion]) {
         if completions.isEmpty {
             LegacyDefaultsMigration.removeData(forKey: storageKey)
@@ -337,28 +343,26 @@ enum DailyFlaggenrunService {
 
     static func completeAttempt(_ completion: DailyRunCompletion, gameCenterPlayerID: String?) async throws -> [DailyLeaderboardEntry] {
         try await OnlineStatsService.ensureAccountAvailable()
+        let expectedUserID = userRecordName(gameCenterPlayerID: gameCenterPlayerID)
+        guard completion.reservation.userId == expectedUserID,
+              completion.reservation.attemptNumber >= 1,
+              completion.reservation.attemptNumber <= maxAttemptsPerDay,
+              completion.reservation.mode == mode(for: completion.reservation.subject),
+              completion.reservation.recordName == attemptRecordName(
+                mode: completion.reservation.mode,
+                dateKey: completion.reservation.dateKey,
+                userId: expectedUserID,
+                attemptNumber: completion.reservation.attemptNumber
+              ),
+              isValid(completion) else {
+            throw OnlineStatsService.OnlineStatsError.invalidDailyAttemptReservation
+        }
+
         let recordID = CKRecord.ID(recordName: completion.reservation.recordName)
-        let record = try await OnlineStatsService.fetchRecord(recordID: recordID) ?? CKRecord(recordType: attemptRecordType, recordID: recordID)
-        let userId = completion.reservation.userId
-        record["dateKey"] = completion.reservation.dateKey as CKRecordValue
-        record["mode"] = completion.reservation.mode as CKRecordValue
-        record["userId"] = userId as CKRecordValue
-        record["displayName"] = completion.displayName as CKRecordValue
-        record["attemptNumber"] = completion.reservation.attemptNumber as CKRecordValue
-        record["score"] = completion.score as CKRecordValue
-        record["correctCount"] = completion.correctCount as CKRecordValue
-        record["wrongCount"] = completion.wrongCount as CKRecordValue
-        record["playedRounds"] = (completion.correctCount + completion.wrongCount) as CKRecordValue
-        record["duration"] = completion.duration as CKRecordValue
-        record["remainingTime"] = completion.remainingTime as CKRecordValue
-        record["completed"] = completion.completed as CKRecordValue
-        record["aborted"] = completion.aborted as CKRecordValue
-        record["inputHistoryData"] = encodedAnswerHistory(completion.answerRecords) as CKRecordValue
-        record["updatedAt"] = Date() as CKRecordValue
-        try await OnlineStatsService.save(record: record)
+        try await finalizeReservedAttempt(completion, recordID: recordID)
 
         if completion.completed {
-            try await updateLeaderboardIfNeeded(completion, userId: userId)
+            try await updateLeaderboardIfNeeded(completion, userId: expectedUserID)
         }
         return try await fetchLeaderboard(mode: completion.reservation.mode, dateKey: completion.reservation.dateKey)
     }
@@ -507,6 +511,60 @@ enum DailyFlaggenrunService {
         "\(mode)_\(dateKey)_\(safeRecordComponent(userId))"
     }
 
+    private static func isValid(_ completion: DailyRunCompletion) -> Bool {
+        completion.score >= 0 &&
+            completion.correctCount >= 0 &&
+            completion.wrongCount >= 0 &&
+            completion.duration >= 0 &&
+            completion.duration <= 60 &&
+            completion.remainingTime >= 0 &&
+            completion.remainingTime <= 60 &&
+            completion.completed != completion.aborted
+    }
+
+    private static func matchesReservation(_ record: CKRecord, completion: DailyRunCompletion) -> Bool {
+        record["dateKey"] as? String == completion.reservation.dateKey &&
+            record["mode"] as? String == completion.reservation.mode &&
+            record["userId"] as? String == completion.reservation.userId &&
+            (record["attemptNumber"] as? NSNumber)?.intValue == completion.reservation.attemptNumber
+    }
+
+    private static func matchesCompletion(_ record: CKRecord, completion: DailyRunCompletion) -> Bool {
+        matchesReservation(record, completion: completion) &&
+            (record["score"] as? NSNumber)?.intValue == completion.score &&
+            (record["correctCount"] as? NSNumber)?.intValue == completion.correctCount &&
+            (record["wrongCount"] as? NSNumber)?.intValue == completion.wrongCount &&
+            (record["duration"] as? NSNumber)?.doubleValue == completion.duration &&
+            (record["remainingTime"] as? NSNumber)?.doubleValue == completion.remainingTime &&
+            (record["completed"] as? NSNumber)?.boolValue == completion.completed &&
+            (record["aborted"] as? NSNumber)?.boolValue == completion.aborted
+    }
+
+    private static func finalizeReservedAttempt(_ completion: DailyRunCompletion, recordID: CKRecord.ID) async throws {
+        for _ in 0..<4 {
+            guard let record = try await OnlineStatsService.fetchRecord(recordID: recordID),
+                  matchesReservation(record, completion: completion) else {
+                throw OnlineStatsService.OnlineStatsError.invalidDailyAttemptReservation
+            }
+
+            if (record["completed"] as? NSNumber)?.boolValue == true {
+                guard matchesCompletion(record, completion: completion) else {
+                    throw OnlineStatsService.OnlineStatsError.invalidDailyAttemptReservation
+                }
+                return
+            }
+
+            write(completion, to: record)
+            do {
+                try await OnlineStatsService.saveIfUnchanged(record: record)
+                return
+            } catch let error as CKError where error.code == .serverRecordChanged {
+                continue
+            }
+        }
+        throw OnlineStatsService.OnlineStatsError.concurrentUpdate
+    }
+
     private static func updateLeaderboardIfNeeded(_ completion: DailyRunCompletion, userId: String) async throws {
         let recordID = CKRecord.ID(recordName: leaderboardRecordName(mode: completion.reservation.mode, dateKey: completion.reservation.dateKey, userId: userId))
         let candidate = DailyLeaderboardEntry(
@@ -525,13 +583,28 @@ enum DailyFlaggenrunService {
             updatedAt: Date()
         )
 
-        if let existingRecord = try await OnlineStatsService.fetchRecord(recordID: recordID), let existing = DailyLeaderboardEntry(record: existingRecord), isHigherRanked(existing, candidate) {
-            return
-        }
+        for _ in 0..<4 {
+            let record = try await OnlineStatsService.fetchRecord(recordID: recordID)
+            if let record,
+               let existing = DailyLeaderboardEntry(record: record),
+               isHigherRanked(existing, candidate) {
+                return
+            }
 
-        let record = try await OnlineStatsService.fetchRecord(recordID: recordID) ?? CKRecord(recordType: leaderboardRecordType, recordID: recordID)
-        write(candidate, to: record)
-        try await OnlineStatsService.save(record: record)
+            let recordToSave = record ?? CKRecord(recordType: leaderboardRecordType, recordID: recordID)
+            write(candidate, to: recordToSave)
+            do {
+                if record == nil {
+                    try await OnlineStatsService.saveNew(record: recordToSave)
+                } else {
+                    try await OnlineStatsService.saveIfUnchanged(record: recordToSave)
+                }
+                return
+            } catch let error as CKError where error.code == .serverRecordChanged {
+                continue
+            }
+        }
+        throw OnlineStatsService.OnlineStatsError.concurrentUpdate
     }
 
     private static func fetchTrophyCount(subject: LearningSubject, userId: String) async throws -> Int {
@@ -608,6 +681,20 @@ enum DailyFlaggenrunService {
         record["duration"] = entry.duration as CKRecordValue
         record["remainingTime"] = entry.remainingTime as CKRecordValue
         record["completedAt"] = entry.completedAt as CKRecordValue
+        record["updatedAt"] = Date() as CKRecordValue
+    }
+
+    private static func write(_ completion: DailyRunCompletion, to record: CKRecord) {
+        record["displayName"] = completion.displayName as CKRecordValue
+        record["score"] = completion.score as CKRecordValue
+        record["correctCount"] = completion.correctCount as CKRecordValue
+        record["wrongCount"] = completion.wrongCount as CKRecordValue
+        record["playedRounds"] = (completion.correctCount + completion.wrongCount) as CKRecordValue
+        record["duration"] = completion.duration as CKRecordValue
+        record["remainingTime"] = completion.remainingTime as CKRecordValue
+        record["completed"] = completion.completed as CKRecordValue
+        record["aborted"] = completion.aborted as CKRecordValue
+        record["inputHistoryData"] = encodedAnswerHistory(completion.answerRecords) as CKRecordValue
         record["updatedAt"] = Date() as CKRecordValue
     }
 

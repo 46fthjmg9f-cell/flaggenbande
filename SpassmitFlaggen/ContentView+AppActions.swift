@@ -13,6 +13,13 @@ extension ContentView {
         restorePersistedPracticeContinents()
         migrateLegacyForcedGermanLanguageIfNeeded()
 
+        #if targetEnvironment(simulator)
+        // Simulator app bundles do not carry the real Game Center/CloudKit
+        // entitlements. Keep the local UI testable instead of attempting an
+        // online handshake that iOS will reject before the first screen.
+        onlineFeaturesEnabled = false
+        #endif
+
         fullVersionUnlocked = storeKit.purchasedFullVersion
         ensureTrainerProfile()
         if !availableCountries.contains(currentCountry) {
@@ -484,7 +491,9 @@ extension ContentView {
                 profile: activeProfile,
                 countries: availableCountries,
                 subject: selectedSubject,
-                achievementIDs: achievementItems.filter(\.isUnlocked).map(\.id)
+                achievementIDs: achievementItems
+                    .filter(\.isUnlocked)
+                    .map { onlineAchievementID(for: $0.id) }
             )
             onlineStatusText = L("Statistik hochgeladen. Lade Rangliste ...", "Stats uploaded. Loading leaderboard ...")
 

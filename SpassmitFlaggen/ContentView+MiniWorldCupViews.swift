@@ -27,7 +27,8 @@ extension ContentView {
                         miniWorldCupResultView
                     }
                 }
-                .padding()
+                .padding(.horizontal, AppLayout.screenPadding)
+                .padding(.vertical, 24)
                 .frame(maxWidth: 620)
                 .frame(maxWidth: .infinity)
             }
@@ -105,8 +106,8 @@ extension ContentView {
     }
 
     var miniWorldCupSetupView: some View {
-        VStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 10) {
+        VStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
                 Label(L("Spieler im Uhrzeigersinn", "Players clockwise"), systemImage: "arrow.clockwise.circle.fill")
                     .font(.headline)
 
@@ -155,17 +156,19 @@ extension ContentView {
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundStyle(.secondary)
+                                        .frame(width: 44, height: 44)
+                                        .contentShape(Circle())
                                 }
                                 .buttonStyle(.plain)
                             }
-                            .padding(10)
-                            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+                            .padding(12)
+                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppLayout.controlRadius, style: .continuous))
                         }
                     }
                 }
             }
-            .padding(14)
-            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+            .padding(16)
+            .appSurface()
 
             miniWorldCupRulesView
 
@@ -232,8 +235,8 @@ extension ContentView {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(14)
-        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+        .padding(16)
+        .appSurface()
     }
 
     var miniWorldCupTurnStatusView: some View {

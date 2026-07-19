@@ -261,6 +261,7 @@ extension ContentView {
             }
         }
         .scrollContentBackground(.hidden)
+        .listSectionSpacing(16)
         .background(
             appBackgroundGradient
                 .ignoresSafeArea()
@@ -403,7 +404,7 @@ extension ContentView {
             .labelsHidden()
             .fixedSize()
         }
-        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
     }
 

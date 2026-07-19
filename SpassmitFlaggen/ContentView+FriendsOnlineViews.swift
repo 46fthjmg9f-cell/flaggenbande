@@ -70,6 +70,7 @@ extension ContentView {
             }
         }
         .scrollContentBackground(.hidden)
+        .listSectionSpacing(16)
         .background(appBackgroundGradient.ignoresSafeArea())
         .navigationTitle(L("Online", "Online"))
         .toolbar {
@@ -280,9 +281,9 @@ extension ContentView {
             }
         }
 
-        if selectedOnlineScope == .global && !fullVersionUnlocked {
-            EmptyView()
-        } else {
+        if selectedOnlineScope == .global && fullVersionUnlocked {
+            globalLeaderboardSection
+        } else if selectedOnlineScope == .friends {
             Section(selectedSubject == .capitals ? L("Hauptstädte gelernt - 7 Tage", "Capitals learned - 7 days") : L("Flaggen gelernt - 7 Tage", "Flags learned - 7 days")) {
                 onlineLeaderboardRows(
                     players: scopedLearnedThisWeekLeaderboard,
@@ -306,6 +307,112 @@ extension ContentView {
                     sectionID: "run"
                 )
             }
+        }
+    }
+
+    var globalLeaderboardSection: some View {
+        Group {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(L("Eine Rangliste nach der anderen — damit du schnell vergleichen kannst.", "One leaderboard at a time, so comparisons stay clear."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Picker(L("Rangliste", "Leaderboard"), selection: $selectedGlobalLeaderboardMetric) {
+                        ForEach([OnlineLeaderboardMetric.week, .learningStreak, .flaggenrun]) { metric in
+                            Label(globalLeaderboardMetricTitle(metric), systemImage: globalLeaderboardMetricIcon(metric))
+                                .tag(metric)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .padding(.vertical, 4)
+            }
+
+            Section(globalLeaderboardMetricTitle(selectedGlobalLeaderboardMetric)) {
+                globalLeaderboardRows(
+                    players: globalLeaderboardPlayers(for: selectedGlobalLeaderboardMetric),
+                    metric: selectedGlobalLeaderboardMetric
+                )
+            }
+        }
+    }
+
+    func globalLeaderboardPlayers(for metric: OnlineLeaderboardMetric) -> [OnlinePlayerStats] {
+        switch metric {
+        case .week: return scopedLearnedThisWeekLeaderboard
+        case .learningStreak: return scopedBestLearningStreakLeaderboard
+        case .flaggenrun: return scopedFlaggenrunLeaderboard
+        case .flaggenscore: return deduplicatedOnlineLeaderboard
+        }
+    }
+
+    func globalLeaderboardMetricTitle(_ metric: OnlineLeaderboardMetric) -> String {
+        switch metric {
+        case .week:
+            return selectedSubject == .capitals ? L("Diese Woche gelernt", "Learned this week") : L("Diese Woche gelernt", "Learned this week")
+        case .learningStreak: return L("Lernstreak", "Learning streak")
+        case .flaggenrun: return L("Daily Run", "Daily Run")
+        case .flaggenscore: return L("Meisterschaft", "Mastery")
+        }
+    }
+
+    func globalLeaderboardMetricIcon(_ metric: OnlineLeaderboardMetric) -> String {
+        switch metric {
+        case .week: return "chart.line.uptrend.xyaxis"
+        case .learningStreak: return "flame.fill"
+        case .flaggenrun: return "flag.checkered"
+        case .flaggenscore: return "medal.fill"
+        }
+    }
+
+    @ViewBuilder
+    func globalLeaderboardRows(players: [OnlinePlayerStats], metric: OnlineLeaderboardMetric) -> some View {
+        let key = "\(selectedSubject.rawValue)-\(metric.rawValue)"
+        let visibleCount = globalLeaderboardVisibleRows[key, default: 10]
+        let visiblePlayers = Array(players.prefix(visibleCount))
+
+        ForEach(Array(visiblePlayers.enumerated()), id: \.element.id) { index, player in
+            onlinePlayerRow(rank: index + 1, player: player, metric: metric)
+        }
+
+        if let ownIndex = players.firstIndex(where: isCurrentOnlinePlayer), ownIndex >= visiblePlayers.count {
+            Text(L("Deine Platzierung", "Your position"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.top, 6)
+            onlinePlayerRow(rank: ownIndex + 1, player: players[ownIndex], metric: metric)
+        }
+
+        if players.count > visiblePlayers.count {
+            Button {
+                Haptics.tap()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    globalLeaderboardVisibleRows[key] = min(visiblePlayers.count + 10, players.count)
+                }
+            } label: {
+                Label(
+                    L("Weitere 10 anzeigen", "Show 10 more"),
+                    systemImage: "chevron.down"
+                )
+                .frame(maxWidth: .infinity)
+                .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 8)
+        } else if players.count > 10 {
+            Button {
+                Haptics.tap()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    globalLeaderboardVisibleRows[key] = 10
+                }
+            } label: {
+                Label(L("Zurück zu Top 10", "Back to top 10"), systemImage: "chevron.up")
+                    .frame(maxWidth: .infinity)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 8)
         }
     }
 
@@ -412,11 +519,11 @@ extension ContentView {
     }
 
     func rankBadge(_ rank: Int) -> some View {
-        Text(rank <= 3 ? "\(rank)" : "#\(rank)")
-            .font(.caption.monospacedDigit().weight(.black))
-            .foregroundStyle(rank <= 3 ? .white : .secondary)
-            .frame(width: 32, height: 28)
-            .background(rank <= 3 ? rankAccentColor(rank) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+        Text("\(rank)")
+            .font(.caption.monospacedDigit().weight(.bold))
+            .foregroundStyle(rank <= 3 ? rankAccentColor(rank) : .secondary)
+            .frame(width: 30, height: 30)
+            .background(rank <= 3 ? rankAccentColor(rank).opacity(0.12) : Color.secondary.opacity(0.08), in: Circle())
     }
 
     func onlineMetricSubtitle(for player: OnlinePlayerStats, metric: OnlineLeaderboardMetric) -> String {
@@ -473,7 +580,7 @@ extension ContentView {
     }
 
     func rankBackground(_ rank: Int) -> Color {
-        rank <= 3 ? rankAccentColor(rank).opacity(0.12) : Color.clear
+        Color.clear
     }
 
     func onlineFlaggenbossScore(for player: OnlinePlayerStats) -> Double {
@@ -517,7 +624,7 @@ extension ContentView {
                 title: item.title,
                 description: item.description,
                 iconName: item.iconName,
-                currentValue: player.achievementIDs.contains(item.id) ? item.targetValue : 0,
+                currentValue: self.player(player, hasOnlineAchievement: item.id) ? item.targetValue : 0,
                 targetValue: item.targetValue,
                 tint: item.tint
             )

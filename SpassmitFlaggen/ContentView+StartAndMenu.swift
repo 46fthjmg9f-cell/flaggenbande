@@ -10,12 +10,13 @@ extension ContentView {
                 .ignoresSafeArea()
 
             fixedMenuLayout(maxWidth: 520) {
-                VStack(spacing: 22) {
-                    VStack(spacing: 12) {
+                VStack(spacing: 24) {
+                    VStack(spacing: 10) {
                         Image(systemName: "map.fill")
-                            .font(.system(size: 76, weight: .regular))
-                            .foregroundStyle(tealAccentColor.opacity(0.42))
-                            .padding(.bottom, 2)
+                            .font(.system(size: 48, weight: .semibold))
+                            .foregroundStyle(tealAccentColor)
+                            .frame(width: 72, height: 72)
+                            .background(tealAccentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                         HStack(spacing: 8) {
                             Text("Flaggenbande")
@@ -63,14 +64,14 @@ extension ContentView {
                         }
 
 
-                        Label(L("Streak: \(currentLearningStreak) Tage", "Streak: \(currentLearningStreak) days"), systemImage: "flame.fill")
+                        Label(L("\(currentLearningStreak)-Tage-Streak", "\(currentLearningStreak)-day streak"), systemImage: "flame.fill")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(currentLearningStreak > 0 ? .orange : .secondary)
                     }
 
                     subjectModePickerCard()
 
-                    VStack(spacing: 12) {
+                    VStack(spacing: 10) {
                         ForEach(mainMenuScreens, id: \.self) { screen in
                             menuScreenRow(screen)
                         }
@@ -245,7 +246,8 @@ extension ContentView {
     func fixedMenuLayout<Content: View>(maxWidth: CGFloat, @ViewBuilder content: @escaping () -> Content) -> some View {
         ScrollView {
             content()
-                .padding()
+                .padding(.horizontal, AppLayout.screenPadding)
+                .padding(.vertical, 24)
                 .frame(maxWidth: maxWidth)
                 .frame(maxWidth: .infinity)
         }
@@ -261,47 +263,45 @@ extension ContentView {
     }
 
     func menuScreenRow(_ screen: AppScreen) -> some View {
-        HStack(spacing: 10) {
-            NavigationLink(value: screen) {
-                HStack(spacing: 14) {
-                    Image(systemName: screen.iconName)
-                        .font(.title3)
-                        .frame(width: 28)
-                    Text(screenTitle(screen))
-                        .font(.title3.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                    Spacer()
-                    if screen == .globe && !fullVersionUnlocked {
-                        Image(systemName: "lock.fill")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 14)
-                .padding(.leading, 14)
-                .contentShape(Rectangle())
-            }
-            .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
-            .buttonStyle(.plain)
-
-            Button {
-                Haptics.tap()
-                selectedMenuInfoScreen = screen
-            } label: {
-                Image(systemName: "info.circle.fill")
-                    .font(.title3)
+        NavigationLink(value: screen) {
+            HStack(spacing: 14) {
+                Image(systemName: screen.iconName)
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(tealAccentColor)
                     .frame(width: 44, height: 44)
-                    .contentShape(Circle())
+                    .background(tealAccentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(screenTitle(screen))
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(screen.menuSubtitle(language: appLanguage))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: screen == .globe && !fullVersionUnlocked ? "lock.fill" : "chevron.right")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 24, height: 44)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L("Info zu \(screenTitle(screen))", "Info about \(screenTitle(screen))"))
+            .padding(12)
+            .frame(minHeight: 68)
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
-        .padding(.trailing, 6)
-        .frame(maxWidth: .infinity)
-        .background(panelBackgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+        .buttonStyle(.plain)
+        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+        .accessibilityHint(screen.menuSubtitle(language: appLanguage))
     }
 
     var gameModesView: some View {

@@ -107,6 +107,7 @@ extension ContentView {
             }
         }
         .scrollContentBackground(.hidden)
+        .listSectionSpacing(16)
         .background(appBackgroundGradient.ignoresSafeArea())
         .navigationTitle(L("Achievements", "Achievements"))
         .onAppear {
@@ -144,27 +145,36 @@ extension ContentView {
                 .onTapGesture { dismissStatisticsSearchKeyboard() }
             }
 
-            Section(L("Allgemein", "General")) {
-                let seenFlags = totalSeenFlags(in: filteredStatisticsCountries)
-                let knownOnceFlags = totalKnownAtLeastOnceFlags(in: filteredStatisticsCountries)
-                let knownAnswers = totalCardKnown(in: filteredStatisticsCountries)
-                let totalFlags = filteredStatisticsCountries.count
-                let firstLearned = firstLearnedCountry(in: filteredStatisticsCountries)
+            let seenFlags = totalSeenFlags(in: filteredStatisticsCountries)
+            let knownOnceFlags = totalKnownAtLeastOnceFlags(in: filteredStatisticsCountries)
+            let knownAnswers = totalCardKnown(in: filteredStatisticsCountries)
+            let totalFlags = filteredStatisticsCountries.count
+            let firstLearned = firstLearnedCountry(in: filteredStatisticsCountries)
 
+            Section(L("Lernstand", "Learning progress")) {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
-                    CompactStatTile(title: selectedSubject == .capitals ? L("Gesehen", "Seen") : L("Gesehen", "Seen"), value: "\(seenFlags)/\(totalFlags)", subtitle: percent(seenFlags, of: totalFlags))
+                    CompactStatTile(title: L("Gesehen", "Seen"), value: "\(seenFlags)/\(totalFlags)", subtitle: percent(seenFlags, of: totalFlags))
                     CompactStatTile(title: L("Mind. 1x gewusst", "Known once"), value: "\(knownOnceFlags)/\(totalFlags)", subtitle: percent(knownOnceFlags, of: totalFlags))
-                    CompactStatTile(title: selectedSubject == .capitals ? L("Erste Stadt gelernt", "First city learned") : L("Erste Flagge gelernt", "First flag learned"), value: firstLearned.map { countryName(for: $0.country) } ?? "-", subtitle: firstLearned.map { compactDateText($0.date) } ?? L("noch offen", "open"))
-                    CompactStatTile(title: selectedSubject == .capitals ? L("Meiste Städte/Tag", "Most cities/day") : L("Meiste Flaggen/Tag", "Most flags/day"), value: "\(maxKnownCardsInOneDay(subject: selectedSubject))", subtitle: L("gelernt", "learned"))
                     CompactStatTile(title: L("Gewusst", "Known"), value: "\(knownAnswers)", subtitle: L("gesamt", "total"))
                     CompactStatTile(title: L("Geübt", "Practiced"), value: "\(totalCardReviews(in: filteredStatisticsCountries))", subtitle: selectedSubject == .capitals ? L("Länder", "countries") : L("Flaggen", "flags"))
                     CompactStatTile(title: L("Nicht gewusst", "Not known"), value: "\(totalCardUnknown(in: filteredStatisticsCountries))", subtitle: "")
+                }
+            }
+            .onTapGesture { dismissStatisticsSearchKeyboard() }
+
+            Section(L("Aktivität", "Activity")) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 8)], spacing: 8) {
+                    CompactStatTile(title: selectedSubject == .capitals ? L("Erste Stadt gelernt", "First city learned") : L("Erste Flagge gelernt", "First flag learned"), value: firstLearned.map { countryName(for: $0.country) } ?? "-", subtitle: firstLearned.map { compactDateText($0.date) } ?? L("noch offen", "open"))
+                    CompactStatTile(title: selectedSubject == .capitals ? L("Meiste Städte/Tag", "Most cities/day") : L("Meiste Flaggen/Tag", "Most flags/day"), value: "\(maxKnownCardsInOneDay(subject: selectedSubject))", subtitle: L("gelernt", "learned"))
                     CompactStatTile(title: "Showmaster", value: "\(activeProfile.showmasterCards)", subtitle: L("Karten", "cards"))
                     CompactStatTile(title: runTitle, value: "\((activeProfile.leagueStats?.played ?? 0))", subtitle: L("Runs", "runs"))
                     CompactStatTile(title: L("Party-Runden", "Party rounds"), value: "\((activeProfile.partyRoundsPlayed ?? 0))", subtitle: L("Runden", "rounds"))
                     CompactStatTile(title: L("Beste Streak", "Best streak"), value: "\((activeProfile.bestLearningStreak ?? 0))", subtitle: L("Tage", "days"))
                 }
+            }
+            .onTapGesture { dismissStatisticsSearchKeyboard() }
 
+            Section(L("Stufen", "Levels")) {
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
                         dismissStatisticsSearchKeyboard()
@@ -432,6 +442,7 @@ extension ContentView {
         }
         .scrollDismissesKeyboard(.interactively)
         .scrollContentBackground(.hidden)
+        .listSectionSpacing(16)
         .background(appBackgroundGradient.ignoresSafeArea())
         .navigationTitle(L("Statistik", "Statistics"))
         .safeAreaInset(edge: .bottom) {
@@ -480,7 +491,7 @@ extension ContentView {
                 Image(systemName: "xmark")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 44, height: 44)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -601,6 +612,8 @@ extension ContentView {
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundStyle(.secondary)
+                                        .frame(width: 44, height: 44)
+                                        .contentShape(Circle())
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -620,7 +633,7 @@ extension ContentView {
                                                 .font(.caption.weight(.semibold))
                                                 .lineLimit(1)
                                                 .padding(.horizontal, 10)
-                                                .padding(.vertical, 7)
+                                                .frame(minHeight: 44)
                                                 .background(tealAccentColor.opacity(0.12), in: Capsule())
                                         }
                                         .buttonStyle(.plain)
@@ -661,7 +674,7 @@ extension ContentView {
                         } label: {
                             Image(systemName: "arrow.counterclockwise")
                                 .font(.headline)
-                                .frame(width: 38, height: 38)
+                                .frame(width: 44, height: 44)
                                 .background(.ultraThinMaterial)
                                 .clipShape(Circle())
                                 .contentShape(Circle())

@@ -149,7 +149,7 @@ final class StoreKitManager: ObservableObject {
         do {
             try await AppStore.sync()
             debugLog("Restore purchases synced AppStore successfully.")
-            await refreshPurchasedProducts(clearLocalPurchaseIfMissing: true, force: true)
+            await refreshPurchasedProducts(force: true)
 
             if purchasedFullVersion {
                 statusText = "Vollversion wiederhergestellt."
@@ -165,12 +165,24 @@ final class StoreKitManager: ObservableObject {
 
     // MARK: - Berechtigungen prüfen
 
-    func refreshPurchasedProducts(clearLocalPurchaseIfMissing: Bool = false, force: Bool = false) async {
-        await refreshEntitlements(clearLocalPurchaseIfMissing: clearLocalPurchaseIfMissing, force: force)
+    func refreshPurchasedProducts(force: Bool = false) async {
+        await refreshEntitlements(force: force)
     }
 
-    private func refreshEntitlements(clearLocalPurchaseIfMissing: Bool = false, force: Bool = false) async {
-        guard !isRefreshingEntitlements else { return }
+    private func refreshEntitlements(force: Bool = false) async {
+        // A manual restore may race the startup refresh. Waiting lets the
+        // restore perform its forced verification afterwards instead of
+        // reporting the still-stale cached state.
+        if isRefreshingEntitlements {
+            while isRefreshingEntitlements {
+                await Task.yield()
+            }
+
+            if !force {
+                return
+            }
+        }
+
         if !force,
            let lastEntitlementRefreshAt,
            Date().timeIntervalSince(lastEntitlementRefreshAt) < 5 * 60 {
@@ -205,7 +217,10 @@ final class StoreKitManager: ObservableObject {
 
         if ownsFullVersion {
             setPurchasedFullVersion(true, persistLocalCache: true)
-        } else if clearLocalPurchaseIfMissing {
+        } else {
+            // A completed currentEntitlements pass is the source of truth.
+            // Do not retain a stale, mutable UserDefaults cache after StoreKit
+            // has confirmed that the non-consumable is not entitled.
             setPurchasedFullVersion(false, persistLocalCache: true)
         }
 
@@ -242,7 +257,7 @@ final class StoreKitManager: ObservableObject {
         }
 
         await transaction.finish()
-        await refreshEntitlements(clearLocalPurchaseIfMissing: isRevoked, force: true)
+        await refreshEntitlements(force: true)
 
         let ownsUpdatedFullVersion = productID == StoreProductID.fullVersion.rawValue && !isRevoked && purchasedFullVersion
         return ownsUpdatedFullVersion

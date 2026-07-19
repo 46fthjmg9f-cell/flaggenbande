@@ -58,16 +58,22 @@ enum AppStorageService {
     /// before iOS suspends the process.
     static func saveSynchronously(_ data: AppData) {
         guard let encoded = try? JSONEncoder().encode(data) else { return }
-        writeQueue.sync {
-            _ = DataFileStore.write(encoded, fileName: fileName)
+        let didSave = writeQueue.sync {
+            DataFileStore.write(encoded, fileName: fileName)
         }
-        removeLegacyAppDataDefault()
+
+        // Keep the legacy value as a recovery path if the atomic replacement
+        // failed (for example because App Support is temporarily unavailable).
+        if didSave {
+            removeLegacyAppDataDefault()
+        }
     }
 
     static func reset() {
         writeQueue.sync {
             DataFileStore.remove(fileName: fileName)
         }
+        DailyCompletionQueue.clear()
         LegacyDefaultsMigration.removeData(forKey: key)
         UserDefaults.standard.removeObject(forKey: legacyStatsKey)
     }

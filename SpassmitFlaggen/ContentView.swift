@@ -50,6 +50,8 @@ struct ContentView: View {
     @State var didConfigureGameCenterAuthentication: Bool = false
     @State var selectedOnlineGlobePlayer: OnlinePlayerStats?
     @State var selectedOnlineScope: OnlineLeaderboardScope = .friends
+    @State var selectedGlobalLeaderboardMetric: OnlineLeaderboardMetric = .week
+    @State var globalLeaderboardVisibleRows: [String: Int] = [:]
     @State var isShowingFriendInfo: Bool = false
     @State var isShowingOnlineInfo: Bool = false
     @State var isShowingNicknameInfo: Bool = false
@@ -117,6 +119,7 @@ struct ContentView: View {
     @State var leagueTimerIsRunning: Bool = false
     @State var leagueTimerStartTask: Task<Void, Never>?
     @State var leagueCountdownTask: Task<Void, Never>?
+    @State var leagueTimerEndDate: Date?
     @State var leagueAdvanceTask: Task<Void, Never>?
     @State var leagueFeedbackClearTask: Task<Void, Never>?
     @State var leagueCandidateAttentionTask: Task<Void, Never>?
@@ -185,6 +188,7 @@ struct ContentView: View {
     @State var miniWorldCupActivePlayers: [MiniWorldCupPlayer] = []
     @State var miniWorldCupEliminations: [MiniWorldCupElimination] = []
     @State var miniWorldCupRoundResults: [MiniWorldCupRoundResult] = []
+    @State var miniWorldCupCompletedPlayerIDsInRound: Set<UUID> = []
     @State var miniWorldCupPhase: MiniWorldCupPhase = .setup
     @State var miniWorldCupCurrentPlayerIndex: Int = 0
     @State var miniWorldCupCurrentCountry: Country = allCountries[0]
@@ -205,6 +209,7 @@ struct ContentView: View {
     @State var miniWorldCupCardEntryOpacity: Double = 1
     @State var miniWorldCupCardDragOffset: CGSize = .zero
     @State var miniWorldCupAnswerFeedback: Bool?
+    @State var miniWorldCupAnswerTask: Task<Void, Never>?
     @State var miniWorldCupRecentCountryCodes: [String] = []
     @State var miniWorldCupDeckCountryCodes: [String] = []
     @State var miniWorldCupUndoSnapshot: MiniWorldCupUndoSnapshot?
@@ -514,12 +519,15 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
-                abortActiveDailyLeagueMatchIfNeeded()
+                // Keep an active Daily's absolute deadline. On return we use
+                // the elapsed wall-clock time, so backgrounding cannot pause
+                // the run or create extra time.
                 flushLocalCache()
                 return
             }
 
             guard phase == .active else { return }
+            resumeLeagueCountdownIfNeeded()
             Task {
                 await storeKit.refreshPurchasedProducts()
                 fullVersionUnlocked = storeKit.purchasedFullVersion

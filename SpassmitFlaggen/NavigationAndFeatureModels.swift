@@ -53,6 +53,22 @@ enum AppScreen: String, CaseIterable, Hashable, Identifiable {
 
     var id: String { rawValue }
 
+    func menuSubtitle(language: AppLanguage) -> String {
+        switch self {
+        case .games: return localized("Lernen, Daily und Party", "Learn, daily, and party", language: language)
+        case .practice: return localized("Mit Karten nachhaltig lernen", "Learn steadily with cards", language: language)
+        case .bloodyBeginner: return localized("Vier Antworten, klarer Einstieg", "Four choices, clear start", language: language)
+        case .showmaster: return localized("Schneller Selbsttest ohne Zeitdruck", "Quick self-check, no timer", language: language)
+        case .miniWorldCup: return localized("Für mehrere Personen an einem Gerät", "For several people on one device", language: language)
+        case .league: return localized("Training und tägliche Challenge", "Practice and daily challenge", language: language)
+        case .statistics: return localized("Fortschritt und nächste Lernchance", "Progress and your next learning step", language: language)
+        case .globe: return localized("Lernfortschritt auf der Weltkarte", "Learning progress on the world map", language: language)
+        case .achievements: return localized("Ziele und Meilensteine", "Goals and milestones", language: language)
+        case .friends: return localized("Vergleiche und Bestenlisten", "Comparisons and leaderboards", language: language)
+        case .options: return localized("Sprache, Darstellung und Daten", "Language, appearance, and data", language: language)
+        }
+    }
+
     func infoText(language: AppLanguage) -> String {
         switch self {
         case .games:
@@ -163,11 +179,13 @@ struct GameCenterAuthView: UIViewControllerRepresentable {
     }
 }
 
-enum OnlineLeaderboardMetric {
+enum OnlineLeaderboardMetric: String, CaseIterable, Identifiable {
     case week
     case flaggenrun
     case flaggenscore
     case learningStreak
+
+    var id: String { rawValue }
 }
 
 enum ScoreHistoryGranularity: String, CaseIterable, Identifiable {
@@ -275,6 +293,7 @@ struct MiniWorldCupBracketRow: Identifiable {
 struct MiniWorldCupUndoSnapshot {
     let appData: AppData
     let activePlayers: [MiniWorldCupPlayer]
+    let completedPlayerIDsInRound: Set<UUID>
     let eliminations: [MiniWorldCupElimination]
     let roundResults: [MiniWorldCupRoundResult]
     let phase: MiniWorldCupPhase

@@ -257,8 +257,8 @@ struct CompactStatTile: View {
                     .minimumScaleFactor(0.75)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
-        .padding(9)
-        .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+        .padding(12)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppLayout.controlRadius, style: .continuous))
     }
 }

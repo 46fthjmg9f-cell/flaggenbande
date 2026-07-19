@@ -937,8 +937,14 @@ extension AppData {
         profiles = container.decodeDefault([UserProfile].self, forKey: .profiles, default: [])
         activeProfileID = try? container.decodeIfPresent(UUID.self, forKey: .activeProfileID)
 
-        if activeProfileID == nil {
-            activeProfileID = profiles.first?.id
+        if let activeProfileID,
+           profiles.contains(where: { $0.id == activeProfileID }) {
+            return
         }
+
+        // A profile can disappear through an older backup or a partial
+        // migration. Keep the persisted data usable by selecting the first
+        // remaining profile instead of leaving all profile updates stranded.
+        activeProfileID = profiles.first?.id
     }
 }

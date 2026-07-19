@@ -99,12 +99,14 @@ extension ContentView {
     }
 
     var beginnerSetupView: some View {
-        VStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(L("Kategorie", "Category"))
                     .font(.headline)
                 continentButtonGrid(selection: $selectedBeginnerContinents)
             }
+            .padding(16)
+            .appSurface()
 
             beginnerQuestionSettings
 
@@ -133,7 +135,7 @@ extension ContentView {
     }
 
     var beginnerQuestionSettings: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             Text(L("Aufgaben", "Questions"))
                 .font(.headline)
 
@@ -188,12 +190,8 @@ extension ContentView {
                     .transition(.opacity)
             }
         }
-        .padding(10)
-        .background(tealAccentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(tealAccentColor.opacity(0.28), lineWidth: 1)
-        )
+        .padding(16)
+        .appSurface()
     }
 
     var beginnerSummaryPanel: some View {
@@ -206,8 +204,8 @@ extension ContentView {
                 beginnerStatTile(title: L("Quote", "Accuracy"), value: percent(beginnerSessionCorrect, of: beginnerSessionCorrect + beginnerSessionWrong))
             }
         }
-        .padding(12)
-        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
+        .padding(16)
+        .appSurface()
     }
 
     var beginnerStatsPanel: some View {
@@ -226,8 +224,8 @@ extension ContentView {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(12)
-        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
+        .padding(16)
+        .appSurface()
     }
 
     func beginnerStatTile(title: String, value: String) -> some View {
@@ -244,7 +242,7 @@ extension ContentView {
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, minHeight: 54)
-        .background(Color(.secondarySystemFill).opacity(0.32), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppLayout.controlRadius, style: .continuous))
     }
 
     var beginnerHistoryBar: some View {
@@ -392,6 +390,17 @@ extension ContentView {
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(L("Antwort: \(beginnerAnswerName(for: option))", "Answer: \(beginnerAnswerName(for: option))"))
+        .accessibilityValue(
+            hasAnswered
+                ? (isCorrect ? L("richtig", "correct") : (isSelected ? L("falsch", "incorrect") : ""))
+                : ""
+        )
+        .accessibilityHint(
+            hasAnswered
+                ? ""
+                : L("Doppeltippen, um diese Antwort zu wählen", "Double-tap to choose this answer")
+        )
         // Unlike .disabled, hit testing does not visually dim the answers.
         .allowsHitTesting(beginnerSelectedCountry == nil && !beginnerIsAdvancing)
     }
@@ -542,10 +551,15 @@ extension ContentView {
     }
 
     func makeNextBeginnerQuestion() -> (country: Country, options: [Country]) {
-        let pool = countries(inContinents: selectedBeginnerContinents)
-        let usablePool = pool.count >= 4 ? pool : availableCountries
-        let correct = usablePool.randomElement() ?? allCountries[0]
-        let wrongOptions = usablePool
+        let scopedPool = countries(inContinents: selectedBeginnerContinents)
+        // A small selected region can legitimately contain fewer than four
+        // countries. Keep the question itself inside the selected scope and
+        // widen only the distractors so the mode never silently changes the
+        // user's chosen learning area.
+        let questionPool = scopedPool.isEmpty ? availableCountries : scopedPool
+        let optionPool = questionPool.count >= 4 ? questionPool : availableCountries
+        let correct = questionPool.randomElement() ?? allCountries[0]
+        let wrongOptions = optionPool
             .filter { $0.code != correct.code }
             .shuffled()
             .prefix(3)

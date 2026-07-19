@@ -129,9 +129,12 @@ extension ContentView {
         guard miniWorldCupPlayers.count >= 2 else { return }
         guard consumeFreeDailyPartyModeRunIfAllowed() else { return }
 
+        miniWorldCupAnswerTask?.cancel()
+        miniWorldCupAnswerTask = nil
         miniWorldCupActivePlayers = miniWorldCupPlayers
         miniWorldCupEliminations = []
         miniWorldCupRoundResults = []
+        miniWorldCupCompletedPlayerIDsInRound = []
         miniWorldCupCurrentPlayerIndex = 0
         miniWorldCupRound = 1
         miniWorldCupCurrentAttempt = 1
@@ -152,12 +155,15 @@ extension ContentView {
     }
 
     func resetMiniWorldCupToSetup(keepPlayers: Bool) {
+        miniWorldCupAnswerTask?.cancel()
+        miniWorldCupAnswerTask = nil
         if !keepPlayers {
             miniWorldCupPlayers = []
         }
         miniWorldCupActivePlayers = []
         miniWorldCupEliminations = []
         miniWorldCupRoundResults = []
+        miniWorldCupCompletedPlayerIDsInRound = []
         miniWorldCupCurrentPlayerIndex = 0
         miniWorldCupRound = 1
         miniWorldCupCurrentAttempt = 1
@@ -245,6 +251,7 @@ extension ContentView {
         miniWorldCupUndoSnapshot = MiniWorldCupUndoSnapshot(
             appData: appData,
             activePlayers: miniWorldCupActivePlayers,
+            completedPlayerIDsInRound: miniWorldCupCompletedPlayerIDsInRound,
             eliminations: miniWorldCupEliminations,
             roundResults: miniWorldCupRoundResults,
             phase: miniWorldCupPhase,
@@ -267,6 +274,7 @@ extension ContentView {
         appData = snapshot.appData
         saveLocalCache()
         miniWorldCupActivePlayers = snapshot.activePlayers
+        miniWorldCupCompletedPlayerIDsInRound = snapshot.completedPlayerIDsInRound
         miniWorldCupEliminations = snapshot.eliminations
         miniWorldCupRoundResults = snapshot.roundResults
         miniWorldCupPhase = snapshot.phase
@@ -315,9 +323,14 @@ extension ContentView {
             miniWorldCupCardDragOffset = CGSize(width: countsAsKnown ? 620 : -620, height: 0)
         }
 
-        Task { @MainActor in
+        miniWorldCupAnswerTask?.cancel()
+        miniWorldCupAnswerTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled,
+                  miniWorldCupPhase == .question,
+                  miniWorldCupAnswerFeedback == countsAsKnown else { return }
             finishMiniWorldCupAttempt(known: countsAsKnown)
+            miniWorldCupAnswerTask = nil
         }
     }
 
@@ -379,6 +392,7 @@ extension ContentView {
         miniWorldCupCurrentCorrect = correctCount
         miniWorldCupAdvancePopupText = L("\(player.name) ist weiter", "\(player.name) advances")
         miniWorldCupEliminationPopupText = nil
+        miniWorldCupCompletedPlayerIDsInRound.insert(player.id)
         miniWorldCupCurrentPlayerIndex = (safeIndex + 1) % miniWorldCupActivePlayers.count
         prepareNextMiniWorldCupTurn()
     }
@@ -413,6 +427,7 @@ extension ContentView {
             ),
             at: 0
         )
+        miniWorldCupCompletedPlayerIDsInRound.insert(eliminated.id)
 
         if miniWorldCupActivePlayers.count <= 1 {
             withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
@@ -430,7 +445,13 @@ extension ContentView {
         updateActiveProfile { profile in
             profile.recordPartyRound()
         }
-        miniWorldCupRound += 1
+        // An eliminated first player also makes the next player index zero.
+        // Track completed turns by player identity, not by the array index, so
+        // a round advances only after every remaining player had their turn.
+        if miniWorldCupActivePlayers.allSatisfy({ miniWorldCupCompletedPlayerIDsInRound.contains($0.id) }) {
+            miniWorldCupRound += 1
+            miniWorldCupCompletedPlayerIDsInRound.removeAll()
+        }
         miniWorldCupCurrentAttempt = 1
         miniWorldCupCurrentCorrect = 0
         miniWorldCupCurrentAttemptResults = []

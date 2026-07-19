@@ -3,6 +3,34 @@ import Foundation
 import UIKit
 import ImageIO
 
+enum AppLayout {
+    static let screenPadding: CGFloat = 20
+    static let cardRadius: CGFloat = 18
+    static let controlRadius: CGFloat = 12
+}
+
+private struct AppSurfaceModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            )
+    }
+}
+
+extension View {
+    func appSurface(cornerRadius: CGFloat = AppLayout.cardRadius) -> some View {
+        modifier(AppSurfaceModifier(cornerRadius: cornerRadius))
+    }
+}
+
 struct MiniLocationGlobe: View {
     let country: Country
     let accentColor: Color
@@ -513,23 +541,13 @@ struct StartupScreen: View {
                     colors: [
                         Color(UIColor { traitCollection in
                             traitCollection.userInterfaceStyle == .dark
-                                ? UIColor(red: 0.01, green: 0.10, blue: 0.22, alpha: 1)
-                                : UIColor(red: 0.56, green: 0.85, blue: 1.00, alpha: 1)
+                                ? UIColor(red: 0.055, green: 0.06, blue: 0.075, alpha: 1)
+                                : UIColor.systemGroupedBackground
                         }),
                         Color(UIColor { traitCollection in
                             traitCollection.userInterfaceStyle == .dark
-                                ? UIColor(red: 0.00, green: 0.24, blue: 0.22, alpha: 1)
-                                : UIColor(red: 0.48, green: 0.94, blue: 0.76, alpha: 1)
-                        }),
-                        Color(UIColor { traitCollection in
-                            traitCollection.userInterfaceStyle == .dark
-                                ? UIColor(red: 0.30, green: 0.13, blue: 0.03, alpha: 1)
-                                : UIColor(red: 1.00, green: 0.73, blue: 0.42, alpha: 1)
-                        }),
-                        Color(UIColor { traitCollection in
-                            traitCollection.userInterfaceStyle == .dark
-                                ? UIColor(red: 0.03, green: 0.07, blue: 0.26, alpha: 1)
-                                : UIColor(red: 0.42, green: 0.64, blue: 1.00, alpha: 1)
+                                ? UIColor(red: 0.10, green: 0.12, blue: 0.15, alpha: 1)
+                                : UIColor.secondarySystemGroupedBackground
                         })
                     ],
                     startPoint: gradientFloatsUp ? .bottomLeading : .topLeading,
@@ -543,26 +561,26 @@ struct StartupScreen: View {
 
             VStack(spacing: 18) {
                 Image(systemName: "map.fill")
-                    .font(.system(size: 104, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .shadow(color: tealAccentColor.opacity(0.35), radius: 22, y: 10)
+                    .font(.system(size: 84, weight: .semibold))
+                    .foregroundStyle(tealAccentColor)
+                    .frame(width: 132, height: 132)
+                    .background(tealAccentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 32, style: .continuous))
                     .scaleEffect(logoScale)
                     .opacity(logoOpacity)
 
                 Text("Flaggenbande")
                     .font(.largeTitle.bold())
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+                    .foregroundStyle(.primary)
                     .opacity(logoOpacity)
 
                 VStack(spacing: 8) {
                     ProgressView(value: preloadProgress)
-                        .tint(.white)
+                        .tint(tealAccentColor)
                         .frame(maxWidth: 250)
                     Text(preloadStatusText)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.88))
+                        .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
                 .opacity(logoOpacity)
@@ -1480,8 +1498,9 @@ final class FlagImageCache {
 struct ActionButtonStyle: ButtonStyle {
     let color: Color
     var isProminent: Bool = true
-    var verticalPadding: CGFloat = 13
+    var verticalPadding: CGFloat = 0
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -1489,15 +1508,16 @@ struct ActionButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.vertical, verticalPadding)
+            .frame(maxWidth: .infinity, minHeight: isProminent ? 50 : 44)
             .background(backgroundColor(isPressed: configuration.isPressed))
             .foregroundStyle(foregroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(color.opacity(isEnabled ? 0.95 : 0.35), lineWidth: isProminent ? 0 : 1.4)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(color.opacity(isEnabled ? 0.75 : 0.28), lineWidth: isProminent ? 0 : 1)
             )
             .opacity(isEnabled ? 1 : 0.48)
-            .scaleEffect(configuration.isPressed && isEnabled ? 0.985 : 1)
+            .scaleEffect(configuration.isPressed && isEnabled && !reduceMotion ? 0.985 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 

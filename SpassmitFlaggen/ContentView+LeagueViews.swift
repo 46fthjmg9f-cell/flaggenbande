@@ -70,11 +70,26 @@ extension ContentView {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
             leagueDailyModeCard
-            leagueStatsCard
-            flaggenrunLeaderboardCard
-            trophyLeaderboardCard
-            leagueBestRunsCard
-            leagueMatchHistoryCard
+            DisclosureGroup {
+                VStack(spacing: 12) {
+                    leagueStatsCard
+                    leagueBestRunsCard
+                    leagueMatchHistoryCard
+                    flaggenrunLeaderboardCard
+                    trophyLeaderboardCard
+                }
+                .padding(.top, 10)
+            } label: {
+                Label(L("Statistik und Ranglisten", "Stats and leaderboards"), systemImage: "chart.bar.xaxis")
+                    .font(.headline)
+            }
+            .tint(tealAccentColor)
+            .padding(14)
+            .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+            )
         }
     }
 
@@ -896,10 +911,13 @@ extension ContentView {
 
     func leaguePlayableView(compactHeight: Bool, availableHeight: CGFloat) -> some View {
         let spacing: CGFloat = compactHeight ? 6 : 8
-        let topBarHeight: CGFloat = 34
-        let fieldHeight: CGFloat = compactHeight ? 40 : 48
-        let choiceHeight: CGFloat = compactHeight ? 30 : 34
-        let unknownHeight: CGFloat = compactHeight ? 40 : 46
+        // Keep the interactive controls comfortably tappable even in the compact
+        // layout. The flag area yields the few points necessary, rather than
+        // making an active game harder to operate on smaller iPhones.
+        let topBarHeight: CGFloat = 44
+        let fieldHeight: CGFloat = compactHeight ? 44 : 48
+        let choiceHeight: CGFloat = 44
+        let unknownHeight: CGFloat = 44
         let feedbackHeight: CGFloat = compactHeight ? 26 : 32
         let reservedControlsHeight = topBarHeight + fieldHeight + choiceHeight + unknownHeight + spacing * 5
         let availableFlagHeight = max(96, availableHeight - reservedControlsHeight)
@@ -983,7 +1001,7 @@ extension ContentView {
         } label: {
             Image(systemName: "chevron.left")
                 .font(.headline.weight(.bold))
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
                 .foregroundStyle(tealAccentColor)
                 .background(panelBackgroundColor.opacity(0.92), in: Circle())
                 .overlay(
@@ -1025,7 +1043,7 @@ extension ContentView {
     }
 
     @ViewBuilder
-    func leagueCountryChoiceView(_ candidates: [Country], minHeight: CGFloat = 34) -> some View {
+    func leagueCountryChoiceView(_ candidates: [Country], minHeight: CGFloat = 44) -> some View {
         if candidates.count == 2 {
             HStack(spacing: 8) {
                 ForEach(candidates, id: \.code) { country in

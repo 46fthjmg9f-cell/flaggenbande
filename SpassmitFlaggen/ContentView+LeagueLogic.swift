@@ -232,6 +232,7 @@ extension ContentView {
         leagueCandidateAttentionPulse = false
         leagueCountdownTask?.cancel()
         leagueCountdownTask = nil
+        leagueTimerEndDate = nil
         leagueTimerIsRunning = false
         leagueInputIsLocked = false
         leagueLockedAnswerText = ""
@@ -347,7 +348,8 @@ extension ContentView {
 
     func startLeagueCountdown() {
         leagueCountdownTask?.cancel()
-        let endDate = Date().addingTimeInterval(Double(leagueSecondsRemaining))
+        let endDate = leagueTimerEndDate ?? Date().addingTimeInterval(Double(leagueSecondsRemaining))
+        leagueTimerEndDate = endDate
         leagueCountdownTask = Task { @MainActor in
             while leagueMatchActive && leagueTimerIsRunning {
                 let remaining = max(0, Int(ceil(endDate.timeIntervalSinceNow)))
@@ -358,6 +360,19 @@ extension ContentView {
                 }
                 try? await Task.sleep(for: .milliseconds(200))
             }
+        }
+    }
+
+    /// Daily runs retain their real-time deadline across a short background
+    /// interruption. Returning to the app never grants extra time, but an
+    /// accidental lock screen no longer immediately consumes the run.
+    func resumeLeagueCountdownIfNeeded() {
+        guard leagueMatchActive, leagueTimerIsRunning, let endDate = leagueTimerEndDate else { return }
+        leagueSecondsRemaining = max(0, Int(ceil(endDate.timeIntervalSinceNow)))
+        if leagueSecondsRemaining == 0 {
+            finishLeagueMatch()
+        } else {
+            startLeagueCountdown()
         }
     }
 
@@ -497,6 +512,7 @@ extension ContentView {
         let finishedAnswerRecords = leagueAnswerRecords
         leagueMatchActive = false
         leagueTimerIsRunning = false
+        leagueTimerEndDate = nil
         isLeagueAnswerFocused = false
         leagueAutoSubmitTask?.cancel()
         leagueAutoSubmitTask = nil
@@ -927,6 +943,7 @@ extension ContentView {
 
     func leagueCapitalExtraAliases(for country: Country) -> [String] {
         switch country.code {
+        case "AM": return ["Yerevan"]
         case "AT": return ["Vienna"]
         case "BE": return ["Brussels"]
         case "BG": return ["Sofia"]
@@ -966,7 +983,7 @@ extension ContentView {
         switch country.code {
         case "CH": return ["Swiss", "Suisse", "Svizzera", "Schweizerische Eidgenossenschaft"]
         case "US": return ["USA", "U.S.A.", "America", "United States of America", "Vereinigte Staaten von Amerika"]
-        case "GB": return ["UK", "U.K.", "Great Britain", "Britain", "England", "Großbritannien", "Grossbritannien"]
+        case "GB": return ["UK", "U.K.", "Great Britain", "Britain", "Großbritannien", "Grossbritannien"]
         case "AE": return ["UAE", "Emirates", "VAE"]
         case "BA": return ["Bosnien", "Bosnia"]
         case "BO": return ["Bolivia"]

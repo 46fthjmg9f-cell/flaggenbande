@@ -62,10 +62,107 @@ private struct PracticeHistoryBarEntry: Identifiable {
     var id: Int { index }
 }
 
+private struct SelectedHistoryPillFrameReporter: View {
+    let reportsFrame: Bool
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear.preference(
+                key: SelectedHistoryPillFrameKey.self,
+                value: reportsFrame ? proxy.frame(in: .named("historyPreviewSpace")) : nil
+            )
+        }
+    }
+}
+
+private struct CompletedPracticeHistoryPill: View {
+    let entry: PracticeHistoryBarEntry
+    let accentColor: Color
+    let isSelected: Bool
+    let pillSize: CGFloat
+    let preview: PracticeHistoryPreview
+    let onSelect: (PracticeHistoryPreview) -> Void
+
+    var body: some View {
+        Button {
+            onSelect(preview)
+        } label: {
+            PracticeHistoryPill(
+                mark: entry.mark,
+                accentColor: accentColor,
+                isSelected: isSelected,
+                size: pillSize
+            )
+            .background(SelectedHistoryPillFrameReporter(reportsFrame: isSelected))
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+    }
+}
+
+private struct PracticeHistoryPillsRow: View {
+    let entries: [PracticeHistoryBarEntry]
+    let totalEntryCount: Int
+    let resultCount: Int
+    let accentColor: Color
+    let selectedChangeID: UUID?
+    let onSelect: (PracticeHistoryPreview) -> Void
+
+    var body: some View {
+        GeometryReader { geometry in
+            let horizontalPadding: CGFloat = 20
+            let maxSpacing: CGFloat = 7
+            let maxPillSize: CGFloat = 28
+            let count = max(entries.count, 1)
+            let availableWidth = max(geometry.size.width - horizontalPadding, 1)
+            let idealWidth = maxPillSize * CGFloat(count) + maxSpacing * CGFloat(max(count - 1, 0))
+            let isOverflowing = idealWidth > availableWidth
+            let spacing = isOverflowing ? 4 : maxSpacing
+            let pillSize = min(maxPillSize, max(22, (availableWidth - spacing * CGFloat(max(count - 1, 0))) / CGFloat(count)))
+
+            HStack(spacing: spacing) {
+                ForEach(entries) { entry in
+                    if let change = entry.change {
+                        CompletedPracticeHistoryPill(
+                            entry: entry,
+                            accentColor: accentColor,
+                            isSelected: selectedChangeID == change.id,
+                            pillSize: pillSize,
+                            preview: PracticeHistoryPreview(change: change, index: entry.index, total: totalEntryCount),
+                            onSelect: onSelect
+                        )
+                    } else {
+                        PracticeHistoryPill(
+                            mark: entry.mark,
+                            accentColor: accentColor,
+                            isSelected: false,
+                            size: pillSize,
+                            animationTrigger: entry.mark == .current ? resultCount : 0
+                        )
+                    }
+                }
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(
+                minWidth: availableWidth,
+                maxWidth: availableWidth,
+                minHeight: maxPillSize,
+                alignment: isOverflowing ? .trailing : .center
+            )
+            .padding(.horizontal, horizontalPadding / 2)
+            .padding(.vertical, 8)
+            .clipped()
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppLayout.controlRadius, style: .continuous))
+        }
+        .frame(height: 44)
+    }
+}
+
 struct PracticeHistoryBar: View {
     let results: [Bool]
     let changes: [PracticeSessionChange]
     let limit: Int
+    let language: AppLanguage
     let accentColor: Color
     let selectedChangeID: UUID?
     let onSelectChange: (PracticeHistoryPreview) -> Void
@@ -104,51 +201,56 @@ struct PracticeHistoryBar: View {
         return Array(completeEntries[startIndex..<(startIndex + maximumVisibleEntries)])
     }
 
+    private var knownCount: Int { results.filter { $0 }.count }
+    private var unknownCount: Int { results.count - knownCount }
+
+    private var progressText: String {
+        limit == 0 ? "\(results.count)" : "\(results.count) / \(limit)"
+    }
+
     var body: some View {
-        ScaledHistoryBarContainer(entryCount: entries.count) { pillSize, spacing in
-            HStack(spacing: spacing) {
-                ForEach(entries) { entry in
-                    Group {
-                        if let change = entry.change {
-                            Button {
-                                onSelectChange(PracticeHistoryPreview(change: change, index: entry.index, total: allEntries.count))
-                            } label: {
-                                PracticeHistoryPill(mark: entry.mark, accentColor: accentColor, isSelected: selectedChangeID == change.id, size: pillSize)
-                                    .background(
-                                        GeometryReader { proxy in
-                                            Color.clear.preference(
-                                                key: SelectedHistoryPillFrameKey.self,
-                                                value: selectedChangeID == change.id ? proxy.frame(in: .named("historyPreviewSpace")) : nil
-                                            )
-                                        }
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .contentShape(Circle())
-                        } else {
-                            PracticeHistoryPill(
-                                mark: entry.mark,
-                                accentColor: accentColor,
-                                isSelected: false,
-                                size: pillSize,
-                                animationTrigger: entry.mark == .current ? results.count : 0
-                            )
-                        }
-                    }
-                    .transition(
-                        .asymmetric(
-                            insertion: .offset(x: pillSize + spacing)
-                                .combined(with: .scale(scale: 0.72))
-                                .combined(with: .opacity),
-                            removal: .move(edge: .leading).combined(with: .opacity)
-                        )
-                    )
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Label(localized("Rückblick", "Review", language: language), systemImage: "clock.arrow.circlepath")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 0)
+
+                Text(progressText)
+                    .font(.subheadline.monospacedDigit().weight(.bold))
+                    .foregroundStyle(accentColor)
             }
+
+            PracticeHistoryPillsRow(
+                entries: entries,
+                totalEntryCount: allEntries.count,
+                resultCount: results.count,
+                accentColor: accentColor,
+                selectedChangeID: selectedChangeID,
+                onSelect: onSelectChange
+            )
+
+            HStack(spacing: 12) {
+                Label("\(knownCount) \(localized("gewusst", "known", language: language))", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Label("\(unknownCount) \(localized("offen", "to review", language: language))", systemImage: "arrow.counterclockwise.circle.fill")
+                    .foregroundStyle(unknownCount == 0 ? Color.secondary : Color.red)
+                Spacer(minLength: 0)
+                Text(localized("Antippen für Details", "Tap for details", language: language))
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption.weight(.semibold))
         }
+        .padding(12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: AppLayout.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppLayout.cardRadius, style: .continuous)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+        )
         .animation(.spring(response: 0.44, dampingFraction: 0.76), value: results.count)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Üben Verlauf")
+        .accessibilityLabel(localized("Rückblick: \(knownCount) gewusst, \(unknownCount) offen, \(progressText).", "Review: \(knownCount) known, \(unknownCount) to review, \(progressText).", language: language))
     }
 }
 
@@ -184,12 +286,7 @@ struct ScaledHistoryBarContainer<Content: View>: View {
                 // Clip overflowing history horizontally only after there is
                 // enough vertical room for the slightly enlarged current pill.
                 .clipped()
-                .background(Color(.secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.secondary.opacity(0.18), lineWidth: 1)
-                )
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: AppLayout.controlRadius, style: .continuous))
         }
         .frame(height: 44)
     }

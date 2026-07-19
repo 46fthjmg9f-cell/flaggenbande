@@ -97,7 +97,9 @@ enum OnlineLeaderboardCache {
 
     private static var cacheURL: URL? {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("online-leaderboard-v1.json")
+            // v2 intentionally ignores caches from builds that could store a
+            // fetched public profile snapshot alongside leaderboard data.
+            .appendingPathComponent("online-leaderboard-v2.json")
     }
 
     static func load(maxAge: TimeInterval = 7 * 24 * 60 * 60) -> [OnlinePlayerStats] {
@@ -139,6 +141,8 @@ enum OnlineStatsService {
         case profileSnapshotEncodingFailed
         case nicknameAlreadyTaken
         case dailyAttemptsExhausted
+        case invalidDailyAttemptReservation
+        case concurrentUpdate
 
         var errorDescription: String? {
             switch self {
@@ -160,6 +164,10 @@ enum OnlineStatsService {
                 return "Dieser Spitzname ist schon vergeben."
             case .dailyAttemptsExhausted:
                 return "Du hast deine 2 Versuche für heute verbraucht."
+            case .invalidDailyAttemptReservation:
+                return "Dieser Daily-Versuch ist nicht mehr gültig. Bitte aktualisiere den Daily-Run."
+            case .concurrentUpdate:
+                return "Die Online-Daten wurden gleichzeitig geändert. Bitte erneut versuchen."
             }
         }
     }
@@ -194,7 +202,6 @@ enum OnlineStatsService {
         let playerRecordName = playerID(gameCenterPlayerID: gameCenterPlayerID)
         let recordID = CKRecord.ID(recordName: playerRecordName)
         let record = try await fetchRecord(recordID: recordID) ?? CKRecord(recordType: recordType, recordID: recordID)
-        let profileSnapshot = try profileSnapshotData(profile: profile)
         let displayName = normalizedName(name, fallback: gameCenterAlias)
         let countrySubjectStats = subjectStats(profile: profile, countries: countries, subject: .countries)
         let capitalSubjectStats = subjectStats(profile: profile, countries: countries, subject: .capitals)
@@ -241,11 +248,12 @@ enum OnlineStatsService {
         record["sTierHistory"] = selectedSubjectStats.sTierHistory.map(String.init).joined(separator: "|") as CKRecordValue
         writeSubjectStats(countrySubjectStats, prefix: "country", to: record)
         writeSubjectStats(capitalSubjectStats, prefix: "capital", to: record)
-        // Public profiles power friend comparisons, but never expose a local
-        // profile PIN. The complete multi-profile backup belongs in the
-        // user's private CloudKit database.
-        record["profileSnapshot"] = profileSnapshot
-        record["profileSnapshotVersion"] = 1 as CKRecordValue
+        // PlayerStats is public. Keep it limited to the explicit statistic
+        // fields above and remove snapshots written by older app versions.
+        // The complete multi-profile backup (including a PIN, if configured)
+        // is stored exclusively in the user's private CloudKit database.
+        record["profileSnapshot"] = nil
+        record["profileSnapshotVersion"] = 2 as CKRecordValue
         record["appDataSnapshot"] = nil
         record["appDataSnapshotVersion"] = nil
         record["updatedAt"] = Date() as CKRecordValue
@@ -258,10 +266,23 @@ enum OnlineStatsService {
     static func fetchAppDataSnapshot(gameCenterPlayerID: String?) async throws -> AppData? {
         try await ensureAccountAvailable()
         let playerRecordName = playerID(gameCenterPlayerID: gameCenterPlayerID)
-        let backupRecordID = CKRecord.ID(recordName: "current_user_backup")
-        if let privateRecord = try await fetchRecord(recordID: backupRecordID, from: privateDatabase),
+        let privateBackupRecordID = CKRecord.ID(recordName: privateBackupRecordName(for: playerRecordName))
+        if let privateRecord = try await fetchRecord(recordID: privateBackupRecordID, from: privateDatabase),
            let privateSnapshot = decodeAppDataSnapshot(from: privateRecord) {
             return privateSnapshot
+        }
+
+        // Builds before 1.0 (102) used one shared record name in the private
+        // database. Only accept that legacy record when its recorded owner is
+        // exactly the currently authenticated Game Center player. This avoids
+        // restoring profile A after the device is switched to profile B under
+        // the same iCloud account. A following upload migrates valid legacy
+        // data to the player-specific record above.
+        let legacyBackupRecordID = CKRecord.ID(recordName: "current_user_backup")
+        if let legacyRecord = try await fetchRecord(recordID: legacyBackupRecordID, from: privateDatabase),
+           legacyRecord["ownerRecordName"] as? String == playerRecordName,
+           let legacySnapshot = decodeAppDataSnapshot(from: legacyRecord) {
+            return legacySnapshot
         }
 
         // One-time compatibility path for backups written by older builds to
@@ -283,7 +304,7 @@ enum OnlineStatsService {
     }
 
     private static func savePrivateBackup(_ appData: AppData, playerRecordName: String) async throws {
-        let recordID = CKRecord.ID(recordName: "current_user_backup")
+        let recordID = CKRecord.ID(recordName: privateBackupRecordName(for: playerRecordName))
         let record = try await fetchRecord(recordID: recordID, from: privateDatabase)
             ?? CKRecord(recordType: backupRecordType, recordID: recordID)
         record["ownerRecordName"] = playerRecordName as CKRecordValue
@@ -291,6 +312,10 @@ enum OnlineStatsService {
         record["appDataSnapshotVersion"] = 1 as CKRecordValue
         record["updatedAt"] = Date() as CKRecordValue
         try await save(record: record, policy: .changedKeys, in: privateDatabase)
+    }
+
+    private static func privateBackupRecordName(for playerRecordName: String) -> String {
+        "backup_\(playerRecordName)"
     }
 
     private static func decodeAppDataSnapshot(from record: CKRecord) -> AppData? {
@@ -319,7 +344,13 @@ enum OnlineStatsService {
 
     static func fetchPlayerStats(recordName: String) async throws -> OnlinePlayerStats? {
         try await ensureAccountAvailable()
-        guard let record = try await fetchRecord(recordID: CKRecord.ID(recordName: recordName)) else {
+        // Do not fetch legacy public snapshots here. Besides being unnecessary
+        // for the detail screen, old records may predate the private-backup
+        // split and therefore contain sensitive profile data.
+        guard let record = try await fetchRecord(
+            recordID: CKRecord.ID(recordName: recordName),
+            desiredKeys: leaderboardDesiredKeys
+        ) else {
             return nil
         }
         return OnlinePlayerStats(record: record)
@@ -435,13 +466,18 @@ enum OnlineStatsService {
     }
     #endif
 
-    static func fetchRecord(recordID: CKRecord.ID) async throws -> CKRecord? {
-        try await fetchRecord(recordID: recordID, from: database)
+    static func fetchRecord(recordID: CKRecord.ID, desiredKeys: [String]? = nil) async throws -> CKRecord? {
+        try await fetchRecord(recordID: recordID, desiredKeys: desiredKeys, from: database)
     }
 
-    static func fetchRecord(recordID: CKRecord.ID, from targetDatabase: CKDatabase) async throws -> CKRecord? {
+    static func fetchRecord(
+        recordID: CKRecord.ID,
+        desiredKeys: [String]? = nil,
+        from targetDatabase: CKDatabase
+    ) async throws -> CKRecord? {
         try await withTimeout {
             let operation = CKFetchRecordsOperation(recordIDs: [recordID])
+            operation.desiredKeys = desiredKeys
             operation.qualityOfService = .userInitiated
             return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
@@ -830,15 +866,6 @@ enum OnlineStatsService {
         }
     }
 
-    static func profileSnapshotData(profile: UserProfile) throws -> CKRecordValue {
-        var publicProfile = profile
-        publicProfile.pin = ""
-        guard let data = try? JSONEncoder().encode(publicProfile) else {
-            throw OnlineStatsError.profileSnapshotEncodingFailed
-        }
-        return data as NSData
-    }
-
     static func appDataSnapshotData(_ appData: AppData) throws -> CKRecordValue {
         guard let data = try? JSONEncoder().encode(appData) else {
             throw OnlineStatsError.profileSnapshotEncodingFailed
@@ -945,32 +972,10 @@ extension OnlinePlayerStats {
         )
         countryStats = Self.parseSubjectStats(record: record, prefix: "country", fallback: legacyStats)
         capitalStats = Self.parseSubjectStats(record: record, prefix: "capital", fallback: legacyStats)
-        profileSnapshot = Self.decodeProfileSnapshot(from: record)
+        // Full profiles never belong to public PlayerStats. Public statistics
+        // above contain everything this model needs for friend comparisons.
+        profileSnapshot = nil
         updatedAt = (record["updatedAt"] as? Date) ?? .distantPast
-    }
-
-    private static func decodeProfileSnapshot(from record: CKRecord) -> UserProfile? {
-        if let profileData = record["profileSnapshot"] as? Data,
-           let profile = try? JSONDecoder().decode(UserProfile.self, from: profileData) {
-            return profile
-        }
-
-        if let profileData = record["profileSnapshot"] as? NSData,
-           let profile = try? JSONDecoder().decode(UserProfile.self, from: profileData as Data) {
-            return profile
-        }
-
-        if let appData = record["appDataSnapshot"] as? Data,
-           let snapshot = try? JSONDecoder().decode(AppData.self, from: appData) {
-            return snapshot.activeProfile
-        }
-
-        if let appData = record["appDataSnapshot"] as? NSData,
-           let snapshot = try? JSONDecoder().decode(AppData.self, from: appData as Data) {
-            return snapshot.activeProfile
-        }
-
-        return nil
     }
 
     private static func parseTierSnapshot(_ snapshot: String?) -> [String: MasteryTier] {

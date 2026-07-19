@@ -5,7 +5,7 @@ import SwiftUI
 extension ContentView {
     func adaptiveModeLayout<Content: View>(maxWidth: CGFloat = 560, @ViewBuilder content: @escaping () -> Content) -> some View {
         GeometryReader { geometry in
-            let horizontalPadding: CGFloat = geometry.size.width < 360 ? 10 : 16
+            let horizontalPadding: CGFloat = geometry.size.width < 360 ? 14 : AppLayout.screenPadding
             ViewThatFits(in: .vertical) {
                 content()
                     .padding(horizontalPadding)
@@ -32,8 +32,8 @@ extension ContentView {
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
-        .padding(10)
-        .background(panelBackgroundColor, in: RoundedRectangle(cornerRadius: 10))
+        .padding(14)
+        .appSurface()
     }
 
     var practiceView: some View {
@@ -51,6 +51,7 @@ extension ContentView {
                         results: practiceSessionResults,
                         changes: practiceSessionChanges,
                         limit: selectedPracticeCardLimit,
+                        language: appLanguage,
                         accentColor: tealAccentColor,
                         selectedChangeID: practiceHistoryPreview?.id,
                         onSelectChange: showPracticeHistoryPreview
@@ -112,7 +113,7 @@ extension ContentView {
                         hintControl
                     }
                 } else {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 14) {
                         Text(L("Kategorie", "Category"))
                             .font(.headline)
                         continentButtonGrid(selection: $selectedPracticeContinents)
@@ -120,6 +121,8 @@ extension ContentView {
                             freeDailyFlagLimitInfo
                         }
                     }
+                    .padding(16)
+                    .appSurface()
 
                     if showRecap {
                         PracticeRecapView(
@@ -330,7 +333,7 @@ extension ContentView {
                                 Image(systemName: "xmark")
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(.secondary)
-                                    .frame(width: 28, height: 28)
+                                    .frame(width: 44, height: 44)
                                     .background(.ultraThinMaterial, in: Circle())
                                     .contentShape(Circle())
                             }
@@ -559,6 +562,36 @@ extension ContentView {
                 cardIsFlipped.toggle()
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            cardIsFlipped
+                ? L("Lernkarte, Antwort aufgedeckt", "Study card, answer revealed")
+                : L("Lernkarte", "Study card")
+        )
+        .accessibilityHint(
+            L(
+                "Doppeltippen deckt die Antwort auf. Über die Aktionen Gewusst oder Nicht gewusst bewertest du die Karte.",
+                "Double-tap reveals the answer. Use the Known or Not known actions to rate the card."
+            )
+        )
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            guard !isFinishingSwipe.wrappedValue, !isInteractionBlocked, !FlagZoomInteractionState.isPinching else { return }
+            Haptics.tap()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                cardIsFlipped.toggle()
+            }
+        }
+        .accessibilityAction(named: Text(L("Gewusst", "Known"))) {
+            guard !isFinishingSwipe.wrappedValue, !isInteractionBlocked, !FlagZoomInteractionState.isPinching else { return }
+            let committedSwipe = CGSize(width: 72, height: 0)
+            onFinishSwipe(committedSwipe, committedSwipe)
+        }
+        .accessibilityAction(named: Text(L("Nicht gewusst", "Not known"))) {
+            guard !isFinishingSwipe.wrappedValue, !isInteractionBlocked, !FlagZoomInteractionState.isPinching else { return }
+            let committedSwipe = CGSize(width: -72, height: 0)
+            onFinishSwipe(committedSwipe, committedSwipe)
+        }
     }
 
     func showPracticeHistoryPreview(_ preview: PracticeHistoryPreview) {
@@ -660,7 +693,7 @@ extension ContentView {
                 Label(cardHintIsVisible ? L("Tipp aktiviert", "Hint active") : L("Tipp anzeigen", "Show hint"), systemImage: cardHintIsVisible ? "lightbulb.fill" : "lightbulb")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(cardHintIsVisible ? .orange : .secondary)
-                    .frame(maxWidth: .infinity, minHeight: 34)
+                    .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
@@ -757,6 +790,7 @@ extension ContentView {
                         results: showSessionEntries.map(\.wasKnown),
                         changes: showSessionEntries,
                         limit: selectedShowCardLimit,
+                        language: appLanguage,
                         accentColor: tealAccentColor,
                         selectedChangeID: showHistoryPreview?.id,
                         onSelectChange: showShowmasterHistoryPreview
