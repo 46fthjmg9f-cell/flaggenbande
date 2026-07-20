@@ -25,10 +25,10 @@ function inspectPublicValue(value, path = 'root') {
   if (typeof value === 'string') assert.equal(forbiddenValue.test(value), false, `lokaler Pfad in ${path}`)
 }
 
-test('public content contract starts with all four unconfigured platforms', async () => {
+test('public content contract reports partial data with all four unconfigured platforms', async () => {
   const fixture = await loadFixture()
   assert.equal(fixture.schemaVersion, 1)
-  assert.equal(fixture.status, 'waiting_for_sources')
+  assert.equal(fixture.status, 'partial')
   assert.deepEqual(fixture.system.map(entry => entry.id).sort(), ['database', 'engine', 'quality', 'release'])
   assert.deepEqual(fixture.platforms.map(entry => entry.platform).sort(), ['facebook', 'instagram', 'tiktok', 'youtube'])
   assert.ok(fixture.platforms.every(entry => entry.status === 'not_configured'))
