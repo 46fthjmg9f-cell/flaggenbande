@@ -9,6 +9,8 @@ on:
     paths:
       - 'dashboard/**'
       - 'scripts/collect-dashboard-data.mjs'
+      - 'scripts/social-platforms.mjs'
+      - 'tests/social-platforms.test.mjs'
       - '.github/workflows/dashboard.yml'
 
 permissions:
@@ -29,6 +31,8 @@ jobs:
         with: { fetch-depth: 2 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: dashboard/package-lock.json }
+      - name: Verify social platform collector
+        run: node --test tests/social-platforms.test.mjs
       - name: Collect and aggregate private source data
         env:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -43,6 +47,15 @@ jobs:
           CLOUDKIT_CONTAINER: ${{ secrets.CLOUDKIT_CONTAINER }}
           CLOUDKIT_KEY_ID: ${{ secrets.CLOUDKIT_KEY_ID }}
           CLOUDKIT_PRIVATE_KEY: ${{ secrets.CLOUDKIT_PRIVATE_KEY }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_ANALYTICS_REFRESH_TOKEN: ${{ secrets.YOUTUBE_ANALYTICS_REFRESH_TOKEN }}
+          META_GRAPH_API_VERSION: ${{ vars.META_GRAPH_API_VERSION }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
+          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+          TIKTOK_ACCESS_TOKEN: ${{ secrets.TIKTOK_ACCESS_TOKEN }}
         run: node scripts/collect-dashboard-data.mjs
       - name: Commit only safe aggregates
         run: |

@@ -3,6 +3,7 @@ import { gunzipSync } from 'node:zlib'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { collectSocialPlatforms } from './social-platforms.mjs'
 
 const outputPath = new URL('../dashboard/public/data/dashboard.json', import.meta.url)
 const appStoreBase = 'https://api.appstoreconnect.apple.com/v1'
@@ -272,8 +273,16 @@ async function writeAtomically(payload) {
 
 const previous = await loadPrevious()
 try {
-  const [analytics, reviewsAndRelease, sales, finance, cloud] = await Promise.all([collectAnalytics(), collectReviewsAndRelease(), collectSales(), collectFinance(), collectCloudKit()])
-  if (![analytics.available, reviewsAndRelease.available, sales.available, finance.available, cloud.available].some(Boolean) && previous?.status === 'waiting_for_first_sync') process.exit(0)
+  const [analytics, reviewsAndRelease, sales, finance, cloud, social] = await Promise.all([
+    collectAnalytics(),
+    collectReviewsAndRelease(),
+    collectSales(),
+    collectFinance(),
+    collectCloudKit(),
+    collectSocialPlatforms({ previous: previous?.social ?? null }),
+  ])
+  const socialAvailable = Object.values(social.platforms).some(platform => platform.status === 'available' || platform.status === 'partial')
+  if (![analytics.available, reviewsAndRelease.available, sales.available, finance.available, cloud.available, socialAvailable].some(Boolean) && previous?.status === 'waiting_for_first_sync') process.exit(0)
   const allRows = [...analytics.rows, ...sales.rows]
   const daily = mergeDaily(allRows)
   const availability = {
@@ -282,14 +291,18 @@ try {
     'Sales & Trends': { available: sales.available && sales.rows.length > 0, reason: sales.reason ?? (sales.rows.length ? undefined : 'Der erste Tagesreport ist noch nicht verfügbar.'), updatedAt: now() },
     'CloudKit Public DB': { available: cloud.available, reason: cloud.reason, updatedAt: now() },
     'Finance': { available: finance.available, reason: finance.reason, updatedAt: now() },
+    'YouTube': { available: ['available', 'partial'].includes(social.platforms.youtube.status), reason: social.platforms.youtube.reason, updatedAt: social.platforms.youtube.completedAt },
+    'Instagram': { available: ['available', 'partial'].includes(social.platforms.instagram.status), reason: social.platforms.instagram.reason, updatedAt: social.platforms.instagram.completedAt },
+    'Facebook': { available: ['available', 'partial'].includes(social.platforms.facebook.status), reason: social.platforms.facebook.reason, updatedAt: social.platforms.facebook.completedAt },
+    'TikTok': { available: ['available', 'partial'].includes(social.platforms.tiktok.status), reason: social.platforms.tiktok.reason, updatedAt: social.platforms.tiktok.completedAt },
   }
   const payload = {
-    schemaVersion: 1, generatedAt: now(), status: 'ok', messages: warnings, availability,
+    schemaVersion: 2, generatedAt: now(), status: 'ok', messages: warnings, availability,
     kpis: { reviewAverage: reviewsAndRelease.reviews?.average ?? null, reviewCount: reviewsAndRelease.reviews?.count ?? null },
     daily, countries: aggregateBy(allRows, row => ({ key: row.country ?? '', value: row.downloads || row.purchases || 0 })),
     devices: aggregateBy(analytics.rows, row => ({ key: row.device ?? '', value: row.activeDevices || 0 })),
     versions: aggregateBy(analytics.rows, row => ({ key: row.appVersion ?? '', value: row.activeDevices || 0 })),
-    release: reviewsAndRelease.release, finance: finance.latest, cloudKit: cloud.cloudKit ?? {},
+    release: reviewsAndRelease.release, finance: finance.latest, cloudKit: cloud.cloudKit ?? {}, social,
   }
   await writeAtomically(payload)
 } catch (error) {

@@ -26,6 +26,57 @@ export interface DailyMetric {
 
 export interface Breakdown { key: string; value: number; label?: string }
 export interface CloudDay { date: string; players: number; attempts: number; completed: number; averageScore: Numeric; averageDuration: Numeric; abortRate: Numeric }
+export type SocialPlatform = 'youtube' | 'instagram' | 'facebook' | 'tiktok'
+export type SocialSyncStatus = 'available' | 'partial' | 'not_configured' | 'error'
+
+export interface SocialMetrics {
+  views: Numeric
+  reach: Numeric
+  likes: Numeric
+  comments: Numeric
+  shares: Numeric
+  saves: Numeric
+  watchTimeMinutes: Numeric
+  averageViewDurationSeconds: Numeric
+  averageViewPercentage: Numeric
+  followersGained: Numeric
+}
+
+export interface SocialVideo {
+  platform: SocialPlatform
+  platformVideoId: string
+  title: string
+  description: string
+  publishedAt: string | null
+  url: string | null
+  thumbnailUrl: string | null
+  status: string
+  durationSeconds: Numeric
+  metrics: SocialMetrics
+}
+
+export interface SocialPlatformState {
+  status: SocialSyncStatus
+  reason?: string
+  accountName: string | null
+  videoCount: number
+  startedAt: string | null
+  completedAt: string | null
+}
+
+export interface SocialData {
+  schemaVersion: number
+  syncedAt: string | null
+  platforms: Record<SocialPlatform, SocialPlatformState>
+  totals: SocialMetrics
+  videos: SocialVideo[]
+  snapshots: Array<{
+    platform: SocialPlatform
+    platformVideoId: string
+    capturedAt: string
+    metrics: SocialMetrics
+  }>
+}
 export interface DashboardData {
   schemaVersion: number
   generatedAt: string | null
@@ -54,7 +105,29 @@ export interface DashboardData {
     totalAttempts?: number
     averageScore?: Numeric
   }
+  social: SocialData
 }
+
+const emptyMetrics: SocialMetrics = {
+  views: null,
+  reach: null,
+  likes: null,
+  comments: null,
+  shares: null,
+  saves: null,
+  watchTimeMinutes: null,
+  averageViewDurationSeconds: null,
+  averageViewPercentage: null,
+  followersGained: null,
+}
+
+const emptyPlatform = (): SocialPlatformState => ({
+  status: 'not_configured',
+  accountName: null,
+  videoCount: 0,
+  startedAt: null,
+  completedAt: null,
+})
 
 export const emptyDashboard: DashboardData = {
   schemaVersion: 1,
@@ -68,4 +141,17 @@ export const emptyDashboard: DashboardData = {
   devices: [],
   versions: [],
   cloudKit: { daily: [], scoreDistribution: [], modes: [], trophies: [] },
+  social: {
+    schemaVersion: 1,
+    syncedAt: null,
+    platforms: {
+      youtube: emptyPlatform(),
+      instagram: emptyPlatform(),
+      facebook: emptyPlatform(),
+      tiktok: emptyPlatform(),
+    },
+    totals: emptyMetrics,
+    videos: [],
+    snapshots: [],
+  },
 }

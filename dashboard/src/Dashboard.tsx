@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import * as echarts from 'echarts'
 import type { EChartsOption } from 'echarts'
 import ContentSystemDashboard from './ContentSystemDashboard'
+import SocialAnalytics from './SocialAnalytics'
 import type { DashboardData, DailyMetric, Numeric } from './types'
 import { emptyDashboard } from './types'
 
@@ -75,7 +76,17 @@ export default function Dashboard() {
       const response = await fetch(`./data/dashboard.json?refresh=${Date.now()}`, { cache: 'no-store' })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const payload: DashboardData = await response.json()
-      setData({ ...emptyDashboard, ...payload, cloudKit: { ...emptyDashboard.cloudKit, ...payload.cloudKit } })
+      setData({
+        ...emptyDashboard,
+        ...payload,
+        cloudKit: { ...emptyDashboard.cloudKit, ...payload.cloudKit },
+        social: {
+          ...emptyDashboard.social,
+          ...payload.social,
+          platforms: { ...emptyDashboard.social.platforms, ...payload.social?.platforms },
+          totals: { ...emptyDashboard.social.totals, ...payload.social?.totals },
+        },
+      })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason)
       setError(`Dashboard-Daten konnten nicht geladen werden: ${message}`)
@@ -219,6 +230,7 @@ export default function Dashboard() {
       <KpiCard label="Ø Flaggenrun Score" value={formatNumber(data.cloudKit.averageScore ?? null)} detail="Daily Runs" />
       <KpiCard label="Aktueller Build" value={data.release?.build ?? '—'} detail={data.release?.buildProcessingState ?? data.release?.appStoreState ?? 'App Store Connect'} accent="green" />
     </section>
+    <SocialAnalytics data={data.social} />
     <section className="chart-grid">
       <Panel eyebrow="ACQUISITION" title="Downloads im Zeitverlauf" detail={hasTrend ? 'Interaktiv filterbar' : 'Daten folgen nach Apples Mindestschwelle'} wide><Chart option={downloadsOption} label="Downloads im Zeitverlauf" /></Panel>
       <Panel eyebrow="DISCOVERY" title="Sichtbarkeit und Produktseite" detail="Impressions · Page Views" wide><Chart option={discoveryOption} label="App Store Sichtbarkeit" /></Panel>
