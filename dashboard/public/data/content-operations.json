@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-20T09:00:00Z",
+  "status": "waiting_for_sources",
+  "messages": [
+    "Produktions- und Plattformdaten werden schrittweise ergänzt. Noch sind keine Upload-Adapter verbunden."
+  ],
+  "system": [
+    {
+      "id": "engine",
+      "label": "Production Engine",
+      "value": "Grundlage bereit",
+      "status": "ready",
+      "detail": "Die deterministische TypeScript-Grundlage wurde validiert.",
+      "updatedAt": "2026-07-20T09:00:00Z"
+    },
+    {
+      "id": "release",
+      "label": "Stabiler Release",
+      "value": "0.1.0",
+      "status": "ready",
+      "detail": "Foundation, Konfiguration, Logging und Prüfungen sind verfügbar.",
+      "updatedAt": "2026-07-20T09:00:00Z"
+    },
+    {
+      "id": "database",
+      "label": "Länderdatenbank",
+      "value": "Release 0.2.0",
+      "status": "planned",
+      "detail": "Die geprüfte Datenbasis wird im nächsten Production-Release ergänzt.",
+      "updatedAt": null
+    },
+    {
+      "id": "quality",
+      "label": "Quality-Gate",
+      "value": "Noch nicht aktiv",
+      "status": "planned",
+      "detail": "Blockierende Video-Qualitätsprüfungen folgen vor der Upload-Freigabe.",
+      "updatedAt": null
+    }
+  ],
+  "platforms": [
+    {
+      "platform": "youtube",
+      "label": "YouTube",
+      "status": "not_configured",
+      "uploads": 0,
+      "publications": 0,
+      "performanceAvailable": false,
+      "reason": "Der geprüfte Upload- und Analytics-Adapter ist noch nicht Bestandteil der Production Engine.",
+      "updatedAt": null
+    },
+    {
+      "platform": "instagram",
+      "label": "Instagram",
+      "status": "not_configured",
+      "uploads": 0,
+      "publications": 0,
+      "performanceAvailable": false,
+      "reason": "Der geprüfte Upload- und Analytics-Adapter ist noch nicht Bestandteil der Production Engine.",
+      "updatedAt": null
+    },
+    {
+      "platform": "tiktok",
+      "label": "TikTok",
+      "status": "not_configured",
+      "uploads": 0,
+      "publications": 0,
+      "performanceAvailable": false,
+      "reason": "Der geprüfte Upload- und Analytics-Adapter ist noch nicht Bestandteil der Production Engine.",
+      "updatedAt": null
+    },
+    {
+      "platform": "facebook",
+      "label": "Facebook",
+      "status": "not_configured",
+      "uploads": 0,
+      "publications": 0,
+      "performanceAvailable": false,
+      "reason": "Der geprüfte Upload- und Analytics-Adapter ist noch nicht Bestandteil der Production Engine.",
+      "updatedAt": null
+    }
+  ],
+  "runs": [],
+  "publications": [],
+  "performance": []
+}
