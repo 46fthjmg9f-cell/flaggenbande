@@ -1,8 +1,9 @@
 # Flaggenbande Content System
 
 Stabiles Fundament für die spätere Produktion gleichbleibender Flaggen-Quiz-
-Shorts. Release `0.1.0` enthält bewusst noch keine Video-, Länder-, Audio- oder
-Uploadlogik. Diese Funktionen werden in den festgelegten Releases ergänzt.
+Shorts. Release `0.2.0` ergänzt eine reproduzierbare Kandidaten-Datenbank für
+exakt 193 UN-Mitgliedstaaten. Die Daten bleiben bis zur menschlichen Prüfung
+für die Produktion gesperrt; Video-, Audio- und Uploadlogik folgen später.
 
 ## Voraussetzungen
 
@@ -58,6 +59,7 @@ Ausführlichere Betriebs- und Fehlerhinweise stehen unter
 
 ## Release-Grenze
 
-`0.1.0` liefert nur reproduzierbares Projektfundament, Konfiguration, Logging,
-Dokumentation und Tests. Die Länderbank beginnt mit `0.2.0`; das erste
-gerenderte Quizvideo gehört zu `0.3.0`.
+`0.2.0` erzeugt und prüft Länder-Datenkandidaten, lokale SVG-Flaggen,
+Quellen-Snapshots, Review-Queue und Prüfsummen. Erst eine gesonderte menschliche
+Freigabe darf Einträge quizfähig machen. Das erste gerenderte Quizvideo gehört
+zu `0.3.0`.

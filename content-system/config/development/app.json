@@ -1,5 +1,6 @@
 {
   "logLevel": "debug",
   "outputDirectory": "./output",
+  "localCacheDirectory": "./.cache",
   "renderConcurrency": 1
 }

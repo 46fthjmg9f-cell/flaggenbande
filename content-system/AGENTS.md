@@ -21,3 +21,14 @@ experimentation, self-optimization or a second analytics platform.
 Agents must not change another area’s approved contract without Manager review.
 No public publishing, credential changes or paid services without explicit human
 approval.
+
+## Model and reasoning policy
+
+- Use `gpt-5.6-sol` for specialist agents unless a smaller model is explicitly
+  sufficient.
+- Small, bounded edits use low or medium reasoning.
+- Normal implementation and verification use medium reasoning.
+- Architecture, migrations and difficult integration faults may use high
+  reasoning.
+- Subagents never use ultra reasoning. Ultra is reserved for the Manager Agent
+  and only when the task genuinely requires it.

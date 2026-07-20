@@ -21,3 +21,4 @@ content-system/.env
 content-system/*.log
 content-system/coverage/
 content-system/tmp/
+content-system/.cache/

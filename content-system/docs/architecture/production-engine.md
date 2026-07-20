@@ -13,6 +13,8 @@ The detailed findings and known catalog defects are recorded in
 [`data-audit.md`](data-audit.md).
 The inspected repository boundaries and reuse decisions are recorded in
 [`current-repository.md`](current-repository.md).
+Country-data contracts and durable storage rules are recorded in
+[`country-data.md`](country-data.md) and [`cloud-storage.md`](cloud-storage.md).
 
 ## Target modules
 

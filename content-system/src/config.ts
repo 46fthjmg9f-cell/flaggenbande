@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 
 export const APP_MODES = ["development", "production"] as const;
@@ -10,12 +11,14 @@ export type LogLevel = (typeof LOG_LEVELS)[number];
 interface FileConfig {
   readonly logLevel: LogLevel;
   readonly outputDirectory: string;
+  readonly localCacheDirectory: string;
   readonly renderConcurrency: number;
 }
 
 export interface AppConfig extends FileConfig {
   readonly mode: AppMode;
   readonly projectDirectory: string;
+  readonly cloudRoot?: string;
 }
 
 const isAppMode = (value: string): value is AppMode =>
@@ -50,12 +53,25 @@ const parseFileConfig = (value: unknown): FileConfig => {
   return {
     logLevel,
     outputDirectory: requiredString(record.outputDirectory, "outputDirectory"),
+    localCacheDirectory: requiredString(record.localCacheDirectory, "localCacheDirectory"),
     renderConcurrency: positiveInteger(record.renderConcurrency, "renderConcurrency"),
   };
 };
 
+export const expandHome = (value: string, userHome: string = homedir()): string => {
+  if (value === "~") {
+    return userHome;
+  }
+  if (value.startsWith("~/")) {
+    return resolve(userHome, value.slice(2));
+  }
+  return value;
+};
+
 const resolveProjectPath = (projectDirectory: string, value: string): string =>
-  isAbsolute(value) ? value : resolve(projectDirectory, value);
+  isAbsolute(expandHome(value))
+    ? expandHome(value)
+    : resolve(projectDirectory, expandHome(value));
 
 export const loadConfig = (
   environment: NodeJS.ProcessEnv = process.env,
@@ -83,12 +99,19 @@ export const loadConfig = (
     throw new Error(`Unsupported FLAGGENBANDE_LOG_LEVEL: ${rawLogLevel}.`);
   }
   const outputDirectory = environment.FLAGGENBANDE_OUTPUT_DIR?.trim() || fileConfig.outputDirectory;
+  const localCacheDirectory =
+    environment.FLAGGENBANDE_LOCAL_CACHE_DIR?.trim() || fileConfig.localCacheDirectory;
+  const rawCloudRoot = environment.FLAGGENBANDE_CLOUD_ROOT?.trim();
 
   return {
     mode: rawMode,
     projectDirectory: resolve(projectDirectory),
     logLevel: rawLogLevel,
     outputDirectory: resolveProjectPath(projectDirectory, outputDirectory),
+    localCacheDirectory: resolveProjectPath(projectDirectory, localCacheDirectory),
     renderConcurrency: fileConfig.renderConcurrency,
+    ...(rawCloudRoot
+      ? { cloudRoot: resolveProjectPath(projectDirectory, rawCloudRoot) }
+      : {}),
   };
 };
