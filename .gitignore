@@ -12,3 +12,13 @@ tmp/
 # Dashboard dependencies and local build output
 dashboard/node_modules/
 dashboard/dist/
+
+# Flaggenbande content-system
+content-system/node_modules/
+content-system/dist/
+content-system/output/
+content-system/.env
+content-system/*.log
+content-system/coverage/
+content-system/tmp/
+content-system/.cache/
