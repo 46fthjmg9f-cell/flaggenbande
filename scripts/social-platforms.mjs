@@ -87,9 +87,10 @@ const parseIsoDuration = value => {
   return (Number(match[1] ?? 0) * 86400) + (Number(match[2] ?? 0) * 3600) + (Number(match[3] ?? 0) * 60) + Number(match[4] ?? 0)
 }
 
-const video = ({ platform, id, title, description, publishedAt, url, thumbnailUrl, status, durationSeconds, metrics }) => ({
+const video = ({ platform, id, contentId, title, description, publishedAt, url, thumbnailUrl, status, durationSeconds, metrics }) => ({
   platform,
   platformVideoId: String(id),
+  contentId: typeof contentId === 'string' && contentId.trim() ? contentId.trim().slice(0, 200) : null,
   title: String(title || description || 'Ohne Titel').trim().slice(0, 240),
   description: String(description || '').trim().slice(0, 500),
   publishedAt: publishedAt || null,
@@ -213,10 +214,13 @@ async function collectYouTube(env, fetchImpl) {
   }
 }
 
-const graphUrl = (version, path, parameters = {}) => {
+const graphUrl = (host, version, path, parameters = {}) => {
   const query = new URLSearchParams(parameters)
-  return `https://graph.facebook.com/${version}/${path}${query.size ? `?${query}` : ''}`
+  return `${host}/${version}/${path}${query.size ? `?${query}` : ''}`
 }
+
+const facebookGraphUrl = (version, path, parameters = {}) => graphUrl('https://graph.facebook.com', version, path, parameters)
+const instagramGraphUrl = (version, path, parameters = {}) => graphUrl('https://graph.instagram.com', version, path, parameters)
 
 const insightValues = payload => Object.fromEntries((payload.data ?? []).map(metric => [
   metric.name,
@@ -224,15 +228,15 @@ const insightValues = payload => Object.fromEntries((payload.data ?? []).map(met
 ]))
 
 async function collectInstagram(env, fetchImpl) {
-  const accessToken = env.META_ACCESS_TOKEN || env.FACEBOOK_ACCESS_TOKEN
-  const accountId = env.INSTAGRAM_ACCOUNT_ID || env.META_INSTAGRAM_ACCOUNT_ID || env.INSTAGRAM_BUSINESS_ACCOUNT_ID
+  const accessToken = env.META_INSTAGRAM_ACCESS_TOKEN || env.INSTAGRAM_ACCESS_TOKEN || env.META_ACCESS_TOKEN
+  const accountId = env.META_INSTAGRAM_ACCOUNT_ID || env.INSTAGRAM_ACCOUNT_ID || env.INSTAGRAM_BUSINESS_ACCOUNT_ID
   if (!accessToken || !accountId) {
-    return { platform: 'instagram', status: 'not_configured', reason: 'META_ACCESS_TOKEN or INSTAGRAM_ACCOUNT_ID is missing.', videos: [] }
+    return { platform: 'instagram', status: 'not_configured', reason: 'Instagram access token or account ID is missing.', videos: [] }
   }
   const version = env.META_GRAPH_API_VERSION || 'v24.0'
   const headers = bearer(accessToken)
-  const account = await fetchJson(fetchImpl, graphUrl(version, accountId, { fields: 'username,name' }), { headers })
-  const mediaPage = await fetchJson(fetchImpl, graphUrl(version, `${accountId}/media`, {
+  const account = await fetchJson(fetchImpl, instagramGraphUrl(version, accountId, { fields: 'username,name' }), { headers })
+  const mediaPage = await fetchJson(fetchImpl, instagramGraphUrl(version, `${accountId}/media`, {
     fields: 'id,caption,media_type,media_product_type,permalink,timestamp,thumbnail_url,like_count,comments_count',
     limit: '100',
   }), { headers })
@@ -241,7 +245,7 @@ async function collectInstagram(env, fetchImpl) {
     if (!['VIDEO', 'REELS'].includes(item.media_type) && item.media_product_type !== 'REELS') continue
     let insights = {}
     try {
-      insights = insightValues(await fetchJson(fetchImpl, graphUrl(version, `${item.id}/insights`, {
+      insights = insightValues(await fetchJson(fetchImpl, instagramGraphUrl(version, `${item.id}/insights`, {
         metric: 'views,reach,saved,shares,total_interactions',
       }), { headers }))
     } catch {
@@ -270,15 +274,15 @@ async function collectInstagram(env, fetchImpl) {
 }
 
 async function collectFacebook(env, fetchImpl) {
-  const accessToken = env.META_ACCESS_TOKEN || env.FACEBOOK_ACCESS_TOKEN
-  const pageId = env.FACEBOOK_PAGE_ID || env.META_PAGE_ID
+  const accessToken = env.META_FACEBOOK_PAGE_ACCESS_TOKEN || env.FACEBOOK_PAGE_ACCESS_TOKEN || env.FACEBOOK_ACCESS_TOKEN || env.META_ACCESS_TOKEN
+  const pageId = env.META_FACEBOOK_PAGE_ID || env.FACEBOOK_PAGE_ID || env.META_PAGE_ID
   if (!accessToken || !pageId) {
-    return { platform: 'facebook', status: 'not_configured', reason: 'META_ACCESS_TOKEN or FACEBOOK_PAGE_ID is missing.', videos: [] }
+    return { platform: 'facebook', status: 'not_configured', reason: 'Facebook Page access token or Page ID is missing.', videos: [] }
   }
   const version = env.META_GRAPH_API_VERSION || 'v24.0'
   const headers = bearer(accessToken)
-  const account = await fetchJson(fetchImpl, graphUrl(version, pageId, { fields: 'name' }), { headers })
-  const mediaPage = await fetchJson(fetchImpl, graphUrl(version, `${pageId}/videos`, {
+  const account = await fetchJson(fetchImpl, facebookGraphUrl(version, pageId, { fields: 'name' }), { headers })
+  const mediaPage = await fetchJson(fetchImpl, facebookGraphUrl(version, `${pageId}/videos`, {
     fields: 'id,title,description,created_time,permalink_url,published,status,length,likes.limit(0).summary(true),comments.limit(0).summary(true)',
     limit: '100',
   }), { headers })
@@ -288,7 +292,7 @@ async function collectFacebook(env, fetchImpl) {
     if (item.published === false || ['processing', 'error', 'blocked', 'copyright_blocked'].includes(rawStatus)) continue
     let insights = {}
     try {
-      insights = insightValues(await fetchJson(fetchImpl, graphUrl(version, `${item.id}/video_insights`, {
+      insights = insightValues(await fetchJson(fetchImpl, facebookGraphUrl(version, `${item.id}/video_insights`, {
         metric: 'total_video_views,total_video_view_total_time,total_video_avg_time_watched',
       }), { headers }))
     } catch {
@@ -315,11 +319,37 @@ async function collectFacebook(env, fetchImpl) {
   return { platform: 'facebook', status: 'available', accountName: account.name ?? null, videos }
 }
 
-async function collectTikTok(env, fetchImpl) {
-  if (!env.TIKTOK_ACCESS_TOKEN) {
-    return { platform: 'tiktok', status: 'not_configured', reason: 'TIKTOK_ACCESS_TOKEN is missing.', videos: [] }
+async function tikTokAccessToken(env, fetchImpl) {
+  if (env.TIKTOK_ACCESS_TOKEN) return { accessToken: env.TIKTOK_ACCESS_TOKEN, refreshTokenRotated: false }
+  if (!env.TIKTOK_CLIENT_KEY || !env.TIKTOK_CLIENT_SECRET || !env.TIKTOK_REFRESH_TOKEN) return null
+  const response = await fetchJson(fetchImpl, 'https://open.tiktokapis.com/v2/oauth/token/', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_key: env.TIKTOK_CLIENT_KEY,
+      client_secret: env.TIKTOK_CLIENT_SECRET,
+      grant_type: 'refresh_token',
+      refresh_token: env.TIKTOK_REFRESH_TOKEN,
+    }),
+  }, 0)
+  if (!response.access_token) throw publicError('TikTok returned no access token.', 'TikTok returned no access token.')
+  return {
+    accessToken: response.access_token,
+    refreshTokenRotated: Boolean(response.refresh_token && response.refresh_token !== env.TIKTOK_REFRESH_TOKEN),
   }
-  const headers = bearer(env.TIKTOK_ACCESS_TOKEN)
+}
+
+async function collectTikTok(env, fetchImpl) {
+  const token = await tikTokAccessToken(env, fetchImpl)
+  if (!token) {
+    return {
+      platform: 'tiktok',
+      status: 'not_configured',
+      reason: 'TikTok access token or refresh credentials are missing.',
+      videos: [],
+    }
+  }
+  const headers = bearer(token.accessToken)
   const videos = []
   let cursor
   do {
@@ -356,7 +386,53 @@ async function collectTikTok(env, fetchImpl) {
     })))
     cursor = page.data?.has_more ? page.data.cursor : null
   } while (cursor && videos.length < 500)
-  return { platform: 'tiktok', status: 'available', accountName: null, videos }
+  return {
+    platform: 'tiktok',
+    status: token.refreshTokenRotated ? 'partial' : 'available',
+    reason: token.refreshTokenRotated
+      ? 'TikTok rotated the refresh token; update TIKTOK_REFRESH_TOKEN before the next refresh.'
+      : undefined,
+    accountName: null,
+    videos,
+  }
+}
+
+async function collectAnalyticsFeed(env, fetchImpl) {
+  if (!env.SOCIAL_ANALYTICS_FEED_URL) return null
+  const payload = await fetchJson(fetchImpl, env.SOCIAL_ANALYTICS_FEED_URL, {}, 1)
+  if (payload?.schemaVersion !== 1 || !payload.platforms || !Array.isArray(payload.videos)) {
+    throw publicError('The social analytics feed is invalid.', 'The social analytics feed is invalid.')
+  }
+  const generatedAt = typeof payload.generatedAt === 'string' ? payload.generatedAt : now()
+  return Object.fromEntries(PLATFORM_NAMES.flatMap(platform => {
+    const state = payload.platforms[platform]
+    if (!state || typeof state !== 'object') return []
+    const videos = payload.videos
+      .filter(entry => entry?.platform === platform && entry?.platformVideoId)
+      .map(entry => video({
+        platform,
+        id: entry.platformVideoId,
+        contentId: entry.contentId,
+        title: entry.title,
+        description: entry.description,
+        publishedAt: entry.publishedAt,
+        url: entry.url,
+        thumbnailUrl: entry.thumbnailUrl,
+        status: entry.status,
+        durationSeconds: entry.durationSeconds,
+        metrics: entry.metrics,
+      }))
+      .filter(isPublishedVideo)
+    return [[platform, {
+      platform,
+      status: ['available', 'partial', 'error', 'not_configured'].includes(state.status) ? state.status : 'error',
+      reason: state.reason,
+      accountName: state.accountName ?? null,
+      videos,
+      startedAt: generatedAt,
+      completedAt: state.completedAt ?? generatedAt,
+    }]]
+  }))
 }
 
 const collectSafely = async (platform, collector) => {
@@ -417,12 +493,23 @@ export function mergeSocialHistory(previous, current, capturedAt = now()) {
 }
 
 export async function collectSocialPlatforms({ env = process.env, fetchImpl = fetch, previous = null } = {}) {
-  const results = await Promise.all([
-    collectSafely('youtube', () => collectYouTube(env, fetchImpl)),
-    collectSafely('instagram', () => collectInstagram(env, fetchImpl)),
-    collectSafely('facebook', () => collectFacebook(env, fetchImpl)),
-    collectSafely('tiktok', () => collectTikTok(env, fetchImpl)),
-  ])
+  let feedResults = null
+  try {
+    feedResults = await collectAnalyticsFeed(env, fetchImpl)
+  } catch {
+    // Direct credentials remain a safe fallback when the cloud feed is unavailable.
+  }
+  const collectors = {
+    youtube: () => collectYouTube(env, fetchImpl),
+    instagram: () => collectInstagram(env, fetchImpl),
+    facebook: () => collectFacebook(env, fetchImpl),
+    tiktok: () => collectTikTok(env, fetchImpl),
+  }
+  const results = await Promise.all(PLATFORM_NAMES.map(async platform => {
+    const feedResult = feedResults?.[platform]
+    if (feedResult && feedResult.status !== 'not_configured') return feedResult
+    return collectSafely(platform, collectors[platform])
+  }))
   const videos = results.flatMap(result => result.videos)
   const preservePlatforms = []
   const refreshedPlatforms = []

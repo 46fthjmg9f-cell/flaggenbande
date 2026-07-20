@@ -189,6 +189,108 @@ test('TikTok video/list uses POST with a JSON body and forwards the numeric curs
   assert.equal(social.totals.views, 18)
 })
 
+test('Meta collectors keep Instagram Login and Facebook Page credentials on separate API hosts', async () => {
+  const calls = []
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    calls.push({ value, authorization: options.headers?.authorization })
+    if (value.includes('/media')) return jsonResponse({ data: [] })
+    if (value.includes('graph.instagram.com')) return jsonResponse({ username: 'flaggenbande' })
+    if (value.includes('graph.facebook.com')) return jsonResponse({ name: 'Flaggenbande' })
+    throw new Error(`Unexpected request: ${value}`)
+  }
+
+  const social = await collectSocialPlatforms({
+    env: {
+      META_ACCESS_TOKEN: 'instagram-login-token',
+      META_INSTAGRAM_ACCOUNT_ID: 'ig-account',
+      META_FACEBOOK_PAGE_ACCESS_TOKEN: 'facebook-page-token',
+      META_FACEBOOK_PAGE_ID: 'fb-page',
+    },
+    fetchImpl,
+  })
+
+  assert.equal(social.platforms.instagram.status, 'available')
+  assert.equal(social.platforms.facebook.status, 'available')
+  const instagramCalls = calls.filter(call => call.value.includes('graph.instagram.com'))
+  const facebookCalls = calls.filter(call => call.value.includes('graph.facebook.com'))
+  assert.ok(instagramCalls.length >= 2)
+  assert.ok(facebookCalls.length >= 2)
+  assert.ok(instagramCalls.every(call => call.authorization === 'Bearer instagram-login-token'))
+  assert.ok(facebookCalls.every(call => call.authorization === 'Bearer facebook-page-token'))
+})
+
+test('TikTok refresh credentials obtain a short-lived access token before video collection', async () => {
+  const calls = []
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    calls.push({ value, options })
+    if (value.endsWith('/v2/oauth/token/')) {
+      const body = new URLSearchParams(options.body)
+      assert.equal(body.get('client_key'), 'client-key')
+      assert.equal(body.get('client_secret'), 'client-secret')
+      assert.equal(body.get('grant_type'), 'refresh_token')
+      assert.equal(body.get('refresh_token'), 'refresh-token')
+      return jsonResponse({ access_token: 'fresh-access-token', refresh_token: 'refresh-token' })
+    }
+    if (value.includes('/v2/video/list/')) {
+      assert.equal(options.headers.authorization, 'Bearer fresh-access-token')
+      return jsonResponse({ data: { videos: [], has_more: false }, error: { code: 'ok' } })
+    }
+    throw new Error(`Unexpected request: ${value}`)
+  }
+
+  const social = await collectSocialPlatforms({
+    env: {
+      TIKTOK_CLIENT_KEY: 'client-key',
+      TIKTOK_CLIENT_SECRET: 'client-secret',
+      TIKTOK_REFRESH_TOKEN: 'refresh-token',
+    },
+    fetchImpl,
+  })
+
+  assert.equal(calls.length, 2)
+  assert.equal(social.platforms.tiktok.status, 'available')
+})
+
+test('cloud analytics feed is preferred and preserves the internal content ID', async () => {
+  let calls = 0
+  const fetchImpl = async url => {
+    calls += 1
+    assert.equal(String(url), 'https://analytics.example.test/feed')
+    return jsonResponse({
+      schemaVersion: 1,
+      generatedAt: '2026-07-20T20:00:00Z',
+      platforms: {
+        youtube: { status: 'available', accountName: 'Flaggenbande', completedAt: '2026-07-20T20:00:00Z' },
+      },
+      videos: [{
+        platform: 'youtube',
+        platformVideoId: 'yt-v5',
+        contentId: 'gameshow-retention-leda-v5',
+        title: 'Only 0.14% can name all three',
+        description: '',
+        publishedAt: '2026-07-20T18:27:00Z',
+        url: 'https://youtube.test/yt-v5',
+        thumbnailUrl: null,
+        status: 'public',
+        durationSeconds: 36,
+        metrics: { views: 42, likes: 4 },
+      }],
+    })
+  }
+
+  const social = await collectSocialPlatforms({
+    env: { SOCIAL_ANALYTICS_FEED_URL: 'https://analytics.example.test/feed' },
+    fetchImpl,
+  })
+
+  assert.equal(calls, 1)
+  assert.equal(social.platforms.youtube.status, 'available')
+  assert.equal(social.videos[0].contentId, 'gameshow-retention-leda-v5')
+  assert.equal(social.videos[0].metrics.views, 42)
+})
+
 test('one platform failure is isolated and public reasons redact API response secrets', async () => {
   const leakedAccessToken = 'act.this-must-never-be-public'
   const leakedClientSecret = 'client-secret-value'

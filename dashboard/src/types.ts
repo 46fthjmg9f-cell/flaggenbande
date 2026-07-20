@@ -45,6 +45,7 @@ export interface SocialMetrics {
 export interface SocialVideo {
   platform: SocialPlatform
   platformVideoId: string
+  contentId: string | null
   title: string
   description: string
   publishedAt: string | null
