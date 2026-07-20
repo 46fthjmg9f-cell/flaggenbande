@@ -1,50 +1,50 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-20T18:55:23Z",
+  "generatedAt": "2026-07-20T19:34:06Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
       "available": true,
-      "updatedAt": "2026-07-20T18:55:23Z"
+      "updatedAt": "2026-07-20T19:34:06Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-20T18:55:23Z"
+      "updatedAt": "2026-07-20T19:34:06Z"
     },
     "Sales & Trends": {
       "available": false,
       "reason": "Apple meldet für den abgefragten Tag noch keine Verkäufe.",
-      "updatedAt": "2026-07-20T18:55:23Z"
+      "updatedAt": "2026-07-20T19:34:06Z"
     },
     "CloudKit Public DB": {
       "available": true,
-      "updatedAt": "2026-07-20T18:55:23Z"
+      "updatedAt": "2026-07-20T19:34:06Z"
     },
     "Finance": {
       "available": false,
       "reason": "Der monatliche Finanzreport ist noch nicht verfügbar.",
-      "updatedAt": "2026-07-20T18:55:23Z"
+      "updatedAt": "2026-07-20T19:34:06Z"
     },
     "YouTube": {
       "available": false,
       "reason": "YouTube OAuth secrets are missing.",
-      "updatedAt": "2026-07-20T18:55:18Z"
+      "updatedAt": "2026-07-20T19:34:03Z"
     },
     "Instagram": {
       "available": false,
-      "reason": "META_ACCESS_TOKEN or INSTAGRAM_ACCOUNT_ID is missing.",
-      "updatedAt": "2026-07-20T18:55:18Z"
+      "reason": "Instagram access token or account ID is missing.",
+      "updatedAt": "2026-07-20T19:34:03Z"
     },
     "Facebook": {
       "available": false,
-      "reason": "META_ACCESS_TOKEN or FACEBOOK_PAGE_ID is missing.",
-      "updatedAt": "2026-07-20T18:55:18Z"
+      "reason": "Facebook Page access token or Page ID is missing.",
+      "updatedAt": "2026-07-20T19:34:03Z"
     },
     "TikTok": {
       "available": false,
-      "reason": "TIKTOK_ACCESS_TOKEN is missing.",
-      "updatedAt": "2026-07-20T18:55:18Z"
+      "reason": "TikTok access token or refresh credentials are missing.",
+      "updatedAt": "2026-07-20T19:34:03Z"
     }
   },
   "kpis": {
@@ -935,39 +935,39 @@
   },
   "social": {
     "schemaVersion": 1,
-    "syncedAt": "2026-07-20T18:55:18Z",
+    "syncedAt": "2026-07-20T19:34:03Z",
     "platforms": {
       "youtube": {
         "status": "not_configured",
         "reason": "YouTube OAuth secrets are missing.",
         "accountName": null,
         "videoCount": 0,
-        "startedAt": "2026-07-20T18:55:18Z",
-        "completedAt": "2026-07-20T18:55:18Z"
+        "startedAt": "2026-07-20T19:34:03Z",
+        "completedAt": "2026-07-20T19:34:03Z"
       },
       "instagram": {
         "status": "not_configured",
-        "reason": "META_ACCESS_TOKEN or INSTAGRAM_ACCOUNT_ID is missing.",
+        "reason": "Instagram access token or account ID is missing.",
         "accountName": null,
         "videoCount": 0,
-        "startedAt": "2026-07-20T18:55:18Z",
-        "completedAt": "2026-07-20T18:55:18Z"
+        "startedAt": "2026-07-20T19:34:03Z",
+        "completedAt": "2026-07-20T19:34:03Z"
       },
       "facebook": {
         "status": "not_configured",
-        "reason": "META_ACCESS_TOKEN or FACEBOOK_PAGE_ID is missing.",
+        "reason": "Facebook Page access token or Page ID is missing.",
         "accountName": null,
         "videoCount": 0,
-        "startedAt": "2026-07-20T18:55:18Z",
-        "completedAt": "2026-07-20T18:55:18Z"
+        "startedAt": "2026-07-20T19:34:03Z",
+        "completedAt": "2026-07-20T19:34:03Z"
       },
       "tiktok": {
         "status": "not_configured",
-        "reason": "TIKTOK_ACCESS_TOKEN is missing.",
+        "reason": "TikTok access token or refresh credentials are missing.",
         "accountName": null,
         "videoCount": 0,
-        "startedAt": "2026-07-20T18:55:18Z",
-        "completedAt": "2026-07-20T18:55:18Z"
+        "startedAt": "2026-07-20T19:34:03Z",
+        "completedAt": "2026-07-20T19:34:03Z"
       }
     },
     "totals": {
