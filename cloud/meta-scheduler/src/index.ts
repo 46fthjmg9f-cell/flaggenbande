@@ -392,6 +392,24 @@ const saveAnalyticsPlatform = async (
       captured_at = excluded.captured_at, metrics_json = excluded.metrics_json`)
       .bind(platform, item.platformVideoId, capturedDate, collectedAt, metricsJson).run();
   }
+  // Manual prototype uploads predate the publication registry. An exact shared
+  // description is deterministic for these cross-posts and lets the already
+  // linked YouTube record supply the stable content ID without fuzzy guessing.
+  // Future automated uploads continue to use meta_publication_jobs first.
+  await env.DB.prepare(`UPDATE social_analytics_videos AS target
+    SET content_id = (
+      SELECT source.content_id FROM social_analytics_videos AS source
+      WHERE source.platform = 'youtube' AND source.content_id IS NOT NULL
+        AND source.description = target.description
+      LIMIT 1
+    )
+    WHERE target.platform IN ('instagram', 'facebook') AND target.content_id IS NULL
+      AND target.description <> ''
+      AND 1 = (
+        SELECT COUNT(*) FROM social_analytics_videos AS candidate
+        WHERE candidate.platform = 'youtube' AND candidate.content_id IS NOT NULL
+          AND candidate.description = target.description
+      )`).run();
 };
 
 const saveAnalyticsError = async (env: Env, platform: SocialPlatform, reason: string): Promise<void> => {
