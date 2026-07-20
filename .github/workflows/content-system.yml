@@ -1,0 +1,34 @@
+name: Verify Flaggenbande content system
+
+on:
+  pull_request:
+    paths:
+      - "content-system/**"
+      - ".github/workflows/content-system.yml"
+  push:
+    branches: [main]
+    paths:
+      - "content-system/**"
+      - ".github/workflows/content-system.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: content-system
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: content-system/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: npm run doctor

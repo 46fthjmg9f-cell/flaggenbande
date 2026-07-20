@@ -1,0 +1,5 @@
+{
+  "logLevel": "debug",
+  "outputDirectory": "./output",
+  "renderConcurrency": 1
+}

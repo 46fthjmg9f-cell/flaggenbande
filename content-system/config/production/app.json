@@ -1,0 +1,5 @@
+{
+  "logLevel": "info",
+  "outputDirectory": "./output",
+  "renderConcurrency": 2
+}

@@ -1,0 +1,28 @@
+{
+  "name": "@flaggenbande/content-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stable production foundation for Flaggenbande short-form flag quizzes",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --import tsx src/index.ts",
+    "start:production": "FLAGGENBANDE_MODE=production node --env-file-if-exists=.env --import tsx src/index.ts",
+    "doctor": "node --env-file-if-exists=.env --import tsx src/doctor.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "check": "npm run typecheck && npm test",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "fsevents@2.3.3": true
+  }
+}
