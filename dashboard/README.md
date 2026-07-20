@@ -1,6 +1,17 @@
 # Flaggenbande Analytics Dashboard
 
-Das Dashboard ist ein statisches Vite/React-Frontend für GitHub Pages. Es liest **ausschließlich** `public/data/dashboard.json`. Diese Datei enthält nur aggregierte Kennzahlen und wird durch GitHub Actions erzeugt; weder API-Schlüssel noch CloudKit-Rohdaten noch Spieleridentitäten werden publiziert.
+Das Dashboard ist ein statisches Vite/React-Frontend für GitHub Pages. Die bestehende App-Auswertung liest `public/data/dashboard.json`. Diese Datei enthält nur aggregierte Kennzahlen und wird durch GitHub Actions erzeugt; weder API-Schlüssel noch CloudKit-Rohdaten noch Spieleridentitäten werden publiziert.
+
+Zusätzlich liest der Tab **Content-System** den versionierten öffentlichen Vertrag `public/data/content-operations.json`. Er zeigt den freigegebenen Produktions-, Quality- und Plattformstatus. Upload- und Performancebereiche bleiben bewusst leer, bis geprüfte Adapter existieren. Unveröffentlichte Titel, lokale Pfade, Rohdaten und Zugangsdaten dürfen nicht in diese Datei geschrieben werden.
+
+## Lokale Prüfung
+
+```bash
+cd /Users/praemer/Projects/flaggenbande-dashboard-010/dashboard
+npm ci
+npm run check
+npm run build
+```
 
 ## Einmalige GitHub-Konfiguration
 

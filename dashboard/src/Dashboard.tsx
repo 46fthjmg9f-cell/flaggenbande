@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import * as echarts from 'echarts'
 import type { EChartsOption } from 'echarts'
+import ContentSystemDashboard from './ContentSystemDashboard'
 import type { DashboardData, DailyMetric, Numeric } from './types'
 import { emptyDashboard } from './types'
 
@@ -56,6 +57,7 @@ const lineStyle = { color: '#8ca1ba' }
 const splitLine = { lineStyle: { color: '#22334b' } }
 
 export default function Dashboard() {
+  const [activeView, setActiveView] = useState<'app' | 'content-system'>('app')
   const [data, setData] = useState<DashboardData>(emptyDashboard)
   const [days, setDays] = useState('30')
   const [country, setCountry] = useState('all')
@@ -183,6 +185,11 @@ export default function Dashboard() {
   const select = (label: string, value: string, setValue: (value: string) => void, entries: string[], allLabel: string) => <label>{label}<select aria-label={label} value={value} onChange={event => setValue(event.target.value)}><option value="all">{allLabel}</option>{entries.map(entry => <option key={entry} value={entry}>{entry}</option>)}</select></label>
 
   return <main>
+    <nav className="dashboard-tabs" role="tablist" aria-label="Dashboard-Bereiche">
+      <button id="app-analytics-tab" type="button" role="tab" aria-selected={activeView === 'app'} aria-controls="app-analytics-view" className={activeView === 'app' ? 'active' : ''} onClick={() => setActiveView('app')}>App &amp; Cloud</button>
+      <button id="content-system-tab" type="button" role="tab" aria-selected={activeView === 'content-system'} aria-controls="content-system-view" className={activeView === 'content-system' ? 'active' : ''} onClick={() => setActiveView('content-system')}>Content-System</button>
+    </nav>
+    {activeView === 'content-system' ? <ContentSystemDashboard /> : <section id="app-analytics-view" className="dashboard-view" role="tabpanel" aria-labelledby="app-analytics-tab" tabIndex={0}>
     <header className="hero">
       <div><span className="eyebrow">FLAGGENBANDE · APP & CLOUD ANALYTICS</span><h1>Alles Wichtige. Ohne Datenleck.</h1><p>Öffentlich sichtbar sind ausschließlich datensparsam aggregierte Kennzahlen aus App Store Connect und der öffentlichen CloudKit-Datenbank.</p></div>
       <div className="sync-controls">
@@ -226,5 +233,6 @@ export default function Dashboard() {
       </Panel>
     </section>
     <footer>Flaggenbande Analytics · GitHub Pages zeigt keine API-Schlüssel, Spieler-IDs, Namen, Texte oder CloudKit-Rohdaten.</footer>
+    </section>}
   </main>
 }
