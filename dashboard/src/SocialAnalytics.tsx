@@ -63,7 +63,7 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
         <thead><tr><th>Plattform</th><th>Video</th><th>Status</th><th>Veröffentlicht</th><th>Views</th><th>Likes</th><th>Kommentare</th><th>Shares</th><th>Ø Wiedergabe</th></tr></thead>
         <tbody>{visibleVideos.length ? visibleVideos.map(video => <tr key={`${video.platform}:${video.platformVideoId}`}>
           <td><span className={`platform-pill ${video.platform}`}>{platformLabels[video.platform]}</span></td>
-          <td>{video.url ? <a href={video.url} target="_blank" rel="noreferrer">{video.title}</a> : video.title}<small>{video.platformVideoId}</small></td>
+          <td>{video.url ? <a href={video.url} target="_blank" rel="noreferrer">{video.title}</a> : video.title}<small>{video.contentId ?? video.platformVideoId}</small></td>
           <td>{video.status}</td>
           <td>{formatDate(video.publishedAt)}</td>
           <td>{formatNumber(video.metrics.views)}</td>

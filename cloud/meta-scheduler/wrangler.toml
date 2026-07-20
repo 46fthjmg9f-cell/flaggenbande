@@ -1,0 +1,13 @@
+name = "factverse-meta-scheduler"
+main = "src/index.ts"
+compatibility_date = "2026-07-19"
+
+# A Cron Trigger is the authoritative clock. Publication continues even when
+# the FactVerse dashboard and the production Mac are offline.
+[triggers]
+crons = ["* * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "factverse-meta-scheduler"
+database_id = "94c64871-c8a0-4203-b6ea-b0043d764ebb"
