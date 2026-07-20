@@ -37,6 +37,21 @@ test('public content contract starts with all four unconfigured platforms', asyn
   assert.deepEqual(fixture.performance, [])
 })
 
+test('public content contract reports the country-data candidate without claiming production readiness', async () => {
+  const fixture = await loadFixture()
+  const database = fixture.system.find(entry => entry.id === 'database')
+
+  assert.equal(database.value, '0.2.0-candidate.1')
+  assert.equal(database.status, 'planned')
+  assert.match(database.detail, /193 Länder/)
+  assert.match(database.detail, /193 Flaggen/)
+  assert.match(database.detail, /193 Reviews offen/)
+  assert.match(database.detail, /0 produktionsberechtigt/)
+  assert.match(database.detail, /Human Review ausstehend/)
+  assert.match(database.detail, /Remote-Sync unbestätigt/)
+  assert.match(database.detail, /20ae94f73128f458c6938c67a2c5649313f853a87e4796381e5dccf040d31336/)
+})
+
 test('public content contract contains no secrets or local paths', async () => {
   inspectPublicValue(await loadFixture())
 })
