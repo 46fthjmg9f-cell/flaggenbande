@@ -12,3 +12,4 @@ tmp/
 # Dashboard dependencies and local build output
 dashboard/node_modules/
 dashboard/dist/
+.env.platforms
