@@ -126,6 +126,10 @@ const normalizePublication = (value, index, runs, runsByContentId) => {
   const contentId = requiredIdentifier(record.contentId, `${path}.contentId`)
   const platform = requiredString(record.platform, `${path}.platform`, 20).toLowerCase()
   if (!platformSet.has(platform)) throw new Error(`${path}.platform ist unbekannt.`)
+  const mode = record.mode === undefined
+    ? expectedMode[platform]
+    : requiredString(record.mode, `${path}.mode`, 40).toLowerCase()
+  if (mode !== expectedMode[platform]) throw new Error(`${path}.mode passt nicht zur Plattform.`)
   if ('title' in record && record.title !== null) throw new Error(`${path}.title darf für unveröffentlichte Inhalte nicht ausgegeben werden.`)
   if ('visibilityState' in record && record.visibilityState !== 'non_public') {
     throw new Error(`${path}.visibilityState muss non_public sein.`)
@@ -138,17 +142,20 @@ const normalizePublication = (value, index, runs, runsByContentId) => {
     : requiredIdentifier(record.runId, `${path}.runId`)
   const run = runId === null ? null : runs.find(entry => entry.runId === runId)
   if (!run || run.contentId !== contentId) throw new Error(`${path} verweist auf keinen passenden Lauf.`)
-  if ('updatedAt' in record) {
-    const updatedAt = requiredIso(record.updatedAt, `${path}.updatedAt`)
-    if (updatedAt < run.startedAt) throw new Error(`${path}.updatedAt liegt vor dem Start des Laufs.`)
-  }
+  const updatedAt = 'updatedAt' in record
+    ? requiredIso(record.updatedAt, `${path}.updatedAt`)
+    : run.startedAt
+  if (updatedAt < run.startedAt) throw new Error(`${path}.updatedAt liegt vor dem Start des Laufs.`)
 
   return {
     runId,
     publicValue: {
+      runId,
       contentId,
       platform,
+      mode,
       status: normalizePublicationStatus(record, platform, path),
+      updatedAt,
       title: null,
       scheduledAt: null,
       publishedAt: null,
@@ -233,6 +240,13 @@ const summaryStatus = status => {
   return 'ready'
 }
 
+const confirmedUploadStatus = status => finalPublicationStatuses.has(status)
+
+const contentDataStatus = runs => {
+  if (runs.some(run => ['failed', 'qa_failed', 'reconcile_required'].includes(run.status))) return 'error'
+  return runs.length > 0 && runs.every(run => run.status === 'completed') ? 'ok' : 'partial'
+}
+
 export function mergeStagingFeed(previous, staging) {
   const base = requiredRecord(previous, 'content-operations')
   if (base.schemaVersion !== 1) throw new Error('Unbekannte Content-Operations-Schemaversion.')
@@ -246,10 +260,10 @@ export function mergeStagingFeed(previous, staging) {
     return {
       ...prior,
       status: summaryStatus(latest.status),
-      uploads: matching.length,
+      uploads: matching.filter(entry => confirmedUploadStatus(entry.status)).length,
       publications: 0,
       reason: platformReason(latest.status),
-      updatedAt: staging.generatedAt,
+      updatedAt: latest.updatedAt,
     }
   })
   const messages = requiredArray(base.messages, 'content-operations.messages', 100)
@@ -260,6 +274,7 @@ export function mergeStagingFeed(previous, staging) {
   return {
     ...base,
     generatedAt: staging.generatedAt,
+    status: staging.runs.length > 0 ? contentDataStatus(staging.runs) : base.status,
     messages,
     platforms: platformSummaries,
     runs: staging.runs,

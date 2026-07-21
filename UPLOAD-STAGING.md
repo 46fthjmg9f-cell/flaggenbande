@@ -21,6 +21,10 @@ Ein Dashboard-Status ist erst nach einer Plattformbestätigung gesetzt:
 
 Private Receipts und Plattform-IDs liegen nur in OneDrive beziehungsweise im konfigurierten privaten State-Verzeichnis. Das öffentliche Dashboard erhält ausschließlich bereinigte Statusfelder. Veröffentlichte Plattformanalysen bleiben davon getrennt.
 
+Das Dashboard zählt nur von der Plattform bestätigte Testuploads. Ein lediglich `planned`-Ziel erhöht den Upload-Zähler nicht. `runId`, nichtöffentlicher Modus und tatsächlicher Aktualisierungszeitpunkt bleiben im bereinigten Snapshot erhalten, damit spätere automatisierte Läufe eindeutig zugeordnet werden können.
+
+Temporäre Cloudflare-Pages-Medien werden erst entfernt, wenn Instagram den unveröffentlichten Container und Facebook den Entwurf sicher bestätigt haben. Der Cleanup prüft Projekt, eindeutige Medien-URL und Branch, verarbeitet alle Ergebnisseiten und validiert die Löschung. Unklare Plattformzustände blockieren den Cleanup fail-closed.
+
 ## Lokaler Sicherheitstest
 
 Dieser vollständige Befehl prüft MP4, Quality-Report, Metadaten und Dashboard-Vertrag, verändert aber keine Plattform:

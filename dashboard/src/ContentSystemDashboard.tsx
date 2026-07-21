@@ -79,7 +79,7 @@ export default function ContentSystemDashboard() {
     void refresh()
   }, [])
 
-  const runLabels = new Map(data.runs.map(run => [run.contentId, run.title ?? run.runId]))
+  const runLabels = new Map(data.runs.map(run => [run.runId, run.title ?? run.runId]))
 
   return <section id="content-system-view" className="dashboard-view" role="tabpanel" aria-labelledby="content-system-tab" tabIndex={0}>
     <header className="hero content-hero">
@@ -124,7 +124,7 @@ export default function ContentSystemDashboard() {
       </article>
       <article className="content-activity-card">
         <div className="activity-heading"><span>UPLOADS</span><h2>Sichere Teststände</h2></div>
-        {data.publications.length === 0 ? <EmptyState title="Noch keine Testuploads" detail="Nichtöffentliche Teststände erscheinen nach dem ersten sicheren Staging-Lauf." /> : <ul className="activity-list">{data.publications.map((publication, index) => <li key={`${publication.contentId}-${publication.platform}-${index}`}><div><strong>{publication.title ?? runLabels.get(publication.contentId) ?? publication.contentId}</strong><small>{publication.platform} · {publication.contentId}</small></div><span className={`status-badge ${publication.status}`}>{statusLabels[publication.status]}</span></li>)}</ul>}
+        {data.publications.length === 0 ? <EmptyState title="Noch keine Testuploads" detail="Nichtöffentliche Teststände erscheinen nach dem ersten sicheren Staging-Lauf." /> : <ul className="activity-list">{data.publications.map(publication => <li key={`${publication.runId}-${publication.platform}`}><div><strong>{publication.title ?? runLabels.get(publication.runId) ?? publication.contentId}</strong><small>{publication.platform} · {publication.contentId}</small></div><span className={`status-badge ${publication.status}`}>{statusLabels[publication.status]}</span></li>)}</ul>}
       </article>
       <article className="content-activity-card">
         <div className="activity-heading"><span>PERFORMANCE</span><h2>Plattformvergleich</h2></div>
