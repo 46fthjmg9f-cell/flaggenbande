@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import { gunzipSync } from 'node:zlib'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { collectSocialPlatforms } from './social-platforms.mjs'
 
@@ -17,6 +17,13 @@ const asNumber = value => {
   const normalized = String(value ?? '').replace(/[^0-9,.-]/g, '').replace(',', '.')
   const number = Number(normalized)
   return Number.isFinite(number) ? number : 0
+}
+const asOptionalNumber = value => {
+  const text = String(value ?? '').trim()
+  if (!text) return null
+  const normalized = text.replace(/[^0-9,.-]/g, '').replace(',', '.')
+  const number = Number(normalized)
+  return Number.isFinite(number) ? number : null
 }
 const isoDate = value => {
   const text = String(value ?? '').trim()
@@ -146,33 +153,95 @@ async function collectReviewsAndRelease() {
   } catch (error) { return { available: false, reason: `App-Store-Metadaten noch nicht abrufbar: ${error.message}`, reviews: null, release: {} } }
 }
 
-function canonicalSales(rows) {
+// Apple reference: https://developer.apple.com/help/app-store-connect/reference/reporting/product-type-identifiers/
+// Updates, re-downloads and restored purchases are deliberately not counted as new sales.
+const APP_UNIT_PRODUCT_TYPES = new Set(['1', '1-B', 'F1-B', '1E', '1EP', '1EU', '1F', '1T', 'F1'])
+// `1AY` is a legacy subscription identifier still shown in Apple's official
+// Summary Sales Report examples; current reports normally use `IAY`.
+const IN_APP_PURCHASE_PRODUCT_TYPES = new Set(['FI1', 'IA1', 'IA1-M', 'IA9', 'IA9-M', 'IAY', 'IAY-M', '1AY'])
+const RESTORED_IN_APP_PURCHASE_PRODUCT_TYPES = new Set(['IA3'])
+const NON_PURCHASE_PRODUCT_TYPES = new Set(['3', '3F', '7', '7F', '7T', 'F7'])
+
+function classifyAppleProductType(productTypeIdentifier) {
+  if (APP_UNIT_PRODUCT_TYPES.has(productTypeIdentifier)) return 'app'
+  if (IN_APP_PURCHASE_PRODUCT_TYPES.has(productTypeIdentifier)) return 'in_app_purchase'
+  if (RESTORED_IN_APP_PURCHASE_PRODUCT_TYPES.has(productTypeIdentifier)) return 'restored_in_app_purchase'
+  if (NON_PURCHASE_PRODUCT_TYPES.has(productTypeIdentifier)) return 'update_or_redownload'
+  return 'unclassified'
+}
+
+export function canonicalSales(rows) {
   return rows.map(row => {
     const units = metricFromRow(row, ['units'])
-    const proceeds = metricFromRow(row, ['developerproceeds', 'proceeds'])
+    const proceedsPerUnit = asOptionalNumber(column(row, ['developerproceeds', 'proceeds']))
     const country = column(row, ['countryofsale', 'customercountry', 'territory'])
     const currency = column(row, ['proceedscurrency', 'currencyofproceeds', 'currency'])
+    const productTypeIdentifier = String(column(row, ['producttypeidentifier']) ?? '').trim().toUpperCase()
+    const salesCategory = classifyAppleProductType(productTypeIdentifier)
+    const completedBundleMarker = String(column(row, ['cmb']) ?? '').trim().toUpperCase()
+    const proceeds = currency === 'EUR' && proceedsPerUnit !== null ? units * proceedsPerUnit : null
     return {
       date: isoDate(column(row, ['enddate', 'begindate', 'date'])), country: country || undefined,
-      purchases: units > 0 ? units : 0, refunds: units < 0 ? Math.abs(units) : 0,
-      proceeds: currency === 'EUR' || !currency ? proceeds : 0,
+      // `purchases` remains for compatibility with older dashboard exports. New UI must use
+      // the category-specific fields below rather than treating this legacy total as app sales.
+      purchases: units > 0 ? units : 0,
+      refunds: units < 0 && completedBundleMarker !== 'CMB-C' ? Math.abs(units) : 0,
+      ...(proceeds === null ? {} : { proceeds }),
+      ...(salesCategory === 'app' ? { appUnits: Math.max(units, 0) } : {}),
+      ...(salesCategory === 'in_app_purchase' ? { inAppPurchaseUnits: Math.max(units, 0) } : {}),
+      ...(salesCategory === 'restored_in_app_purchase' ? { restoredInAppPurchaseUnits: Math.max(units, 0) } : {}),
+      ...(salesCategory === 'unclassified' ? { unclassifiedSalesUnits: Math.max(units, 0) } : {}),
+      productTypeIdentifier: productTypeIdentifier || null,
+      salesCategory,
     }
   }).filter(row => row.date)
 }
 
+export function summarizeSales(rows, reportDate = null) {
+  if (rows.length === 0) {
+    return {
+      reportDate,
+      classificationStatus: 'unavailable',
+      appUnits: null,
+      inAppPurchaseUnits: null,
+      restoredInAppPurchaseUnits: null,
+      unclassifiedUnits: null,
+      refunds: null,
+      unknownProductTypeIdentifiers: [],
+    }
+  }
+
+  const sum = key => rows.reduce((total, row) => total + (typeof row[key] === 'number' ? row[key] : 0), 0)
+  const unknownRowsWithUnits = rows.filter(row => row.salesCategory === 'unclassified' && row.purchases + row.refunds > 0)
+  const classificationComplete = unknownRowsWithUnits.length === 0
+  const unknownProductTypeIdentifiers = [...new Set(unknownRowsWithUnits.map(row => row.productTypeIdentifier || '(fehlt)'))].sort()
+
+  return {
+    reportDate,
+    classificationStatus: classificationComplete ? 'complete' : 'partial',
+    appUnits: classificationComplete ? sum('appUnits') : null,
+    inAppPurchaseUnits: classificationComplete ? sum('inAppPurchaseUnits') : null,
+    restoredInAppPurchaseUnits: classificationComplete ? sum('restoredInAppPurchaseUnits') : null,
+    unclassifiedUnits: sum('unclassifiedSalesUnits'),
+    refunds: classificationComplete ? sum('refunds') : null,
+    unknownProductTypeIdentifiers,
+  }
+}
+
 async function collectSales() {
-  if (!isConfigured('ASC_ISSUER_ID', 'ASC_KEY_ID', 'ASC_PRIVATE_KEY', 'ASC_VENDOR_NUMBER')) return { rows: [], available: false, reason: 'ASC_VENDOR_NUMBER fehlt.' }
   const reportDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  if (!isConfigured('ASC_ISSUER_ID', 'ASC_KEY_ID', 'ASC_PRIVATE_KEY', 'ASC_VENDOR_NUMBER')) return { rows: [], summary: summarizeSales([], reportDate), available: false, reason: 'ASC_VENDOR_NUMBER fehlt.' }
   const query = new URLSearchParams({ 'filter[frequency]': 'DAILY', 'filter[reportDate]': reportDate, 'filter[reportSubType]': 'SUMMARY', 'filter[reportType]': 'SALES', 'filter[vendorNumber]': process.env.ASC_VENDOR_NUMBER, 'filter[version]': '1_0' })
   try {
     const response = await fetchWithRetry(`${appStoreBase}/salesReports?${query}`, { headers: { authorization: `Bearer ${createAscToken()}` } })
-    return { rows: canonicalSales(parseTsv(await response.arrayBuffer())), available: true }
+    const rows = canonicalSales(parseTsv(await response.arrayBuffer()))
+    return { rows, summary: summarizeSales(rows, reportDate), available: true }
   } catch (error) {
     const detail = String(error.message)
     const reason = detail.includes('NOT_FOUND') || detail.includes('no sales for the date specified')
       ? 'Apple meldet für den abgefragten Tag noch keine Verkäufe.'
       : 'Der Tagesreport ist noch nicht verfügbar; der nächste stündliche Abruf versucht es erneut.'
-    return { rows: [], available: false, reason }
+    return { rows: [], summary: summarizeSales([], reportDate), available: false, reason }
   }
 }
 
@@ -271,47 +340,52 @@ async function writeAtomically(payload) {
   await rename(temporary, outputPath)
 }
 
-const previous = await loadPrevious()
-try {
-  const [analytics, reviewsAndRelease, sales, finance, cloud, social] = await Promise.all([
-    collectAnalytics(),
-    collectReviewsAndRelease(),
-    collectSales(),
-    collectFinance(),
-    collectCloudKit(),
-    collectSocialPlatforms({ previous: previous?.social ?? null }),
-  ])
-  const socialAvailable = Object.values(social.platforms).some(platform => platform.status === 'available' || platform.status === 'partial')
-  if (![analytics.available, reviewsAndRelease.available, sales.available, finance.available, cloud.available, socialAvailable].some(Boolean) && previous?.status === 'waiting_for_first_sync') process.exit(0)
-  const allRows = [...analytics.rows, ...sales.rows]
-  const daily = mergeDaily(allRows)
-  const availability = {
-    'App Analytics': { available: analytics.available && analytics.rows.length > 0, reason: analytics.reason ?? (analytics.rows.length ? undefined : 'Apple hat noch keine Analytics-Instanzen bereitgestellt.'), updatedAt: now() },
-    'App Store Feedback & Release': { available: reviewsAndRelease.available, reason: reviewsAndRelease.reason, updatedAt: now() },
-    'Sales & Trends': { available: sales.available && sales.rows.length > 0, reason: sales.reason ?? (sales.rows.length ? undefined : 'Der erste Tagesreport ist noch nicht verfügbar.'), updatedAt: now() },
-    'CloudKit Public DB': { available: cloud.available, reason: cloud.reason, updatedAt: now() },
-    'Finance': { available: finance.available, reason: finance.reason, updatedAt: now() },
-    'YouTube': { available: ['available', 'partial'].includes(social.platforms.youtube.status), reason: social.platforms.youtube.reason, updatedAt: social.platforms.youtube.completedAt },
-    'Instagram': { available: ['available', 'partial'].includes(social.platforms.instagram.status), reason: social.platforms.instagram.reason, updatedAt: social.platforms.instagram.completedAt },
-    'Facebook': { available: ['available', 'partial'].includes(social.platforms.facebook.status), reason: social.platforms.facebook.reason, updatedAt: social.platforms.facebook.completedAt },
-    'TikTok': { available: ['available', 'partial'].includes(social.platforms.tiktok.status), reason: social.platforms.tiktok.reason, updatedAt: social.platforms.tiktok.completedAt },
+export async function collectDashboardData() {
+  const previous = await loadPrevious()
+  try {
+    const [analytics, reviewsAndRelease, sales, finance, cloud, social] = await Promise.all([
+      collectAnalytics(),
+      collectReviewsAndRelease(),
+      collectSales(),
+      collectFinance(),
+      collectCloudKit(),
+      collectSocialPlatforms({ previous: previous?.social ?? null }),
+    ])
+    const socialAvailable = Object.values(social.platforms).some(platform => platform.status === 'available' || platform.status === 'partial')
+    if (![analytics.available, reviewsAndRelease.available, sales.available, finance.available, cloud.available, socialAvailable].some(Boolean) && previous?.status === 'waiting_for_first_sync') return
+    const allRows = [...analytics.rows, ...sales.rows]
+    const daily = mergeDaily(allRows)
+    const availability = {
+      'App Analytics': { available: analytics.available && analytics.rows.length > 0, reason: analytics.reason ?? (analytics.rows.length ? undefined : 'Apple hat noch keine Analytics-Instanzen bereitgestellt.'), updatedAt: now() },
+      'App Store Feedback & Release': { available: reviewsAndRelease.available, reason: reviewsAndRelease.reason, updatedAt: now() },
+      'Sales & Trends': { available: sales.available && sales.rows.length > 0, reason: sales.reason ?? (sales.rows.length ? undefined : 'Der erste Tagesreport ist noch nicht verfügbar.'), updatedAt: now() },
+      'CloudKit Public DB': { available: cloud.available, reason: cloud.reason, updatedAt: now() },
+      'Finance': { available: finance.available, reason: finance.reason, updatedAt: now() },
+      'YouTube': { available: ['available', 'partial'].includes(social.platforms.youtube.status), reason: social.platforms.youtube.reason, updatedAt: social.platforms.youtube.completedAt },
+      'Instagram': { available: ['available', 'partial'].includes(social.platforms.instagram.status), reason: social.platforms.instagram.reason, updatedAt: social.platforms.instagram.completedAt },
+      'Facebook': { available: ['available', 'partial'].includes(social.platforms.facebook.status), reason: social.platforms.facebook.reason, updatedAt: social.platforms.facebook.completedAt },
+      'TikTok': { available: ['available', 'partial'].includes(social.platforms.tiktok.status), reason: social.platforms.tiktok.reason, updatedAt: social.platforms.tiktok.completedAt },
+    }
+    const payload = {
+      schemaVersion: 3, generatedAt: now(), status: 'ok', messages: warnings, availability,
+      kpis: { reviewAverage: reviewsAndRelease.reviews?.average ?? null, reviewCount: reviewsAndRelease.reviews?.count ?? null },
+      daily, countries: aggregateBy(allRows, row => ({ key: row.country ?? '', value: row.downloads || row.purchases || 0 })),
+      devices: aggregateBy(analytics.rows, row => ({ key: row.device ?? '', value: row.activeDevices || 0 })),
+      versions: aggregateBy(analytics.rows, row => ({ key: row.appVersion ?? '', value: row.activeDevices || 0 })),
+      release: reviewsAndRelease.release, sales: sales.summary, finance: finance.latest, cloudKit: cloud.cloudKit ?? {}, social,
+    }
+    await writeAtomically(payload)
+  } catch (error) {
+    if (previous) {
+      previous.status = 'error'
+      previous.messages = [`Letzter Abruf fehlgeschlagen; sichere vorherige Daten bleiben sichtbar. ${error.message}`]
+      await writeAtomically(previous)
+    } else {
+      await writeAtomically({ schemaVersion: 1, generatedAt: now(), status: 'error', messages: [`Erster Abruf fehlgeschlagen: ${error.message}`], availability: {}, kpis: {}, daily: [], countries: [], devices: [], versions: [], cloudKit: {} })
+    }
+    process.exitCode = 1
   }
-  const payload = {
-    schemaVersion: 2, generatedAt: now(), status: 'ok', messages: warnings, availability,
-    kpis: { reviewAverage: reviewsAndRelease.reviews?.average ?? null, reviewCount: reviewsAndRelease.reviews?.count ?? null },
-    daily, countries: aggregateBy(allRows, row => ({ key: row.country ?? '', value: row.downloads || row.purchases || 0 })),
-    devices: aggregateBy(analytics.rows, row => ({ key: row.device ?? '', value: row.activeDevices || 0 })),
-    versions: aggregateBy(analytics.rows, row => ({ key: row.appVersion ?? '', value: row.activeDevices || 0 })),
-    release: reviewsAndRelease.release, finance: finance.latest, cloudKit: cloud.cloudKit ?? {}, social,
-  }
-  await writeAtomically(payload)
-} catch (error) {
-  if (previous) {
-    previous.status = 'error'
-    previous.messages = [`Letzter Abruf fehlgeschlagen; sichere vorherige Daten bleiben sichtbar. ${error.message}`]
-    await writeAtomically(previous)
-  } else {
-    await writeAtomically({ schemaVersion: 1, generatedAt: now(), status: 'error', messages: [`Erster Abruf fehlgeschlagen: ${error.message}`], availability: {}, kpis: {}, daily: [], countries: [], devices: [], versions: [], cloudKit: {} })
-  }
-  process.exitCode = 1
 }
+
+const isDirectExecution = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (isDirectExecution) await collectDashboardData()

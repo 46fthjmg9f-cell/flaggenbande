@@ -13,6 +13,7 @@ on:
       - 'scripts/social-platforms.mjs'
       - 'tests/content-operations-feed.test.mjs'
       - 'tests/social-platforms.test.mjs'
+      - 'tests/apple-sales.test.mjs'
       - '.github/workflows/dashboard.yml'
 
 permissions:
@@ -34,7 +35,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: dashboard/package-lock.json }
       - name: Verify dashboard collectors
-        run: node --test tests/social-platforms.test.mjs tests/content-operations-feed.test.mjs
+        run: node --test tests/social-platforms.test.mjs tests/content-operations-feed.test.mjs tests/apple-sales.test.mjs
       - name: Collect and aggregate private source data
         env:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
