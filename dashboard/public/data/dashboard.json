@@ -1,48 +1,48 @@
 {
   "schemaVersion": 3,
-  "generatedAt": "2026-07-21T14:35:51Z",
+  "generatedAt": "2026-07-21T16:37:47Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
       "available": true,
-      "updatedAt": "2026-07-21T14:35:51Z"
+      "updatedAt": "2026-07-21T16:37:47Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-21T14:35:51Z"
+      "updatedAt": "2026-07-21T16:37:47Z"
     },
     "Sales & Trends": {
       "available": true,
-      "updatedAt": "2026-07-21T14:35:51Z"
+      "updatedAt": "2026-07-21T16:37:47Z"
     },
     "CloudKit Public DB": {
       "available": true,
-      "updatedAt": "2026-07-21T14:35:51Z"
+      "updatedAt": "2026-07-21T16:37:47Z"
     },
     "Finance": {
       "available": false,
       "reason": "Der monatliche Finanzreport ist noch nicht verfügbar.",
-      "updatedAt": "2026-07-21T14:35:51Z"
+      "updatedAt": "2026-07-21T16:37:47Z"
     },
     "YouTube": {
       "available": true,
-      "updatedAt": "2026-07-21T14:35:49Z"
+      "updatedAt": "2026-07-21T16:37:43Z"
     },
     "Instagram": {
       "available": true,
       "reason": null,
-      "updatedAt": "2026-07-21T14:34:13.342Z"
+      "updatedAt": "2026-07-21T16:25:13.336Z"
     },
     "Facebook": {
       "available": true,
       "reason": "Facebook-Basisdaten geladen; Video-Insights fehlen fuer 3 Videos. Erweiterte Insights erfordern read_insights und pages_manage_engagement.",
-      "updatedAt": "2026-07-21T14:34:13.342Z"
+      "updatedAt": "2026-07-21T16:25:13.336Z"
     },
     "TikTok": {
       "available": false,
       "reason": "TikTok access token or refresh credentials are missing.",
-      "updatedAt": "2026-07-21T14:35:48Z"
+      "updatedAt": "2026-07-21T16:37:42Z"
     }
   },
   "kpis": {
@@ -1053,15 +1053,15 @@
   },
   "social": {
     "schemaVersion": 1,
-    "syncedAt": "2026-07-21T14:35:49Z",
+    "syncedAt": "2026-07-21T16:37:43Z",
     "platforms": {
       "youtube": {
         "status": "available",
         "accountName": "Flaggenbande",
         "videoCount": 3,
         "uploadCount": 3,
-        "startedAt": "2026-07-21T14:35:48Z",
-        "completedAt": "2026-07-21T14:35:49Z"
+        "startedAt": "2026-07-21T16:37:42Z",
+        "completedAt": "2026-07-21T16:37:43Z"
       },
       "instagram": {
         "status": "available",
@@ -1069,8 +1069,8 @@
         "accountName": "flaggenbande",
         "videoCount": 3,
         "uploadCount": 3,
-        "startedAt": "2026-07-21T14:35:48.911Z",
-        "completedAt": "2026-07-21T14:34:13.342Z"
+        "startedAt": "2026-07-21T16:37:42.339Z",
+        "completedAt": "2026-07-21T16:25:13.336Z"
       },
       "facebook": {
         "status": "partial",
@@ -1078,8 +1078,8 @@
         "accountName": "Flaggenbande",
         "videoCount": 3,
         "uploadCount": 3,
-        "startedAt": "2026-07-21T14:35:48.911Z",
-        "completedAt": "2026-07-21T14:34:13.342Z"
+        "startedAt": "2026-07-21T16:37:42.339Z",
+        "completedAt": "2026-07-21T16:25:13.336Z"
       },
       "tiktok": {
         "status": "not_configured",
@@ -1087,14 +1087,14 @@
         "accountName": null,
         "videoCount": 0,
         "uploadCount": 0,
-        "startedAt": "2026-07-21T14:35:48Z",
-        "completedAt": "2026-07-21T14:35:48Z"
+        "startedAt": "2026-07-21T16:37:42Z",
+        "completedAt": "2026-07-21T16:37:42Z"
       }
     },
     "totals": {
-      "views": 1337,
-      "reach": 371,
-      "likes": 8,
+      "views": 1574,
+      "reach": 434,
+      "likes": 11,
       "comments": 1,
       "shares": 0,
       "saves": 0,
@@ -1112,12 +1112,12 @@
         "description": "Five flags. Each one harder than the last. Keep your score and tell us how far you made it—no spoilers.\n\n#FlagQuiz #GeographyQuiz #GuessTheFlag #Flaggenbande #QuizChallenge\n\nhttps://apps.apple.com/us/app/flaggenbande/id6778848528",
         "publishedAt": "2026-07-21T13:18:14.000Z",
         "url": "https://www.instagram.com/reel/DbDKzQMCIGL/",
-        "thumbnailUrl": "https://scontent-sin11-2.cdninstagram.com/v/t51.71878-15/754068577_1067737165818954_7275588032787211921_n.jpg?stp=dst-jpg_e35_tt6&_nc_cat=101&ccb=7-5&_nc_sid=18de74&efg=eyJlZmdfdGFnIjoiQ0xJUFMuYmVzdF9pbWFnZV91cmxnZW4uQzMifQ%3D%3D&_nc_ohc=rDTOIVVGE_YQ7kNvwG4qqn2&_nc_oc=Adq3JWIbRgpC8kKyXRBu_9RPoC2bxw9iTus71eujYWO1Wr-f0PseFRvIXEifaenzZKE&_nc_zt=23&_nc_ht=scontent-sin11-2.cdninstagram.com&edm=ANo9K5cEAAAA&_nc_gid=8faqsE_lCN_kN_TWsio5Bw&_nc_tpa=Q5bMBQGMwqmXHidvKNlGtvcLhhohpsT33ZaTspTVLltJqmFbzmyI16gqL3IV8CKnzis8VOFyiCsmiwZ0hA&oh=00_AQBAd5X8pHB9j2UoR7HVcbpsbFNHMXvhJ_OCaONaPxMhWw&oe=6A6543E4",
+        "thumbnailUrl": "https://scontent-sin11-2.cdninstagram.com/v/t51.71878-15/754068577_1067737165818954_7275588032787211921_n.jpg?stp=dst-jpg_e35_tt6&_nc_cat=101&ccb=7-5&_nc_sid=18de74&efg=eyJlZmdfdGFnIjoiQ0xJUFMuYmVzdF9pbWFnZV91cmxnZW4uQzMifQ%3D%3D&_nc_ohc=rDTOIVVGE_YQ7kNvwFiUDYL&_nc_oc=Adqo_k9Oa640THvv7Ohl5SYhE9BfmtJ_mdEJ9pP5eoHVPujl5bgOH_Kznur428V_HAQ&_nc_zt=23&_nc_ht=scontent-sin11-2.cdninstagram.com&edm=ANo9K5cEAAAA&_nc_gid=toTy8wmOfW-6bdDz_QawIg&_nc_tpa=Q5bMBQGqffZkzwHo2jAsjrJ_mshyV8vHI6JuEF5sYpB6skbHfILOYr-5PsZwJACscT0KGyxX7Lvge3fmVA&oh=00_AQBOTXORkHLd9XaFt2lgMsCRZ01l613hLtc0VQ6LRDyE5w&oe=6A657C24",
         "status": "published",
         "durationSeconds": null,
         "metrics": {
-          "views": 33,
-          "reach": 29,
+          "views": 111,
+          "reach": 92,
           "likes": 0,
           "comments": 0,
           "shares": 0,
@@ -1164,9 +1164,9 @@
         "status": "public",
         "durationSeconds": 67,
         "metrics": {
-          "views": 20,
+          "views": 76,
           "reach": null,
-          "likes": 0,
+          "likes": 1,
           "comments": 0,
           "shares": null,
           "saves": null,
@@ -1187,7 +1187,7 @@
         "description": "Only 0.14% can get all three. The first one looks easy, the second catches almost everyone, and the final boss decides everything. How many did you get right? Drop your score below and train for the next round with Flaggenbande.\n\n#FlagQuiz #GeographyQuiz #GuessTheFlag #WorldFlags #Flaggenbande\n\nDownload Flaggenbande: https://apps.apple.com/us/app/flaggenbande/id6778848528",
         "publishedAt": "2026-07-20T18:28:15.000Z",
         "url": "https://www.instagram.com/reel/DbBlWgXNdL7/",
-        "thumbnailUrl": "https://scontent-sin2-2.cdninstagram.com/v/t51.82787-15/752569823_18053600735565491_1231207422425235950_n.jpg?stp=dst-jpg_e35_tt6&_nc_cat=103&ccb=7-5&_nc_sid=18de74&efg=eyJlZmdfdGFnIjoiQ0xJUFMuYmVzdF9pbWFnZV91cmxnZW4uQzMifQ%3D%3D&_nc_ohc=RF-nvDwp8_8Q7kNvwGvB9K1&_nc_oc=AdoyMeyDiiZZrdtmVUvF7fQZiwJnEGxt0YGK2grgnDZCdtbQX3vQzVdqJg4Tx7MhtK0&_nc_zt=23&_nc_ht=scontent-sin2-2.cdninstagram.com&edm=ANo9K5cEAAAA&_nc_gid=8faqsE_lCN_kN_TWsio5Bw&_nc_tpa=Q5bMBQEPal2SoPG2Rbh_IgHb0RtnNuP7FDdx1HpISe9qrRq0frht69Czdafn4PJVF1LAU5yPTQdOKGNSLg&oh=00_AQCGFytLVKUn0Otuymw0Zkj3IOs9KXUUHOtsly9nmSSFLw&oe=6A656D25",
+        "thumbnailUrl": "https://scontent-sin2-2.cdninstagram.com/v/t51.82787-15/752569823_18053600735565491_1231207422425235950_n.jpg?stp=dst-jpg_e35_tt6&_nc_cat=103&ccb=7-5&_nc_sid=18de74&efg=eyJlZmdfdGFnIjoiQ0xJUFMuYmVzdF9pbWFnZV91cmxnZW4uQzMifQ%3D%3D&_nc_ohc=RF-nvDwp8_8Q7kNvwFfaHwe&_nc_oc=AdqNvNdCRh-4hluNFiP-bBq0a1kAhSTalcf08YY9GlSFnHjF6qkdbgqvvi32sGnIGiw&_nc_zt=23&_nc_ht=scontent-sin2-2.cdninstagram.com&edm=ANo9K5cEAAAA&_nc_gid=toTy8wmOfW-6bdDz_QawIg&_nc_tpa=Q5bMBQEebZVraUYiKFLYVhZ9YiSEAuT4LnqVDyiK2bch6S2MFwyKT8FOXtu-faXjjep0E4zP5w4LFHiAKA&oh=00_AQCEExotOFR0unuiOC-IEc746c_NIFneKAoR2U16E7E-MQ&oe=6A656D25",
         "status": "published",
         "durationSeconds": null,
         "metrics": {
@@ -1215,9 +1215,9 @@
         "status": "public",
         "durationSeconds": 36,
         "metrics": {
-          "views": 244,
+          "views": 347,
           "reach": null,
-          "likes": 2,
+          "likes": 4,
           "comments": 0,
           "shares": null,
           "saves": null,
@@ -1286,7 +1286,7 @@
         "description": "🌍 Think you’re good at flags?\n\nTest yourself with 3 quick flags and see if you can get them all right before time runs out.\n\nWant to improve? Download Flaggenbande and train with hundreds of flags, quizzes, daily challenges and more.\n\n📱 Download Flaggenbande:\nhttps://apps.apple.com/us/app/flaggenbande/id6778848528?utm_source=chatgpt.com",
         "publishedAt": "2026-07-20T13:03:52.000Z",
         "url": "https://www.instagram.com/reel/DbBANDlN6Hj/",
-        "thumbnailUrl": "https://scontent-sin6-2.cdninstagram.com/v/t51.82787-15/752551007_18053506964565491_5588584433217710620_n.jpg?stp=dst-jpg_e35_tt6&_nc_cat=109&ccb=7-5&_nc_sid=18de74&efg=eyJlZmdfdGFnIjoiQ0xJUFMuYmVzdF9pbWFnZV91cmxnZW4uQzMifQ%3D%3D&_nc_ohc=K75c9PB0wI8Q7kNvwFyxpJH&_nc_oc=Adq8crjsgbF3aRIGnBOgXVlUG5zFBIGbBZaf3XOajvnTAP0sSDDqauq3OEHT-4_WFBY&_nc_zt=23&_nc_ht=scontent-sin6-2.cdninstagram.com&edm=ANo9K5cEAAAA&_nc_gid=8faqsE_lCN_kN_TWsio5Bw&_nc_tpa=Q5bMBQGbdj5YBkADYUL7B1h6G3tIVoeb94n6AXxYP9dkPccmagd04ZTsS79kT-krnQeRGy-pxqJ9J5s8gg&oh=00_AQDLh45vAMv2VQ-Tpyzu8qPSRSUy6ShLyf_hliyA6BOT3w&oe=6A656F48",
+        "thumbnailUrl": "https://scontent-sin6-2.cdninstagram.com/v/t51.82787-15/752551007_18053506964565491_5588584433217710620_n.jpg?stp=dst-jpg_e35_tt6&_nc_cat=109&ccb=7-5&_nc_sid=18de74&efg=eyJlZmdfdGFnIjoiQ0xJUFMuYmVzdF9pbWFnZV91cmxnZW4uQzMifQ%3D%3D&_nc_ohc=K75c9PB0wI8Q7kNvwE3ikFs&_nc_oc=AdqtdnFqVkuTLUp5YYKbcLhrxVPx83sTwO31hMLvLSdkzSuZzuVuTobA9tyzrMWlXjg&_nc_zt=23&_nc_ht=scontent-sin6-2.cdninstagram.com&edm=ANo9K5cEAAAA&_nc_gid=toTy8wmOfW-6bdDz_QawIg&_nc_tpa=Q5bMBQF0P42G-Ry6CE_Q-5MItzpWvbs4W3AkBuq_zfz2EVLZ4HvT-dnNsyroMKkmkOvPD7PCpL6gDwiJtg&oh=00_AQBAAnGdWgjAdEDm7QNJ0OWovAd6Z1jxExteJGFzV31FNA&oe=6A656F48",
         "status": "published",
         "durationSeconds": null,
         "metrics": {
@@ -2932,6 +2932,159 @@
         "platform": "facebook",
         "platformVideoId": "2303128737184032",
         "capturedAt": "2026-07-21T14:35:49Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "xoof2HIiMiA",
+        "capturedAt": "2026-07-21T16:37:43Z",
+        "metrics": {
+          "views": 76,
+          "reach": null,
+          "likes": 1,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "6k737HP6lDg",
+        "capturedAt": "2026-07-21T16:37:43Z",
+        "metrics": {
+          "views": 347,
+          "reach": null,
+          "likes": 4,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "1E6mxi4V3IY",
+        "capturedAt": "2026-07-21T16:37:43Z",
+        "metrics": {
+          "views": 666,
+          "reach": null,
+          "likes": 2,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "18052317206547183",
+        "capturedAt": "2026-07-21T16:37:43Z",
+        "metrics": {
+          "views": 111,
+          "reach": 92,
+          "likes": 0,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "17950735707015400",
+        "capturedAt": "2026-07-21T16:37:43Z",
+        "metrics": {
+          "views": 208,
+          "reach": 206,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "18084176021208292",
+        "capturedAt": "2026-07-21T16:37:43Z",
+        "metrics": {
+          "views": 166,
+          "reach": 136,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1594633352224956",
+        "capturedAt": "2026-07-21T16:37:43Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1527700882467308",
+        "capturedAt": "2026-07-21T16:37:43Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 2,
+          "comments": 1,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "2303128737184032",
+        "capturedAt": "2026-07-21T16:37:43Z",
         "metrics": {
           "views": null,
           "reach": null,
