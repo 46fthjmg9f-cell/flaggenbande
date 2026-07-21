@@ -627,7 +627,7 @@ async function collectFacebook(env, fetchImpl) {
   }
   const insightFailureCount = insightFailures.length
   const reason = insightFailureCount > 0
-    ? `Facebook-Basisdaten geladen; Video-Insights fehlen fuer ${insightFailureCount} ${insightFailureCount === 1 ? 'Video' : 'Videos'}. ${[...new Set(insightFailures)].join(' ')}`.slice(0, 300)
+    ? `Facebook-Basisdaten geladen; Video-Insights fehlen fuer ${insightFailureCount} ${insightFailureCount === 1 ? 'Video' : 'Videos'}. Erweiterte Insights erfordern read_insights und pages_manage_engagement. ${[...new Set(insightFailures)].join(' ')}`.slice(0, 300)
     : undefined
   return {
     platform: 'facebook',

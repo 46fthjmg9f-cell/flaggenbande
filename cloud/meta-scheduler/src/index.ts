@@ -1543,7 +1543,7 @@ const setAnalyticsState = async (env: Env, key: string, value: string): Promise<
 
 const safeAnalyticsReason = (reason: unknown): string => {
   const value = String(reason ?? "");
-  if (/^Facebook-Basisdaten geladen; Video-Insights fehlen fuer \d+ Videos?\.$/.test(value)) return value;
+  if (/^Facebook-Basisdaten geladen; Video-Insights fehlen fuer \d+ Videos?\. Erweiterte Insights erfordern read_insights und pages_manage_engagement\.$/.test(value)) return value;
   const status = value.match(/HTTP\s+(\d{3})/i)?.[1];
   return status
     ? `Meta Analytics HTTP ${status}. Berechtigung oder Metrikverfuegbarkeit pruefen.`
@@ -1782,7 +1782,7 @@ const collectFacebookAnalytics = async (env: Env): Promise<{
     videos,
     status: failureCount > 0 ? "partial" : "available",
     reason: failureCount > 0
-      ? `Facebook-Basisdaten geladen; Video-Insights fehlen fuer ${failureCount} ${failureCount === 1 ? "Video" : "Videos"}.`
+      ? `Facebook-Basisdaten geladen; Video-Insights fehlen fuer ${failureCount} ${failureCount === 1 ? "Video" : "Videos"}. Erweiterte Insights erfordern read_insights und pages_manage_engagement.`
       : null,
   };
 };
