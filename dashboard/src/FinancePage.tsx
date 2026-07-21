@@ -43,8 +43,8 @@ export default function FinancePage({ data, rows, refreshing, onRefresh }: Finan
 
     <section className="kpis finance-kpis" aria-label="Finanzkennzahlen">
       <article className="kpi-card green"><p>Apple Proceeds · Monatsreport</p><strong>{formatMoney(data.finance?.proceeds ?? null)}</strong><span>{data.finance?.period ?? 'Noch nicht verfügbar'}</span></article>
-      <article className="kpi-card green"><p>Proceeds · gewählter Zeitraum</p><strong>{formatMoney(proceeds)}</strong><span>App Store Connect Sales</span></article>
-      <article className="kpi-card blue"><p>Umsatz · gewählter Zeitraum</p><strong>{formatMoney(revenue)}</strong><span>nur wenn von Apple geliefert</span></article>
+      <article className="kpi-card green"><p>Proceeds · verfügbare Historie</p><strong>{formatMoney(proceeds)}</strong><span>App Store Connect Sales</span></article>
+      <article className="kpi-card blue"><p>Umsatz · verfügbare Historie</p><strong>{formatMoney(revenue)}</strong><span>nur wenn von Apple geliefert</span></article>
       <article className="kpi-card purple"><p>Sales Units</p><strong>{formatNumber(salesUnits)}</strong><span>keine In-App-Käufe</span></article>
       <article className="kpi-card red"><p>Rückerstattungen</p><strong>{formatNumber(refunds)}</strong><span>bestätigte Einheiten</span></article>
     </section>

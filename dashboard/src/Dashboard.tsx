@@ -222,7 +222,7 @@ export default function Dashboard() {
     </nav>
     {activeView === 'videos' && <ContentSystemDashboard />}
     {activeView === 'social-stats' && <SocialStatsPage data={data.social} generatedAt={data.generatedAt} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
-    {activeView === 'finance' && <FinancePage data={data} rows={filtered} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
+    {activeView === 'finance' && <FinancePage data={data} rows={data.daily} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
     {activeView === 'app-development' && <section id="app-development-view" className="dashboard-view" role="tabpanel" aria-labelledby="app-development-tab" tabIndex={0}>
     <header className="hero">
       <div><span className="eyebrow">FLAGGENBANDE · APP & ENTWICKLUNG</span><h1>Produkt, Nutzung und Qualität.</h1><p>App Store, Versionen, technische Qualität und anonymisierte CloudKit-Nutzung – klar getrennt von Videos, Social Performance und Finanzen.</p></div>

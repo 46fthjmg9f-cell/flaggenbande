@@ -268,6 +268,7 @@ export function mergeStagingFeed(previous, staging) {
   })
   const messages = requiredArray(base.messages, 'content-operations.messages', 100)
     .filter(message => typeof message === 'string' && !message.startsWith(stagingMessagePrefix))
+    .filter(message => staging.runs.length === 0 || !message.includes('Noch sind keine Upload-Adapter verbunden.'))
   if (staging.runs.length > 0) {
     messages.push(`${stagingMessagePrefix} ${staging.runs.length} Lauf/Läufe mit ${staging.publications.length} sicheren Plattformstatus; keine Veröffentlichung autorisiert.`)
   }
