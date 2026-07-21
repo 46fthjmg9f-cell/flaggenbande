@@ -4,7 +4,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "youtube:auth": "node --env-file-if-exists=.env.platforms scripts/youtube-auth.mjs",
     "upload:test": "node scripts/upload-staging.mjs",
+    "test:oauth": "node --test tests/youtube-auth.test.mjs",
     "test:upload": "node --test tests/upload-staging.test.mjs"
   }
 }
