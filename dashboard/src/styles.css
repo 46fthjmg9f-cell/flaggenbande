@@ -24,6 +24,9 @@
 .social-actions label { display: grid; gap: 5px; color: #91a8c1; font-size: .72rem; font-weight: 700; }
 .social-actions select, .social-actions button { min-height: 40px; border: 1px solid #2c425f; border-radius: 9px; background: #0e1d30; color: #edf5ff; padding: 0 12px; }
 .social-actions button { cursor: pointer; border-color: #1688d4; background: #1688d4; font-weight: 750; }
+.social-view-toggle { display: flex; gap: 4px; padding: 3px; border: 1px solid #2c425f; border-radius: 10px; background: #0a1728; }
+.social-actions .social-view-toggle button { min-height: 34px; border: 0; background: transparent; color: #829ab5; }
+.social-actions .social-view-toggle button.active { background: #1688d4; color: #fff; }
 .platform-status-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 20px; }
 .platform-status { display: grid; gap: 5px; min-height: 126px; padding: 14px; border: 1px solid #263b56; border-radius: 12px; background: #0b1a2c; }
 .platform-status > div { display: flex; align-items: center; justify-content: space-between; }
@@ -31,6 +34,7 @@
 .platform-status strong { margin-top: 5px; font-size: 1.25rem; }
 .platform-status small { color: #8ea5be; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .platform-status em { color: #607b99; font-size: .67rem; font-style: normal; }
+.platform-status em.stale { color: #f7b955; font-weight: 750; }
 .platform-state-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff7181; }
 .platform-status.available .platform-state-dot { background: #41d6a2; box-shadow: 0 0 0 4px rgba(65,214,162,.11); }
 .platform-status.partial .platform-state-dot { background: #f7b955; }
@@ -40,6 +44,11 @@
 .social-kpis span { display: block; color: #829ab5; font-size: .72rem; }
 .social-kpis strong { display: block; margin-top: 5px; font-size: 1.2rem; }
 .social-table-wrap { overflow-x: auto; border: 1px solid #253c58; border-radius: 12px; }
+.social-list-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 18px 2px 8px; }
+.social-list-heading span { color: #7f98b3; font-size: .74rem; }
+.upload-state { display: inline-block; border: 1px solid #39506c; border-radius: 999px; padding: 3px 7px; color: #b9c9dc; font-size: .68rem; white-space: nowrap; }
+.upload-state.public, .upload-state.published { border-color: rgba(65,214,162,.45); color: #65e3b6; }
+.upload-state.private, .upload-state.unlisted { border-color: rgba(247,185,85,.45); color: #f7c96f; }
 .social-table { width: 100%; min-width: 1080px; border-collapse: collapse; font-size: .77rem; }
 .social-table th { padding: 11px 12px; background: #0b192a; color: #829ab5; text-align: left; white-space: nowrap; }
 .social-table td { padding: 11px 12px; border-top: 1px solid #20334b; color: #c8d6e6; }
@@ -61,4 +70,7 @@
   .platform-status-grid, .social-kpis { grid-template-columns: 1fr; }
   .social-heading { display: block; }
   .social-actions { margin-top: 14px; flex-wrap: wrap; }
+  .social-view-toggle { width: 100%; }
+  .social-actions .social-view-toggle button { flex: 1; }
+  .social-list-heading { display: grid; }
 }

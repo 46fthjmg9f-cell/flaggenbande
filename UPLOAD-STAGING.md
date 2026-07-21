@@ -63,6 +63,26 @@ cd "/Users/praemer/Projects/.flaggenbande-worktrees/upload-staging" && \
 - `UPLOAD_STAGING_API_URL`, `UPLOAD_STAGING_API_TOKEN`
 - für Meta zusätzlich eine kontrollierte temporäre HTTPS-MP4 samt `--media-url`, `--media-project` und `--media-branch`
 
+### YouTube einmalig autorisieren
+
+In Google Cloud muss die YouTube Data API v3 aktiv sein. Der OAuth-Client muss
+vom Typ **Desktop-App** sein und das Google-Konto muss Zugriff auf den in
+`YOUTUBE_CHANNEL_ID` festgelegten Flaggenbande-Kanal haben. Client-ID,
+Client-Secret und Kanal-ID werden ausschließlich in der gitignorierten lokalen
+`.env.platforms` gespeichert. Der lokale Rückruf bleibt fest auf
+`http://127.0.0.1:53682/oauth2callback` begrenzt.
+
+Der folgende Befehl öffnet den offiziellen Google-Consent-Dialog, fordert nur
+`youtube.upload`, `youtube.readonly` und `yt-analytics.readonly` an, prüft danach
+den verbundenen Kanal und schreibt ausschließlich den neuen Refresh-Token
+atomisch in `.env.platforms`. Er lädt kein Video hoch:
+
+```bash
+cd "/Users/praemer/Projects/.flaggenbande-worktrees/upload-staging" && npm run youtube:auth
+```
+
+Zugangsdaten und Tokens niemals in Chat, Git oder Logs kopieren.
+
 ```bash
 cd "/Users/praemer/Projects/.flaggenbande-worktrees/upload-staging" && \
   node --env-file-if-exists=.env.platforms scripts/upload-staging.mjs \

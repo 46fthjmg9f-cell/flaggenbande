@@ -56,11 +56,29 @@ export interface SocialVideo {
   metrics: SocialMetrics
 }
 
+export interface SocialUpload {
+  platform: SocialPlatform
+  platformVideoId: string
+  contentId: string | null
+  title: string
+  description: string
+  uploadedAt: string | null
+  publishedAt: string | null
+  scheduledAt: string | null
+  url: string | null
+  thumbnailUrl: string | null
+  status: string
+  privacyStatus: string
+  uploadStatus: string
+  durationSeconds: Numeric
+}
+
 export interface SocialPlatformState {
   status: SocialSyncStatus
   reason?: string
   accountName: string | null
   videoCount: number
+  uploadCount?: number
   startedAt: string | null
   completedAt: string | null
 }
@@ -71,6 +89,7 @@ export interface SocialData {
   platforms: Record<SocialPlatform, SocialPlatformState>
   totals: SocialMetrics
   videos: SocialVideo[]
+  uploads?: SocialUpload[]
   snapshots: Array<{
     platform: SocialPlatform
     platformVideoId: string
@@ -153,6 +172,7 @@ export const emptyDashboard: DashboardData = {
     },
     totals: emptyMetrics,
     videos: [],
+    uploads: [],
     snapshots: [],
   },
 }
