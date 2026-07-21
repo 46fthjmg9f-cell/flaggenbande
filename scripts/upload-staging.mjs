@@ -716,7 +716,9 @@ async function main() {
 
       if (args.selectedPlatforms.includes('meta')) {
         const confirmedMeta = record.execution.receipts.filter(receipt => ['instagram', 'facebook'].includes(receipt.platform))
-        if (confirmedMeta.length < 2) {
+        const cleanupConfirmed = ['cleaned', 'already_cleaned', 'not_applicable']
+          .includes(record.execution.targets.meta?.cleanupStatus)
+        if (confirmedMeta.length < 2 || !cleanupConfirmed) {
           try {
             const recoverOnly = Boolean(record.execution.targets.meta)
             record.execution.targets.meta = {
