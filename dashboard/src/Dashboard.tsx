@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import * as echarts from 'echarts'
 import type { EChartsOption } from 'echarts'
 import ContentSystemDashboard from './ContentSystemDashboard'
-import SocialAnalytics from './SocialAnalytics'
+import FinancePage from './FinancePage'
+import SocialStatsPage from './SocialStatsPage'
+import { DASHBOARD_SECTIONS, dashboardSectionFromHash, type DashboardSectionId } from './dashboardSections'
 import type { DashboardData, DailyMetric, Numeric } from './types'
 import { emptyDashboard } from './types'
 
 const formatNumber = (value: Numeric) => value === null || value === undefined ? '—' : new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(value)
 const formatPercent = (value: Numeric) => value === null || value === undefined ? '—' : new Intl.NumberFormat('de-DE', { style: 'percent', maximumFractionDigits: 1 }).format(value)
-const formatMoney = (value: Numeric) => value === null || value === undefined ? '—' : new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(value)
 const numeric = (value: unknown) => typeof value === 'number' ? value : 0
 const unique = (values: Array<string | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))].sort()
 
@@ -58,7 +59,7 @@ const lineStyle = { color: '#8ca1ba' }
 const splitLine = { lineStyle: { color: '#22334b' } }
 
 export default function Dashboard() {
-  const [activeView, setActiveView] = useState<'app' | 'content-system'>('app')
+  const [activeView, setActiveView] = useState<DashboardSectionId>(() => dashboardSectionFromHash(window.location.hash))
   const [data, setData] = useState<DashboardData>(emptyDashboard)
   const [days, setDays] = useState('30')
   const [country, setCountry] = useState('all')
@@ -98,6 +99,30 @@ export default function Dashboard() {
   useEffect(() => {
     void refreshDashboard()
   }, [])
+
+  useEffect(() => {
+    const syncSection = () => setActiveView(dashboardSectionFromHash(window.location.hash))
+    window.addEventListener('hashchange', syncSection)
+    return () => window.removeEventListener('hashchange', syncSection)
+  }, [])
+
+  const openSection = (section: DashboardSectionId) => {
+    setActiveView(section)
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/${section}`)
+  }
+
+  const moveSectionFocus = (event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % DASHBOARD_SECTIONS.length
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + DASHBOARD_SECTIONS.length) % DASHBOARD_SECTIONS.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = DASHBOARD_SECTIONS.length - 1
+    if (nextIndex === null) return
+    event.preventDefault()
+    const nextSection = DASHBOARD_SECTIONS[nextIndex]
+    openSection(nextSection.id)
+    requestAnimationFrame(() => document.getElementById(`${nextSection.id}-tab`)?.focus())
+  }
 
   const countries = useMemo(() => unique(data.daily.map(row => row.country)), [data.daily])
   const devices = useMemo(() => unique(data.daily.map(row => row.device)), [data.daily])
@@ -197,12 +222,25 @@ export default function Dashboard() {
 
   return <main>
     <nav className="dashboard-tabs" role="tablist" aria-label="Dashboard-Bereiche">
-      <button id="app-analytics-tab" type="button" role="tab" aria-selected={activeView === 'app'} aria-controls="app-analytics-view" className={activeView === 'app' ? 'active' : ''} onClick={() => setActiveView('app')}>App &amp; Cloud</button>
-      <button id="content-system-tab" type="button" role="tab" aria-selected={activeView === 'content-system'} aria-controls="content-system-view" className={activeView === 'content-system' ? 'active' : ''} onClick={() => setActiveView('content-system')}>Content-System</button>
+      {DASHBOARD_SECTIONS.map((section, index) => <button
+        id={`${section.id}-tab`}
+        key={section.id}
+        type="button"
+        role="tab"
+        aria-selected={activeView === section.id}
+        aria-controls={`${section.id}-view`}
+        tabIndex={activeView === section.id ? 0 : -1}
+        className={activeView === section.id ? 'active' : ''}
+        onClick={() => openSection(section.id)}
+        onKeyDown={event => moveSectionFocus(event, index)}
+      >{section.label}</button>)}
     </nav>
-    {activeView === 'content-system' ? <ContentSystemDashboard /> : <section id="app-analytics-view" className="dashboard-view" role="tabpanel" aria-labelledby="app-analytics-tab" tabIndex={0}>
+    {activeView === 'videos' && <ContentSystemDashboard />}
+    {activeView === 'social-stats' && <SocialStatsPage data={data.social} generatedAt={data.generatedAt} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
+    {activeView === 'finance' && <FinancePage data={data} rows={data.daily} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
+    {activeView === 'app-development' && <section id="app-development-view" className="dashboard-view" role="tabpanel" aria-labelledby="app-development-tab" tabIndex={0}>
     <header className="hero">
-      <div><span className="eyebrow">FLAGGENBANDE · APP & CLOUD ANALYTICS</span><h1>Alles Wichtige. Ohne Datenleck.</h1><p>Öffentlich sichtbar sind ausschließlich datensparsam aggregierte Kennzahlen aus App Store Connect und der öffentlichen CloudKit-Datenbank.</p></div>
+      <div><span className="eyebrow">FLAGGENBANDE · APP & ENTWICKLUNG</span><h1>Produkt, Nutzung und Qualität.</h1><p>App Store, Versionen, technische Qualität und anonymisierte CloudKit-Nutzung – klar getrennt von Videos, Social Performance und Finanzen.</p></div>
       <div className="sync-controls">
         <div className={`sync-state ${data.status}`}><span className="pulse" />{data.generatedAt ? `Aktualisiert ${new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.generatedAt))}` : 'Warte auf ersten Cloud-Sync'}</div>
         <button className="refresh" onClick={() => void refreshDashboard()} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Dashboard aktualisieren'}</button>
@@ -222,15 +260,12 @@ export default function Dashboard() {
       <KpiCard label="Conversion" value={formatPercent(numeric(latest?.impressions) > 0 ? numeric(latest?.downloads) / numeric(latest?.impressions) : null)} detail="Downloads / Impressions" accent="green" />
       <KpiCard label="Aktive Geräte" value={formatNumber(numeric(latest?.activeDevices) || null)} detail="App Analytics" accent="gold" />
       <KpiCard label="Crashes" value={formatNumber(numeric(latest?.crashes) || null)} detail="heute" accent="red" />
-      <KpiCard label="Proceeds" value={formatMoney(numeric(latest?.proceeds) || null)} detail="nur EUR · Sales" accent="green" />
-      <KpiCard label="Finanzreport" value={formatMoney(data.finance?.proceeds ?? null)} detail={data.finance ? `Apple · ${data.finance.period}` : 'monatlich, wenn verfügbar'} accent="green" />
       <KpiCard label="App-Store-Bewertung" value={data.kpis.reviewAverage ? `${formatNumber(data.kpis.reviewAverage)} / 5` : '—'} detail={`${formatNumber(data.kpis.reviewCount)} Bewertungen`} accent="purple" />
       <KpiCard label="CloudKit-Profile" value={formatNumber(data.cloudKit.players ?? null)} detail="nur öffentliche Aggregate" accent="purple" />
       <KpiCard label="Daily Teilnahmen" value={formatNumber(cloudSeries.at(-1)?.players ?? null)} detail={mode === 'all' ? 'alle Spielmodi' : mode} accent="gold" />
       <KpiCard label="Ø Flaggenrun Score" value={formatNumber(data.cloudKit.averageScore ?? null)} detail="Daily Runs" />
       <KpiCard label="Aktueller Build" value={data.release?.build ?? '—'} detail={data.release?.buildProcessingState ?? data.release?.appStoreState ?? 'App Store Connect'} accent="green" />
     </section>
-    <SocialAnalytics data={data.social} />
     <section className="chart-grid">
       <Panel eyebrow="ACQUISITION" title="Downloads im Zeitverlauf" detail={hasTrend ? 'Interaktiv filterbar' : 'Daten folgen nach Apples Mindestschwelle'} wide><Chart option={downloadsOption} label="Downloads im Zeitverlauf" /></Panel>
       <Panel eyebrow="DISCOVERY" title="Sichtbarkeit und Produktseite" detail="Impressions · Page Views" wide><Chart option={discoveryOption} label="App Store Sichtbarkeit" /></Panel>
@@ -244,7 +279,7 @@ export default function Dashboard() {
         <div className="metric-list">{Object.entries(data.availability).length ? <ul>{Object.entries(data.availability).map(([name, entry]) => <li key={name}><span className={entry.available ? 'available-dot' : 'unavailable-dot'} /><b>{name}</b><small>{entry.available ? 'Verfügbar' : entry.reason ?? 'Noch nicht verfügbar'}</small></li>)}</ul> : <p>Der erste Abruf füllt hier transparent die verfügbaren Apple- und CloudKit-Quellen ein.</p>}</div>
       </Panel>
     </section>
-    <footer>Flaggenbande Analytics · GitHub Pages zeigt keine API-Schlüssel, Spieler-IDs, Namen, Texte oder CloudKit-Rohdaten.</footer>
+    <footer>Flaggenbande App &amp; Entwicklung · GitHub Pages zeigt keine API-Schlüssel, Spieler-IDs, Namen, Texte oder CloudKit-Rohdaten.</footer>
     </section>}
   </main>
 }
