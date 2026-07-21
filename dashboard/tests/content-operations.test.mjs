@@ -25,10 +25,15 @@ function inspectPublicValue(value, path = 'root') {
   if (typeof value === 'string') assert.equal(forbiddenValue.test(value), false, `lokaler Pfad in ${path}`)
 }
 
-test('public content contract reports partial data with all four platforms without claiming publication', async () => {
+test('public content contract reports the current run state with all four platforms without claiming publication', async () => {
   const fixture = await loadFixture()
   assert.equal(fixture.schemaVersion, 1)
-  assert.equal(fixture.status, 'partial')
+  const expectedStatus = fixture.runs.some(run => ['failed', 'qa_failed', 'reconcile_required'].includes(run.status))
+    ? 'error'
+    : fixture.runs.length > 0 && fixture.runs.every(run => run.status === 'completed')
+      ? 'ok'
+      : 'partial'
+  assert.equal(fixture.status, expectedStatus)
   assert.deepEqual(fixture.system.map(entry => entry.id).sort(), ['database', 'engine', 'quality', 'release'])
   assert.deepEqual(fixture.platforms.map(entry => entry.platform).sort(), ['facebook', 'instagram', 'tiktok', 'youtube'])
   assert.ok(fixture.platforms.every(entry => ['not_configured', 'planned', 'ready', 'uploading', 'failed'].includes(entry.status)))
