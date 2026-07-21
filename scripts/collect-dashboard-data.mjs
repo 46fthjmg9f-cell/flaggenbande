@@ -171,7 +171,7 @@ async function collectSales() {
     const detail = String(error.message)
     const reason = detail.includes('NOT_FOUND') || detail.includes('no sales for the date specified')
       ? 'Apple meldet für den abgefragten Tag noch keine Verkäufe.'
-      : 'Der Tagesreport ist noch nicht verfügbar; der nächste tägliche Abruf versucht es erneut.'
+      : 'Der Tagesreport ist noch nicht verfügbar; der nächste stündliche Abruf versucht es erneut.'
     return { rows: [], available: false, reason }
   }
 }
