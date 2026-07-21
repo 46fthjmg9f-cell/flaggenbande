@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-21T12:34:59.549Z",
+  "generatedAt": "2026-07-21T12:51:36.567Z",
   "status": "partial",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Review-Einträge.",
@@ -62,7 +62,7 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Instagram-Container ist upload-bereit und bleibt unveröffentlicht.",
-      "updatedAt": "2026-07-21T12:30:14.601Z"
+      "updatedAt": "2026-07-21T12:46:14.572Z"
     },
     {
       "platform": "tiktok",
@@ -115,7 +115,7 @@
       "platform": "instagram",
       "mode": "container_unpublished",
       "status": "container_unpublished",
-      "updatedAt": "2026-07-21T12:30:14.601Z",
+      "updatedAt": "2026-07-21T12:46:14.572Z",
       "title": null,
       "scheduledAt": null,
       "publishedAt": null,
