@@ -415,23 +415,34 @@ const ensureStagingSchema = async (env: Env): Promise<void> => {
   const statements = [
     `CREATE TABLE IF NOT EXISTS upload_staging_runs (
       run_id TEXT PRIMARY KEY, content_id TEXT NOT NULL, asset_sha256 TEXT NOT NULL, metadata_sha256 TEXT NOT NULL,
-      metadata_json TEXT NOT NULL, status TEXT NOT NULL, quality_status TEXT NOT NULL,
-      publication_authorized INTEGER NOT NULL DEFAULT 0, execution_requested INTEGER NOT NULL DEFAULT 0,
+      metadata_json TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('planned', 'running', 'partial', 'completed', 'failed', 'expired', 'reconcile_required', 'safety_violation')),
+      quality_status TEXT NOT NULL CHECK (quality_status = 'passed'),
+      publication_authorized INTEGER NOT NULL DEFAULT 0 CHECK (publication_authorized = 0),
+      execution_requested INTEGER NOT NULL DEFAULT 0 CHECK (execution_requested IN (0, 1)),
       media_url TEXT, media_project TEXT, media_branch TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT, media_cleaned_at TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS upload_staging_targets (
-      run_id TEXT NOT NULL, platform TEXT NOT NULL, mode TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
-      initial_transport_state TEXT NOT NULL, initial_visibility_state TEXT NOT NULL, initial_workflow_state TEXT NOT NULL,
-      transport_state TEXT NOT NULL, visibility_state TEXT NOT NULL, workflow_state TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      platform TEXT NOT NULL CHECK (platform IN ('youtube', 'instagram', 'facebook', 'tiktok')),
+      mode TEXT NOT NULL CHECK (mode IN ('private', 'container_unpublished', 'draft', 'manual_uploaded')),
+      idempotency_key TEXT NOT NULL UNIQUE,
+      initial_transport_state TEXT NOT NULL CHECK (initial_transport_state IN ('planned', 'ready')),
+      initial_visibility_state TEXT NOT NULL CHECK (initial_visibility_state IN ('not_created', 'unknown')),
+      initial_workflow_state TEXT NOT NULL CHECK (initial_workflow_state IN ('ready', 'manual_uploaded')),
+      transport_state TEXT NOT NULL CHECK (transport_state IN ('planned', 'uploading', 'processing', 'ready', 'failed', 'expired', 'reconcile_required')),
+      visibility_state TEXT NOT NULL CHECK (visibility_state IN ('not_created', 'non_public', 'unknown')),
+      workflow_state TEXT NOT NULL CHECK (workflow_state IN ('ready', 'private_uploaded', 'container_unpublished', 'draft', 'manual_uploaded', 'failed', 'expired', 'reconcile_required', 'safety_violation')),
       remote_object_id TEXT, provider_status TEXT, expires_at TEXT, receipt_sha256 TEXT,
       remote_create_started_at TEXT, lease_owner TEXT, lease_expires_at TEXT, last_error TEXT,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-      PRIMARY KEY(run_id, platform)
+      PRIMARY KEY(run_id, platform), FOREIGN KEY(run_id) REFERENCES upload_staging_runs(run_id)
     )`,
     `CREATE TABLE IF NOT EXISTS upload_staging_events (
       event_id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, platform TEXT,
-      timestamp TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL
+      timestamp TEXT NOT NULL, level TEXT NOT NULL CHECK (level IN ('info', 'warning', 'error')),
+      message TEXT NOT NULL, FOREIGN KEY(run_id) REFERENCES upload_staging_runs(run_id)
     )`,
     "CREATE INDEX IF NOT EXISTS upload_staging_targets_status_idx ON upload_staging_targets(platform, transport_state, updated_at)",
     "CREATE INDEX IF NOT EXISTS upload_staging_targets_lease_idx ON upload_staging_targets(lease_expires_at, transport_state)",
@@ -628,7 +639,7 @@ const removeTemporaryPagesDeployment = async (job: Job, env: Env): Promise<void>
   const deployments = payload?.result ?? [];
   for (const deployment of deployments) {
     if (deployment.deployment_trigger?.metadata?.branch !== job.media_branch || !deployment.id) continue;
-    await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${job.media_project}/deployments/${deployment.id}`, {
+    await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${job.media_project}/deployments/${deployment.id}?force=true`, {
       method: "DELETE", headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
     });
   }
@@ -704,49 +715,126 @@ const recalculateStagingRun = async (env: Env, runId: string): Promise<void> => 
     .bind(status, updatedAt, completed ? updatedAt : null, runId).run();
 };
 
-const cleanupStagingMediaIfSafe = async (env: Env, runId: string): Promise<void> => {
+type StagingCleanupStatus = "not_applicable" | "waiting" | "blocked" | "cleaned" | "already_cleaned" | "retry_required";
+
+interface PagesDeployment {
+  readonly id?: string;
+  readonly url?: string;
+  readonly deployment_trigger?: { readonly metadata?: { readonly branch?: string } };
+}
+
+interface PagesDeploymentList {
+  readonly success?: boolean;
+  readonly result?: PagesDeployment[];
+  readonly result_info?: { readonly page?: number; readonly total_pages?: number };
+}
+
+const pagesOrigin = (value: string | undefined): string | null => {
+  if (!value) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+};
+
+const listPagesDeployments = async (env: Env, project: string): Promise<PagesDeployment[]> => {
+  const deployments: PagesDeployment[] = [];
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const url = new URL(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${project}/deployments`);
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("per_page", "100");
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
+    });
+    const payload = await response.json().catch(() => null) as PagesDeploymentList | null;
+    if (!response.ok || payload?.success === false || !Array.isArray(payload?.result)) {
+      throw new Error(`Deployment-Liste HTTP ${response.status}`);
+    }
+    deployments.push(...payload.result);
+    const reportedPages = Number(payload.result_info?.total_pages ?? 1);
+    if (!Number.isSafeInteger(reportedPages) || reportedPages < 1 || reportedPages > 100) {
+      throw new Error("Deployment-Paginierung ist außerhalb der sicheren Grenzen.");
+    }
+    totalPages = reportedPages;
+    page += 1;
+  } while (page <= totalPages);
+  return deployments;
+};
+
+const matchingStagingDeployments = (
+  deployments: readonly PagesDeployment[],
+  run: StagingRunRow,
+): PagesDeployment[] => {
+  const expectedOrigin = pagesOrigin(run.media_url ?? undefined);
+  if (!expectedOrigin) return [];
+  return deployments.filter((deployment) =>
+    deployment.id && deployment.deployment_trigger?.metadata?.branch === run.media_branch &&
+    pagesOrigin(deployment.url) === expectedOrigin);
+};
+
+const markStagingMediaCleaned = async (env: Env, runId: string): Promise<void> => {
+  const cleanedAt = now();
+  await env.DB.prepare("UPDATE upload_staging_runs SET media_cleaned_at = ?, updated_at = ? WHERE run_id = ? AND media_cleaned_at IS NULL")
+    .bind(cleanedAt, cleanedAt, runId).run();
+  await stagingEvent(env, runId, null, "info", "Temporäre Pages-MP4 wurde nach sicherer Meta-Übernahme entfernt.");
+};
+
+const cleanupStagingMediaIfSafe = async (env: Env, runId: string): Promise<StagingCleanupStatus> => {
   const run = await env.DB.prepare("SELECT * FROM upload_staging_runs WHERE run_id = ?")
     .bind(runId).first<StagingRunRow>();
-  if (!run || run.media_cleaned_at || !run.media_project || !run.media_branch || !run.media_url) return;
+  if (!run || !run.media_project || !run.media_branch || !run.media_url) return "not_applicable";
+  if (run.media_cleaned_at) return "already_cleaned";
   const targets = await env.DB.prepare("SELECT * FROM upload_staging_targets WHERE run_id = ?")
     .bind(runId).all<StagingTargetRow>();
   const byPlatform = new Map((targets.results ?? []).map((target) => [target.platform, target]));
   const instagram = byPlatform.get("instagram");
   const facebook = byPlatform.get("facebook");
   const instagramNoLongerNeedsMedia = Boolean(instagram &&
-    ["container_unpublished", "expired", "failed", "reconcile_required", "safety_violation"].includes(instagram.workflow_state));
+    ["container_unpublished", "expired"].includes(instagram.workflow_state));
   const facebookNoLongerNeedsMedia = Boolean(facebook &&
-    ["draft", "failed", "reconcile_required", "safety_violation"].includes(facebook.workflow_state));
-  if (!instagramNoLongerNeedsMedia || !facebookNoLongerNeedsMedia) return;
+    facebook.workflow_state === "draft");
+  if (!instagramNoLongerNeedsMedia || !facebookNoLongerNeedsMedia) return "waiting";
   if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID ||
       run.media_project !== env.UPLOAD_STAGING_MEDIA_PROJECT) {
     await stagingEvent(env, runId, null, "error", "Temporäre Staging-MP4 konnte wegen fehlendem Cleanup-Schutz nicht entfernt werden.");
-    return;
+    return "blocked";
   }
   try {
-    const list = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${run.media_project}/deployments`, {
-      headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
-    });
-    const payload = await list.json().catch(() => null) as {
-      result?: Array<{ id?: string; url?: string; deployment_trigger?: { metadata?: { branch?: string } } }>;
-    } | null;
-    if (!list.ok) throw new Error(`Deployment-Liste HTTP ${list.status}`);
-    const deployments = (payload?.result ?? []).filter((deployment) =>
-      deployment.deployment_trigger?.metadata?.branch === run.media_branch && deployment.id);
-    if (deployments.length === 0) throw new Error("Kein eindeutig passendes Pages-Deployment gefunden.");
+    const deployments = matchingStagingDeployments(
+      await listPagesDeployments(env, run.media_project),
+      run,
+    );
+    if (deployments.length === 0) {
+      const media = await fetch(run.media_url, { method: "HEAD" });
+      if (media.status === 404 || media.status === 410) {
+        await markStagingMediaCleaned(env, runId);
+        return "cleaned";
+      }
+      throw new Error("Kein eindeutig zur Medien-URL passendes Pages-Deployment gefunden.");
+    }
     for (const deployment of deployments) {
-      const removed = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${run.media_project}/deployments/${deployment.id}`, {
+      const removed = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${run.media_project}/deployments/${deployment.id}?force=true`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
       });
-      if (!removed.ok && removed.status !== 404) throw new Error(`Deployment-Cleanup HTTP ${removed.status}`);
+      const result = await removed.json().catch(() => null) as { success?: boolean } | null;
+      if ((!removed.ok || result?.success === false) && removed.status !== 404) {
+        throw new Error(`Deployment-Cleanup HTTP ${removed.status}`);
+      }
     }
-    const cleanedAt = now();
-    await env.DB.prepare("UPDATE upload_staging_runs SET media_cleaned_at = ?, updated_at = ? WHERE run_id = ? AND media_cleaned_at IS NULL")
-      .bind(cleanedAt, cleanedAt, runId).run();
-    await stagingEvent(env, runId, null, "info", "Temporäre Pages-MP4 wurde nach sicherer Meta-Übernahme entfernt.");
+    const remaining = matchingStagingDeployments(
+      await listPagesDeployments(env, run.media_project),
+      run,
+    );
+    if (remaining.length > 0) throw new Error("Deployment ist nach dem Cleanup weiterhin vorhanden.");
+    await markStagingMediaCleaned(env, runId);
+    return "cleaned";
   } catch (error) {
     await stagingEvent(env, runId, null, "warning", `Temporäres Pages-Deployment bleibt für Cleanup-Retry erhalten: ${error instanceof Error ? error.message : "unbekannter Fehler"}`);
+    return "retry_required";
   }
 };
 
@@ -839,16 +927,24 @@ const stageFacebookDraft = async (env: Env, run: StagingRunPayload): Promise<voi
   }
 };
 
-const inspectInstagramStaging = async (env: Env): Promise<void> => {
+const inspectInstagramStaging = async (
+  env: Env,
+  runId?: string,
+  cleanupAfterInspection = true,
+): Promise<void> => {
   await ensureStagingSchema(env);
   await failClosedExpiredCreateLeases(env);
   const finishedPollCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-  const targets = await env.DB.prepare(`SELECT * FROM upload_staging_targets
+  const runFilter = runId ? " AND run_id = ?" : "";
+  const query = `SELECT * FROM upload_staging_targets
     WHERE platform = 'instagram' AND (
       (transport_state = 'processing' AND workflow_state = 'ready')
       OR (transport_state = 'ready' AND workflow_state = 'container_unpublished'
         AND (expires_at <= ? OR updated_at <= ?))
-    ) ORDER BY updated_at ASC LIMIT 10`).bind(now(), finishedPollCutoff)
+    )${runFilter} ORDER BY updated_at ASC LIMIT 10`;
+  const bindings: unknown[] = [now(), finishedPollCutoff];
+  if (runId) bindings.push(runId);
+  const targets = await env.DB.prepare(query).bind(...bindings)
     .all<StagingTargetRow>();
   for (const target of targets.results ?? []) {
     if (!target.remote_object_id) {
@@ -858,7 +954,7 @@ const inspectInstagramStaging = async (env: Env): Promise<void> => {
         clearLease: true,
       });
       await recalculateStagingRun(env, target.run_id);
-      await cleanupStagingMediaIfSafe(env, target.run_id);
+      if (cleanupAfterInspection) await cleanupStagingMediaIfSafe(env, target.run_id);
       continue;
     }
     const leaseOwner = await claimInstagramInspection(env, target);
@@ -871,7 +967,7 @@ const inspectInstagramStaging = async (env: Env): Promise<void> => {
       });
       await stagingEvent(env, target.run_id, "instagram", "warning", "Der unveröffentlichte Instagram-Container ist erwartungsgemäß abgelaufen.");
       await recalculateStagingRun(env, target.run_id);
-      await cleanupStagingMediaIfSafe(env, target.run_id);
+      if (cleanupAfterInspection) await cleanupStagingMediaIfSafe(env, target.run_id);
       continue;
     }
     try {
@@ -929,7 +1025,7 @@ const inspectInstagramStaging = async (env: Env): Promise<void> => {
       });
     }
     await recalculateStagingRun(env, target.run_id);
-    await cleanupStagingMediaIfSafe(env, target.run_id);
+    if (cleanupAfterInspection) await cleanupStagingMediaIfSafe(env, target.run_id);
   }
 };
 
@@ -1293,6 +1389,19 @@ const getStagingRun = async (request: Request, env: Env, runId: string): Promise
   return response ? json(response) : json({ error: "Nicht gefunden." }, 404);
 };
 
+const pollStagingRun = async (request: Request, env: Env): Promise<Response> => {
+  const authorizationError = stagingAuthError(request, env);
+  if (authorizationError) return authorizationError;
+  const payload = await request.json().catch(() => null) as { runId?: unknown } | null;
+  const runId = typeof payload?.runId === "string" ? payload.runId : "";
+  if (!/^[a-z0-9][a-z0-9_-]{3,119}$/i.test(runId)) return json({ error: "Ungültige Run-ID." }, 400);
+  await inspectInstagramStaging(env, runId, false);
+  await recalculateStagingRun(env, runId);
+  const cleanupStatus = await cleanupStagingMediaIfSafe(env, runId);
+  const response = await stagingRunResponse(env, runId);
+  return response ? json({ ...response, cleanupStatus }) : json({ error: "Nicht gefunden." }, 404);
+};
+
 interface StagingFeedTargetRow extends StagingTargetRow { readonly content_id: string; }
 
 const stagingFeed = async (env: Env): Promise<Response> => {
@@ -1323,8 +1432,9 @@ const stagingFeed = async (env: Env): Promise<Response> => {
       contentId: target.content_id,
       platform: target.platform,
       mode: target.mode,
-      status: target.workflow_state === "container_unpublished" ? "upload_ready"
-        : target.workflow_state === "manual_uploaded" ? "manual_uploaded" : target.transport_state,
+      status: ["private_uploaded", "container_unpublished", "draft", "manual_uploaded"].includes(target.workflow_state)
+        ? target.workflow_state
+        : target.transport_state,
       updatedAt: target.updated_at,
       title: null,
       scheduledAt: null,
@@ -1682,6 +1792,7 @@ export default {
     if (request.method === "POST" && url.pathname === "/staging/runs") return createStagingRun(request, env);
     if (request.method === "POST" && url.pathname === "/staging/claims") return claimExternalStagingUpload(request, env);
     if (request.method === "POST" && url.pathname === "/staging/receipts") return saveStagingReceipt(request, env);
+    if (request.method === "POST" && url.pathname === "/staging/poll") return pollStagingRun(request, env);
     if (request.method === "GET" && url.pathname.startsWith("/staging/runs/")) {
       return getStagingRun(request, env, url.pathname.slice("/staging/runs/".length));
     }

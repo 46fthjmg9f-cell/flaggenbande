@@ -407,13 +407,19 @@ function assertMetaResponse(value, plan) {
       assertNonPublishingReceipt({ ...target, publishedAt: null, scheduledFor: null, publicUrl: null })
     }
   }
-  return { runId: value.runId, status: value.status, targets }
+  const cleanupStatuses = new Set(['not_applicable', 'waiting', 'blocked', 'cleaned', 'already_cleaned', 'retry_required'])
+  if (value.cleanupStatus !== undefined && !cleanupStatuses.has(value.cleanupStatus)) {
+    throw new Error('Meta-Staging meldete einen unbekannten Medien-Cleanupstatus.')
+  }
+  return { runId: value.runId, status: value.status, targets, cleanupStatus: value.cleanupStatus ?? null }
 }
 
 async function stageMeta(plan, args, recoverOnly = false) {
   if (recoverOnly) {
-    const response = await fetchWithPolicy(stagingApiUrl(`/staging/runs/${encodeURIComponent(plan.runId)}`), {
+    const response = await fetchWithPolicy(stagingApiUrl('/staging/poll'), {
+      method: 'POST',
       headers: stagingHeaders(),
+      body: JSON.stringify({ runId: plan.runId }),
     }, { safeToRetry: true })
     if (!response.ok) throw new Error(`Meta-Stagingstatus konnte nicht gelesen werden (HTTP ${response.status}).`)
     return assertMetaResponse(await response.json(), plan)
@@ -731,9 +737,13 @@ async function main() {
               transportState: result.status === 'completed' ? 'ready'
                 : ['failed', 'expired', 'reconcile_required'].includes(result.status) ? 'failed' : 'processing',
               workerStatus: result.status,
+              cleanupStatus: result.cleanupStatus,
             }
             if (['failed', 'expired', 'reconcile_required'].includes(result.status)) {
               record.execution.errors.push({ platform: 'meta', at: new Date().toISOString(), message: `Meta-Stagingstatus: ${result.status}` })
+            }
+            if (['blocked', 'retry_required'].includes(result.cleanupStatus)) {
+              record.execution.errors.push({ platform: 'meta', at: new Date().toISOString(), message: `Temporärer Medien-Cleanup: ${result.cleanupStatus}` })
             }
           } catch (error) {
             record.execution.targets.meta = {

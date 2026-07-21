@@ -62,6 +62,7 @@ test('staging feed is reduced to safe content-operation fields and confirmed non
     tiktok: 'manual_uploaded',
     facebook: 'draft',
   })
+  assert.ok(normalized.publications.every(entry => entry.runId === runId && entry.mode && entry.updatedAt === '2026-07-21T11:00:00.000Z'))
   assert.ok(normalized.publications.every(entry => entry.title === null && entry.scheduledAt === null && entry.publishedAt === null && entry.publicUrl === null))
   assert.doesNotMatch(JSON.stringify(normalized), /remoteObjectId|containerId|accountFingerprint|providerStatus|unveröffentlichter Titel|Brazil|private-id/)
 })
@@ -107,12 +108,23 @@ test('staging feed rejects public claims, authorization, mismatched modes, and i
 test('merge updates only safe staging sections and leaves publication counts at zero', () => {
   const merged = mergeStagingFeed(previous(), normalizeStagingFeed(feed()))
   assert.equal(merged.generatedAt, '2026-07-21T12:00:00.000Z')
-  assert.equal(merged.status, 'partial')
+  assert.equal(merged.status, 'ok')
   assert.equal(merged.runs.length, 1)
   assert.equal(merged.publications.length, 4)
   assert.ok(merged.platforms.every(entry => entry.status === 'ready'))
   assert.ok(merged.platforms.every(entry => entry.uploads === 1 && entry.publications === 0))
   assert.ok(merged.messages.some(message => message.includes('keine Veröffentlichung autorisiert')))
+})
+
+test('planned targets are not counted as completed uploads', () => {
+  const payload = feed()
+  payload.runs[0].status = 'partial'
+  payload.runs[0].completedAt = null
+  payload.publications[0].status = 'planned'
+  const merged = mergeStagingFeed(previous(), normalizeStagingFeed(payload))
+  assert.equal(merged.status, 'partial')
+  assert.equal(merged.platforms.find(entry => entry.platform === 'youtube').uploads, 0)
+  assert.equal(merged.platforms.find(entry => entry.platform === 'instagram').uploads, 1)
 })
 
 test('collector uses a public HTTPS feed without authorization headers', async () => {

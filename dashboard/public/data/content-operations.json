@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-21T09:08:57.633Z",
+  "generatedAt": "2026-07-21T09:53:38.807Z",
   "status": "partial",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Review-Einträge.",
@@ -48,21 +48,21 @@
       "platform": "youtube",
       "label": "YouTube",
       "status": "planned",
-      "uploads": 1,
+      "uploads": 0,
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
-      "updatedAt": "2026-07-21T09:08:57.633Z"
+      "updatedAt": "2026-07-21T08:58:10.562Z"
     },
     {
       "platform": "instagram",
       "label": "Instagram",
-      "status": "planned",
+      "status": "ready",
       "uploads": 1,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
-      "updatedAt": "2026-07-21T09:08:57.633Z"
+      "reason": "Instagram-Container ist upload-bereit und bleibt unveröffentlicht.",
+      "updatedAt": "2026-07-21T09:49:24.559Z"
     },
     {
       "platform": "tiktok",
@@ -72,17 +72,17 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Manueller TikTok-Upload bestätigt; Veröffentlichung bleibt unbestätigt.",
-      "updatedAt": "2026-07-21T09:08:57.633Z"
+      "updatedAt": "2026-07-21T08:58:10.562Z"
     },
     {
       "platform": "facebook",
       "label": "Facebook",
-      "status": "planned",
+      "status": "ready",
       "uploads": 1,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
-      "updatedAt": "2026-07-21T09:08:57.633Z"
+      "reason": "Facebook-Entwurf bestätigt; keine Veröffentlichung autorisiert.",
+      "updatedAt": "2026-07-21T09:14:33.719Z"
     }
   ],
   "runs": [
@@ -98,36 +98,48 @@
   ],
   "publications": [
     {
+      "runId": "upload-test-gameshow-five-flag-elevenlabs-v6",
       "contentId": "flaggenbande-b8caff95a562c7a4e6d356a4d43de4466d23f52d4d800ee3811f776e89d73cd6",
       "platform": "youtube",
+      "mode": "private",
       "status": "planned",
+      "updatedAt": "2026-07-21T08:58:10.562Z",
       "title": null,
       "scheduledAt": null,
       "publishedAt": null,
       "publicUrl": null
     },
     {
+      "runId": "upload-test-gameshow-five-flag-elevenlabs-v6",
       "contentId": "flaggenbande-b8caff95a562c7a4e6d356a4d43de4466d23f52d4d800ee3811f776e89d73cd6",
       "platform": "instagram",
-      "status": "planned",
+      "mode": "container_unpublished",
+      "status": "container_unpublished",
+      "updatedAt": "2026-07-21T09:49:24.559Z",
       "title": null,
       "scheduledAt": null,
       "publishedAt": null,
       "publicUrl": null
     },
     {
+      "runId": "upload-test-gameshow-five-flag-elevenlabs-v6",
       "contentId": "flaggenbande-b8caff95a562c7a4e6d356a4d43de4466d23f52d4d800ee3811f776e89d73cd6",
       "platform": "tiktok",
+      "mode": "manual_uploaded",
       "status": "manual_uploaded",
+      "updatedAt": "2026-07-21T08:58:10.562Z",
       "title": null,
       "scheduledAt": null,
       "publishedAt": null,
       "publicUrl": null
     },
     {
+      "runId": "upload-test-gameshow-five-flag-elevenlabs-v6",
       "contentId": "flaggenbande-b8caff95a562c7a4e6d356a4d43de4466d23f52d4d800ee3811f776e89d73cd6",
       "platform": "facebook",
-      "status": "planned",
+      "mode": "draft",
+      "status": "draft",
+      "updatedAt": "2026-07-21T09:14:33.719Z",
       "title": null,
       "scheduledAt": null,
       "publishedAt": null,

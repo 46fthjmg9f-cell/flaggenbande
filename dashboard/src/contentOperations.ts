@@ -42,9 +42,12 @@ export interface PublicProductionRun {
 }
 
 export interface PublicPublication {
+  runId: string
   contentId: string
   platform: PlatformId
+  mode: 'private' | 'container_unpublished' | 'manual_uploaded' | 'draft'
   status: PublicationStatus
+  updatedAt: string
   title: string | null
   scheduledAt: string | null
   publishedAt: string | null
@@ -195,9 +198,12 @@ function parsePublication(value: unknown, index: number): PublicPublication {
   const path = `publications[${index}]`
   const record = requiredRecord(value, path)
   return {
+    runId: requiredString(record.runId, `${path}.runId`),
     contentId: requiredString(record.contentId, `${path}.contentId`),
     platform: enumValue(record.platform, PLATFORM_IDS, `${path}.platform`),
+    mode: enumValue(record.mode, ['private', 'container_unpublished', 'manual_uploaded', 'draft'] as const, `${path}.mode`),
     status: enumValue(record.status, publicationStatuses, `${path}.status`),
+    updatedAt: requiredString(record.updatedAt, `${path}.updatedAt`),
     title: nullableString(record.title, `${path}.title`),
     scheduledAt: nullableString(record.scheduledAt, `${path}.scheduledAt`),
     publishedAt: nullableString(record.publishedAt, `${path}.publishedAt`),
