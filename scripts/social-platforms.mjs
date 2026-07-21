@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 const PLATFORM_NAMES = ['youtube', 'instagram', 'facebook', 'tiktok']
 const METRIC_NAMES = [
   'views',
@@ -101,6 +103,77 @@ const video = ({ platform, id, contentId, title, description, publishedAt, url, 
   metrics: compactMetrics(metrics || {}),
 })
 
+const nullableString = (value, maximumLength) => typeof value === 'string' && value.trim()
+  ? value.trim().slice(0, maximumLength)
+  : null
+
+const normalizedDate = value => {
+  if (value === null || value === undefined || value === '') return null
+  const date = new Date(value)
+  return Number.isNaN(date.valueOf()) ? null : date.toISOString().replace(/\.\d{3}Z$/, 'Z')
+}
+
+const upload = ({
+  platform,
+  id,
+  contentId,
+  title,
+  description,
+  uploadedAt,
+  publishedAt,
+  scheduledAt,
+  url,
+  thumbnailUrl,
+  status,
+  privacyStatus,
+  uploadStatus,
+  durationSeconds,
+}) => {
+  const normalizedPrivacy = nullableString(privacyStatus, 50)
+  const isNonPublicYouTube = platform === 'youtube' && normalizedPrivacy !== null && normalizedPrivacy !== 'public'
+  const rawId = String(id).trim().slice(0, 200)
+  return {
+    platform,
+    platformVideoId: isNonPublicYouTube
+      ? `non-public-${createHash('sha256').update(rawId).digest('hex').slice(0, 20)}`
+      : rawId,
+    contentId: isNonPublicYouTube ? null : nullableString(contentId, 200),
+    title: isNonPublicYouTube ? 'Nichtöffentlicher YouTube-Upload' : String(title || description || 'Ohne Titel').trim().slice(0, 240),
+    description: isNonPublicYouTube ? '' : String(description || '').trim().slice(0, 500),
+    uploadedAt: normalizedDate(uploadedAt),
+    publishedAt: isNonPublicYouTube ? null : normalizedDate(publishedAt),
+    scheduledAt: isNonPublicYouTube ? null : normalizedDate(scheduledAt),
+    url: isNonPublicYouTube ? null : nullableString(url, 500),
+    thumbnailUrl: isNonPublicYouTube ? null : nullableString(thumbnailUrl, 500),
+    status: nullableString(status, 50) ?? 'unknown',
+    privacyStatus: normalizedPrivacy,
+    uploadStatus: nullableString(uploadStatus, 50),
+    durationSeconds: numberOrNull(durationSeconds),
+  }
+}
+
+const youtubeUpload = item => {
+  const privacyStatus = nullableString(item.status?.privacyStatus, 50) ?? 'unknown'
+  const scheduledAt = normalizedDate(item.status?.publishAt)
+  const status = scheduledAt && privacyStatus === 'private' ? 'scheduled' : privacyStatus
+  const uploadedAt = normalizedDate(item.snippet?.publishedAt)
+  return upload({
+    platform: 'youtube',
+    id: item.id,
+    title: item.snippet?.title,
+    description: item.snippet?.description,
+    uploadedAt,
+    publishedAt: privacyStatus === 'public' ? uploadedAt : null,
+    scheduledAt,
+    url: `https://www.youtube.com/watch?v=${item.id}`,
+    thumbnailUrl: item.snippet?.thumbnails?.high?.url ?? item.snippet?.thumbnails?.default?.url,
+    status,
+    privacyStatus,
+    uploadStatus: item.status?.uploadStatus,
+    durationSeconds: parseIsoDuration(item.contentDetails?.duration),
+  })
+}
+
 async function googleAccessToken(env, fetchImpl) {
   if (env.YOUTUBE_ACCESS_TOKEN) return env.YOUTUBE_ACCESS_TOKEN
   const refreshToken = env.YOUTUBE_REFRESH_TOKEN || env.YOUTUBE_ANALYTICS_REFRESH_TOKEN
@@ -118,21 +191,38 @@ async function googleAccessToken(env, fetchImpl) {
   return response.access_token
 }
 
-async function collectYouTube(env, fetchImpl) {
-  const hasRefreshCredentials = Boolean(
+const hasYouTubeCredentials = env => Boolean(
+  env.YOUTUBE_ACCESS_TOKEN || (
     env.YOUTUBE_CLIENT_ID &&
     env.YOUTUBE_CLIENT_SECRET &&
-    (env.YOUTUBE_REFRESH_TOKEN || env.YOUTUBE_ANALYTICS_REFRESH_TOKEN),
-  )
-  if (!env.YOUTUBE_ACCESS_TOKEN && !hasRefreshCredentials) {
-    return { platform: 'youtube', status: 'not_configured', reason: 'YouTube OAuth secrets are missing.', videos: [] }
+    (env.YOUTUBE_REFRESH_TOKEN || env.YOUTUBE_ANALYTICS_REFRESH_TOKEN)
+  ),
+)
+
+async function collectYouTube(env, fetchImpl) {
+  if (!hasYouTubeCredentials(env)) {
+    return {
+      platform: 'youtube',
+      status: 'not_configured',
+      reason: 'YouTube OAuth secrets are missing.',
+      videos: [],
+      uploads: [],
+      uploadsRefreshed: false,
+    }
   }
   const token = await googleAccessToken(env, fetchImpl)
   const headers = bearer(token)
   const channels = await fetchJson(fetchImpl, 'https://www.googleapis.com/youtube/v3/channels?part=snippet,contentDetails&mine=true', { headers })
   const channel = channels.items?.[0]
-  const uploads = channel?.contentDetails?.relatedPlaylists?.uploads
-  if (!uploads) throw publicError(
+  const expectedChannelId = nullableString(env.YOUTUBE_CHANNEL_ID, 200)
+  if (expectedChannelId && nullableString(channel?.id, 200) !== expectedChannelId) {
+    throw publicError(
+      'The authorized YouTube channel does not match YOUTUBE_CHANNEL_ID.',
+      'The authorized YouTube channel does not match YOUTUBE_CHANNEL_ID.',
+    )
+  }
+  const uploadsPlaylistId = channel?.contentDetails?.relatedPlaylists?.uploads
+  if (!uploadsPlaylistId) throw publicError(
     'The authorized YouTube account has no uploads playlist.',
     'The authorized YouTube account has no uploads playlist.',
   )
@@ -140,7 +230,7 @@ async function collectYouTube(env, fetchImpl) {
   const ids = []
   let pageToken
   do {
-    const query = new URLSearchParams({ part: 'contentDetails', playlistId: uploads, maxResults: '50' })
+    const query = new URLSearchParams({ part: 'contentDetails', playlistId: uploadsPlaylistId, maxResults: '50' })
     if (pageToken) query.set('pageToken', pageToken)
     const page = await fetchJson(fetchImpl, `https://www.googleapis.com/youtube/v3/playlistItems?${query}`, { headers })
     ids.push(...(page.items ?? []).map(item => item.contentDetails?.videoId).filter(Boolean))
@@ -205,12 +295,15 @@ async function collectYouTube(env, fetchImpl) {
       },
     })
   })
+  const uploadInventory = detailItems.map(youtubeUpload)
   return {
     platform: 'youtube',
     status: analyticsAvailable ? 'available' : 'partial',
     reason: analyticsAvailable ? undefined : 'YouTube Data API works; Analytics scope or report access is still missing.',
     accountName: channel.snippet?.title ?? null,
     videos,
+    uploads: uploadInventory,
+    uploadsRefreshed: true,
   }
 }
 
@@ -400,13 +493,48 @@ async function collectTikTok(env, fetchImpl) {
 async function collectAnalyticsFeed(env, fetchImpl) {
   if (!env.SOCIAL_ANALYTICS_FEED_URL) return null
   const payload = await fetchJson(fetchImpl, env.SOCIAL_ANALYTICS_FEED_URL, {}, 1)
-  if (payload?.schemaVersion !== 1 || !payload.platforms || !Array.isArray(payload.videos)) {
+  if (
+    payload?.schemaVersion !== 1 ||
+    !payload.platforms ||
+    !Array.isArray(payload.videos) ||
+    (payload.uploads !== undefined && !Array.isArray(payload.uploads))
+  ) {
     throw publicError('The social analytics feed is invalid.', 'The social analytics feed is invalid.')
+  }
+  const uploadsProvided = Array.isArray(payload.uploads)
+  if (uploadsProvided && !payload.uploads.every(entry => {
+    if (!entry || typeof entry !== 'object') return false
+    if (!PLATFORM_NAMES.includes(entry.platform)) return false
+    if (typeof entry.platformVideoId !== 'string' || !entry.platformVideoId.trim() || entry.platformVideoId.length > 200) return false
+    if (!payload.platforms[entry.platform] || typeof payload.platforms[entry.platform] !== 'object') return false
+    for (const [name, maximumLength] of [
+      ['contentId', 200],
+      ['title', 240],
+      ['description', 500],
+      ['url', 500],
+      ['thumbnailUrl', 500],
+      ['status', 50],
+      ['privacyStatus', 50],
+      ['uploadStatus', 50],
+    ]) {
+      if (entry[name] !== undefined && entry[name] !== null && (typeof entry[name] !== 'string' || entry[name].length > maximumLength)) return false
+    }
+    for (const name of ['uploadedAt', 'publishedAt', 'scheduledAt']) {
+      if (entry[name] !== undefined && entry[name] !== null && normalizedDate(entry[name]) === null) return false
+    }
+    if (entry.durationSeconds !== undefined && entry.durationSeconds !== null) {
+      const duration = numberOrNull(entry.durationSeconds)
+      if (duration === null || duration < 0) return false
+    }
+    return true
+  })) {
+    throw publicError('The social analytics feed contains invalid upload inventory.', 'The social analytics feed is invalid.')
   }
   const generatedAt = typeof payload.generatedAt === 'string' ? payload.generatedAt : now()
   return Object.fromEntries(PLATFORM_NAMES.flatMap(platform => {
     const state = payload.platforms[platform]
     if (!state || typeof state !== 'object') return []
+    const stateStatus = ['available', 'partial', 'error', 'not_configured'].includes(state.status) ? state.status : 'error'
     const videos = payload.videos
       .filter(entry => entry?.platform === platform && entry?.platformVideoId)
       .map(entry => video({
@@ -423,12 +551,34 @@ async function collectAnalyticsFeed(env, fetchImpl) {
         metrics: entry.metrics,
       }))
       .filter(isPublishedVideo)
+    const uploads = uploadsProvided
+      ? payload.uploads
+        .filter(entry => entry.platform === platform)
+        .map(entry => upload({
+          platform,
+          id: entry.platformVideoId,
+          contentId: entry.contentId,
+          title: entry.title,
+          description: entry.description,
+          uploadedAt: entry.uploadedAt,
+          publishedAt: entry.publishedAt,
+          scheduledAt: entry.scheduledAt,
+          url: entry.url,
+          thumbnailUrl: entry.thumbnailUrl,
+          status: entry.status,
+          privacyStatus: entry.privacyStatus,
+          uploadStatus: entry.uploadStatus,
+          durationSeconds: entry.durationSeconds,
+        }))
+      : []
     return [[platform, {
       platform,
-      status: ['available', 'partial', 'error', 'not_configured'].includes(state.status) ? state.status : 'error',
+      status: stateStatus,
       reason: state.reason,
       accountName: state.accountName ?? null,
       videos,
+      uploads,
+      uploadsRefreshed: uploadsProvided && ['available', 'partial'].includes(stateStatus),
       startedAt: generatedAt,
       completedAt: state.completedAt ?? generatedAt,
     }]]
@@ -456,6 +606,8 @@ export function mergeSocialHistory(previous, current, capturedAt = now()) {
   const preservePlatforms = new Set(current.preservePlatforms ?? [])
   const hasRefreshMetadata = Array.isArray(current.refreshedPlatforms)
   const refreshedPlatforms = new Set(current.refreshedPlatforms ?? [])
+  const hasUploadRefreshMetadata = Array.isArray(current.refreshedUploadPlatforms)
+  const refreshedUploadPlatforms = new Set(current.refreshedUploadPlatforms ?? [])
   const videosByKey = new Map()
   for (const entry of previous?.videos ?? []) {
     if (!isPublishedVideo(entry)) continue
@@ -468,6 +620,18 @@ export function mergeSocialHistory(previous, current, capturedAt = now()) {
   }
   const videos = [...videosByKey.values()]
   const liveVideoKeys = new Set(videos.map(entry => `${entry.platform}:${entry.platformVideoId}`))
+
+  const uploadsByKey = new Map()
+  for (const entry of previous?.uploads ?? []) {
+    if (!entry?.platform || !entry?.platformVideoId) continue
+    if (!hasUploadRefreshMetadata || preservePlatforms.has(entry.platform) || !refreshedUploadPlatforms.has(entry.platform)) {
+      uploadsByKey.set(`${entry.platform}:${entry.platformVideoId}`, entry)
+    }
+  }
+  for (const entry of current.uploads ?? []) {
+    if (entry?.platform && entry?.platformVideoId) uploadsByKey.set(`${entry.platform}:${entry.platformVideoId}`, entry)
+  }
+  const uploads = [...uploadsByKey.values()]
 
   const snapshotByKey = new Map()
   const cutoff = Date.now() - (90 * 86400000)
@@ -488,6 +652,11 @@ export function mergeSocialHistory(previous, current, capturedAt = now()) {
     platforms: current.platforms,
     totals: summarizeMetrics(videos),
     videos: videos.sort((left, right) => String(right.publishedAt ?? '').localeCompare(String(left.publishedAt ?? ''))),
+    uploads: uploads.sort((left, right) => {
+      const rightDate = right.scheduledAt ?? right.uploadedAt ?? right.publishedAt ?? ''
+      const leftDate = left.scheduledAt ?? left.uploadedAt ?? left.publishedAt ?? ''
+      return String(rightDate).localeCompare(String(leftDate))
+    }),
     snapshots: [...snapshotByKey.values()].sort((left, right) => left.capturedAt.localeCompare(right.capturedAt)),
   }
 }
@@ -507,40 +676,55 @@ export async function collectSocialPlatforms({ env = process.env, fetchImpl = fe
   }
   const results = await Promise.all(PLATFORM_NAMES.map(async platform => {
     const feedResult = feedResults?.[platform]
+    if (platform === 'youtube' && hasYouTubeCredentials(env)) {
+      return collectSafely(platform, collectors[platform])
+    }
     if (feedResult && feedResult.status !== 'not_configured') return feedResult
     return collectSafely(platform, collectors[platform])
   }))
   const videos = results.flatMap(result => result.videos)
+  const uploads = results.flatMap(result => result.uploads ?? [])
   const preservePlatforms = []
   const refreshedPlatforms = []
+  const refreshedUploadPlatforms = []
   const current = {
     platforms: Object.fromEntries(PLATFORM_NAMES.map(name => {
       const result = results.find(entry => entry.platform === name)
       const previousState = previous?.platforms?.[name]
       refreshedPlatforms.push(name)
+      if (result?.uploadsRefreshed) refreshedUploadPlatforms.push(name)
       if (result?.status === 'error' && ['available', 'partial'].includes(previousState?.status)) {
         preservePlatforms.push(name)
         const previousVideoCount = (previous?.videos ?? []).filter(entry => entry.platform === name && isPublishedVideo(entry)).length
+        const previousUploadCount = (previous?.uploads ?? []).filter(entry => entry.platform === name).length
         return [name, {
           ...previousState,
           reason: `Letzte Aktualisierung fehlgeschlagen; bekannte Daten bleiben erhalten. ${result.reason}`.slice(0, 300),
           videoCount: previousVideoCount,
+          uploadCount: previousState.uploadCount ?? Math.max(previousUploadCount, previousVideoCount),
           startedAt: result.startedAt ?? previousState.startedAt ?? null,
           completedAt: result.completedAt ?? previousState.completedAt ?? null,
         }]
       }
+      const publishedVideoCount = result?.videos.filter(isPublishedVideo).length ?? 0
+      const knownUploadCount = result?.uploadsRefreshed
+        ? (result.uploads?.length ?? 0)
+        : (previousState?.uploadCount ?? publishedVideoCount)
       return [name, {
         status: result?.status ?? 'error',
         reason: result?.reason,
         accountName: result?.accountName ?? null,
-        videoCount: result?.videos.length ?? 0,
+        videoCount: publishedVideoCount,
+        uploadCount: Math.max(publishedVideoCount, knownUploadCount),
         startedAt: result?.startedAt ?? null,
         completedAt: result?.completedAt ?? null,
       }]
     })),
     videos,
+    uploads,
     preservePlatforms,
     refreshedPlatforms,
+    refreshedUploadPlatforms,
   }
   return mergeSocialHistory(previous, current)
 }
