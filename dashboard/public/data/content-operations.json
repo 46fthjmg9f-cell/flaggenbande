@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-21T08:59:41.229Z",
+  "generatedAt": "2026-07-21T09:08:57.633Z",
   "status": "partial",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Review-Einträge.",
@@ -52,7 +52,7 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
-      "updatedAt": "2026-07-21T08:59:41.229Z"
+      "updatedAt": "2026-07-21T09:08:57.633Z"
     },
     {
       "platform": "instagram",
@@ -62,7 +62,7 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
-      "updatedAt": "2026-07-21T08:59:41.229Z"
+      "updatedAt": "2026-07-21T09:08:57.633Z"
     },
     {
       "platform": "tiktok",
@@ -72,7 +72,7 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Manueller TikTok-Upload bestätigt; Veröffentlichung bleibt unbestätigt.",
-      "updatedAt": "2026-07-21T08:59:41.229Z"
+      "updatedAt": "2026-07-21T09:08:57.633Z"
     },
     {
       "platform": "facebook",
@@ -82,7 +82,7 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
-      "updatedAt": "2026-07-21T08:59:41.229Z"
+      "updatedAt": "2026-07-21T09:08:57.633Z"
     }
   ],
   "runs": [
