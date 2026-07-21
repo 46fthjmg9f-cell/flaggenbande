@@ -994,6 +994,9 @@ const stagingTargetResponse = (target: StagingTargetRow): Record<string, unknown
   workflowState: target.workflow_state,
   remoteObjectId: target.remote_object_id,
   providerStatus: target.provider_status,
+  confirmedAt: ["private_uploaded", "container_unpublished", "draft"].includes(target.workflow_state)
+    ? target.updated_at
+    : null,
   expiresAt: target.expires_at,
   lastError: target.last_error,
   publishedAt: null,
