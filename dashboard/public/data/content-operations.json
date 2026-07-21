@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-21T17:01:29.942Z",
+  "generatedAt": "2026-07-21T21:38:12.155Z",
   "status": "error",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Prüfungen.",
     "Noch ist kein Datensatz für die Produktion freigegeben. Die menschliche Prüfung ist für alle 193 Länder ausstehend.",
     "Der Cloud-Speicher wurde über die lokale Bereitstellung geprüft; der tatsächliche Cloud-Abgleich ist noch nicht bestätigt.",
-    "Nichtöffentlicher Testlauf zum Hochladen: 2 Läufe mit 8 sicheren Plattformzuständen; keine Veröffentlichung autorisiert."
+    "Nichtöffentlicher Testlauf zum Hochladen: 3 Läufe mit 12 sicheren Plattformzuständen; keine Veröffentlichung autorisiert."
   ],
   "system": [
     {
@@ -47,21 +47,21 @@
       "platform": "youtube",
       "label": "YouTube",
       "status": "ready",
-      "uploads": 1,
+      "uploads": 2,
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Privates YouTube-Testvideo wurde hochgeladen; keine Veröffentlichung autorisiert.",
-      "updatedAt": "2026-07-21T16:50:44.006Z"
+      "updatedAt": "2026-07-21T19:33:47.174Z"
     },
     {
       "platform": "instagram",
       "label": "Instagram",
-      "status": "planned",
+      "status": "failed",
       "uploads": 0,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Das nichtöffentliche Hochladen ist vorbereitet.",
-      "updatedAt": "2026-07-21T16:50:38.929Z"
+      "reason": "Das nichtöffentliche Hochladen ist fehlgeschlagen.",
+      "updatedAt": "2026-07-21T20:17:14.684Z"
     },
     {
       "platform": "tiktok",
@@ -71,20 +71,29 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Das nichtöffentliche Hochladen ist vorbereitet.",
-      "updatedAt": "2026-07-21T16:50:38.929Z"
+      "updatedAt": "2026-07-21T19:33:40.631Z"
     },
     {
       "platform": "facebook",
       "label": "Facebook",
-      "status": "planned",
-      "uploads": 1,
+      "status": "ready",
+      "uploads": 2,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Das nichtöffentliche Hochladen ist vorbereitet.",
-      "updatedAt": "2026-07-21T16:50:38.929Z"
+      "reason": "Facebook-Entwurf bestätigt; keine Veröffentlichung autorisiert.",
+      "updatedAt": "2026-07-21T19:44:17.818Z"
     }
   ],
   "runs": [
+    {
+      "runId": "upload-gameshow-v8-check-das-mal-aus",
+      "contentId": "flaggenbande-60b324334e3dfad6864547fcfc6ca6f95fb181dcf2d33b1741308a5cfa41900f",
+      "title": null,
+      "status": "failed",
+      "qualityStatus": "passed",
+      "startedAt": "2026-07-21T17:41:37.000Z",
+      "completedAt": null
+    },
     {
       "runId": "upload-gameshow-v7-professional-cold-open-experiment",
       "contentId": "flaggenbande-adeebf2787e0b5a8c64b924bc1ff6cb02504520b3af1b195993ada6ce35d95f9",
@@ -105,6 +114,54 @@
     }
   ],
   "publications": [
+    {
+      "runId": "upload-gameshow-v8-check-das-mal-aus",
+      "contentId": "flaggenbande-60b324334e3dfad6864547fcfc6ca6f95fb181dcf2d33b1741308a5cfa41900f",
+      "platform": "youtube",
+      "mode": "private",
+      "status": "private",
+      "updatedAt": "2026-07-21T19:33:47.174Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-gameshow-v8-check-das-mal-aus",
+      "contentId": "flaggenbande-60b324334e3dfad6864547fcfc6ca6f95fb181dcf2d33b1741308a5cfa41900f",
+      "platform": "instagram",
+      "mode": "container_unpublished",
+      "status": "failed",
+      "updatedAt": "2026-07-21T20:17:14.684Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-gameshow-v8-check-das-mal-aus",
+      "contentId": "flaggenbande-60b324334e3dfad6864547fcfc6ca6f95fb181dcf2d33b1741308a5cfa41900f",
+      "platform": "tiktok",
+      "mode": "manual_uploaded",
+      "status": "planned",
+      "updatedAt": "2026-07-21T19:33:40.631Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-gameshow-v8-check-das-mal-aus",
+      "contentId": "flaggenbande-60b324334e3dfad6864547fcfc6ca6f95fb181dcf2d33b1741308a5cfa41900f",
+      "platform": "facebook",
+      "mode": "draft",
+      "status": "draft",
+      "updatedAt": "2026-07-21T19:44:17.818Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
     {
       "runId": "upload-gameshow-v7-professional-cold-open-experiment",
       "contentId": "flaggenbande-adeebf2787e0b5a8c64b924bc1ff6cb02504520b3af1b195993ada6ce35d95f9",
