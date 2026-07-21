@@ -1,8 +1,10 @@
 # Flaggenbande Analytics Dashboard
 
-Das Dashboard ist ein statisches Vite/React-Frontend für GitHub Pages. Die App- und Plattformauswertung liest `public/data/dashboard.json`. Diese Datei enthält nur aggregierte Kennzahlen und wird durch GitHub Actions erzeugt; weder API-Schlüssel noch CloudKit-Rohdaten noch Spieleridentitäten werden publiziert.
+Das Dashboard ist ein statisches Vite/React-Frontend für GitHub Pages. Es trennt die öffentlichen Daten in vier unabhängig benannte Hauptbereiche: **App & Entwicklung**, **Videos**, **Social Stats** und **Finanzen**. Die sichtbaren Namen und ihre Reihenfolge liegen zentral in `src/dashboardSections.ts` und können ohne Änderung der Seitenlogik angepasst werden.
 
-Zusätzlich liest der Tab **Content-System** den versionierten öffentlichen Vertrag `public/data/content-operations.json`. Er zeigt den freigegebenen Produktions-, Quality- und Plattformstatus. Unveröffentlichte Titel, lokale Pfade, Rohdaten und Zugangsdaten dürfen nicht in diese Datei geschrieben werden. Der serverseitige Social-Collector erkennt veröffentlichte Plattformvideos über die autorisierten Konten automatisch; manuelle Videolinks sind nicht erforderlich.
+Die App-, Social- und Finanzauswertung liest `public/data/dashboard.json`. Diese Datei enthält nur aggregierte Kennzahlen und wird durch GitHub Actions erzeugt; weder API-Schlüssel noch CloudKit-Rohdaten noch Spieleridentitäten werden publiziert.
+
+Der Bereich **Videos** liest zusätzlich den versionierten öffentlichen Vertrag `public/data/content-operations.json`. Er zeigt pro Video den freigegebenen Produktions-, Quality- und Plattformstatus. Social-Performance wird ausschließlich in **Social Stats**, Finanzwerte ausschließlich in **Finanzen** dargestellt. Unveröffentlichte Titel, lokale Pfade, Rohdaten und Zugangsdaten dürfen nicht in die öffentlichen Dateien geschrieben werden. Der serverseitige Social-Collector erkennt veröffentlichte Plattformvideos über die autorisierten Konten automatisch; manuelle Videolinks sind nicht erforderlich.
 
 ## Lokale Prüfung
 

@@ -40,6 +40,12 @@ const platformAbbreviations = {
   facebook: 'FB',
 } as const
 
+const qualityLabels = {
+  not_run: 'Noch nicht geprüft',
+  passed: 'Qualität bestanden',
+  failed: 'Qualität fehlgeschlagen',
+} as const
+
 function formatTimestamp(value: string | null): string {
   if (!value) return 'Noch keine Plattformdaten'
   const timestamp = new Date(value)
@@ -47,8 +53,14 @@ function formatTimestamp(value: string | null): string {
   return new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(timestamp)
 }
 
-function formatNumber(value: number | null): string {
-  return value === null ? '—' : new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(value)
+function humanRunTitle(runId: string, title: string | null): string {
+  if (title) return title
+  const cleaned = runId
+    .replace(/^upload-test-/, '')
+    .replace(/^gameshow-/, '')
+    .replace(/-v(\d+)$/, ' · V$1')
+    .replaceAll('-', ' ')
+  return cleaned.replace(/\b\w/g, letter => letter.toUpperCase())
 }
 
 function EmptyState({ title, detail }: { title: string; detail: string }) {
@@ -79,18 +91,22 @@ export default function ContentSystemDashboard() {
     void refresh()
   }, [])
 
-  const runLabels = new Map(data.runs.map(run => [run.runId, run.title ?? run.runId]))
+  const videoRuns = data.runs.map(run => ({
+    ...run,
+    displayTitle: humanRunTitle(run.runId, run.title),
+    publications: data.publications.filter(publication => publication.runId === run.runId),
+  }))
 
-  return <section id="content-system-view" className="dashboard-view" role="tabpanel" aria-labelledby="content-system-tab" tabIndex={0}>
+  return <section id="videos-view" className="dashboard-view" role="tabpanel" aria-labelledby="videos-tab" tabIndex={0}>
     <header className="hero content-hero">
       <div>
-        <span className="eyebrow">FLAGGENBANDE · CONTENT-SYSTEM</span>
-        <h1>Produktion und Plattformen.</h1>
-        <p>Diese öffentliche Ansicht zeigt ausschließlich bereinigte Betriebs- und Leistungsdaten. Zugangsdaten, lokale Pfade und unveröffentlichte Inhalte bleiben außerhalb des Browsers.</p>
+        <span className="eyebrow">FLAGGENBANDE · VIDEO-STUDIO</span>
+        <h1>Von der Idee bis zum Upload.</h1>
+        <p>Produktionsstand, Qualitätsprüfung und Plattformstatus jedes Videos in einer gemeinsamen Ansicht. Social Performance und App-Daten befinden sich in ihren eigenen Bereichen.</p>
       </div>
       <div className="sync-controls">
         <div className={`sync-state ${data.status}`}><span className="pulse" />{formatTimestamp(data.generatedAt)}</div>
-        <button className="refresh" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Content-Status aktualisieren'}</button>
+        <button className="refresh" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Video-Status aktualisieren'}</button>
         <small>Öffentlicher Snapshot · Schema {data.schemaVersion}</small>
       </div>
     </header>
@@ -108,30 +124,25 @@ export default function ContentSystemDashboard() {
       </article>)}</div> : <EmptyState title="Systemstatus noch nicht vorhanden" detail="Der erste sichere Datenexport ergänzt Engine, Release, Datenbank und Quality-Gate." />}
     </section>
 
-    <section className="content-section" aria-labelledby="platform-status-title">
-      <div className="section-heading"><div><span>PLATTFORMEN</span><h2 id="platform-status-title">Upload-Verbindungen</h2></div><p>Keine Zugangsdaten im Dashboard</p></div>
-      {data.platforms.length > 0 ? <div className="platform-grid">{data.platforms.map(platform => <article className="platform-card" key={platform.platform}>
-        <div className="platform-card-heading"><span className={`platform-mark ${platform.platform}`} aria-hidden="true">{platformAbbreviations[platform.platform]}</span><div><strong>{platform.label}</strong><span className={`status-badge ${platform.status}`}>{statusLabels[platform.status]}</span></div></div>
-        <dl><div><dt>Uploads</dt><dd>{platform.uploads}</dd></div><div><dt>Veröffentlicht</dt><dd>{platform.publications}</dd></div><div><dt>Performance</dt><dd>{platform.performanceAvailable ? 'Verfügbar' : 'Noch nicht'}</dd></div></dl>
-        <p>{platform.reason}</p><small>{platform.updatedAt ? `Stand ${formatTimestamp(platform.updatedAt)}` : 'Noch kein Plattform-Sync'}</small>
-      </article>)}</div> : <EmptyState title="Plattformstatus nicht verfügbar" detail="Der öffentliche Datenexport enthält aktuell keine Plattformverbindungen." />}
+    <section className="content-section" aria-labelledby="video-overview-title">
+      <div className="section-heading"><div><span>VIDEOS</span><h2 id="video-overview-title">Produktionsübersicht</h2></div><p>Ein Eintrag pro Video · alle Plattformen gemeinsam</p></div>
+      {videoRuns.length === 0 ? <EmptyState title="Noch keine Produktionsläufe" detail="Nach dem ersten Video-Lauf erscheinen hier Produktion, Quality-Gate und Uploadstatus gemeinsam." /> : <div className="video-operations-list">{videoRuns.map(run => <article className="video-operation-card" key={run.runId}>
+        <div className="video-operation-heading">
+          <div><span>VIDEO</span><h3>{run.displayTitle}</h3><small>Gestartet {formatTimestamp(run.startedAt)}</small></div>
+          <span className={`status-badge ${run.status}`}>{statusLabels[run.status]}</span>
+        </div>
+        <dl className="video-operation-meta">
+          <div><dt>Produktion</dt><dd>{statusLabels[run.status]}</dd></div>
+          <div><dt>Qualitätsprüfung</dt><dd className={run.qualityStatus === 'passed' ? 'quality-passed' : run.qualityStatus === 'failed' ? 'quality-failed' : ''}>{qualityLabels[run.qualityStatus]}</dd></div>
+          <div><dt>Abgeschlossen</dt><dd>{run.completedAt ? formatTimestamp(run.completedAt) : 'Noch offen'}</dd></div>
+        </dl>
+        <div className="video-platform-row" aria-label="Plattformstatus">{run.publications.length > 0 ? run.publications.map(publication => <span className={`video-platform-status ${publication.platform} ${publication.status}`} key={publication.platform}>
+          <b>{platformAbbreviations[publication.platform]}</b><span>{statusLabels[publication.status]}</span>
+        </span>) : <span className="video-platform-empty">Noch keine Uploadstände</span>}</div>
+        <details className="technical-reference"><summary>Interne Referenz</summary><code>{run.runId}</code></details>
+      </article>)}</div>}
     </section>
 
-    <section className="content-activity-grid" aria-label="Produktion, Uploads und Performance">
-      <article className="content-activity-card">
-        <div className="activity-heading"><span>PRODUKTION</span><h2>Letzte Läufe</h2></div>
-        {data.runs.length === 0 ? <EmptyState title="Noch keine Produktionsläufe" detail="Produktionsdaten erscheinen nach dem ersten stabilen Renderer-Lauf." /> : <ul className="activity-list">{data.runs.map(run => <li key={run.runId}><div><strong>{run.title ?? run.runId}</strong><small>{run.contentId}</small></div><span className={`status-badge ${run.status}`}>{statusLabels[run.status]}</span></li>)}</ul>}
-      </article>
-      <article className="content-activity-card">
-        <div className="activity-heading"><span>UPLOADS</span><h2>Sichere Teststände</h2></div>
-        {data.publications.length === 0 ? <EmptyState title="Noch keine Testuploads" detail="Nichtöffentliche Teststände erscheinen nach dem ersten sicheren Staging-Lauf." /> : <ul className="activity-list">{data.publications.map(publication => <li key={`${publication.runId}-${publication.platform}`}><div><strong>{publication.title ?? runLabels.get(publication.runId) ?? publication.contentId}</strong><small>{publication.platform} · {publication.contentId}</small></div><span className={`status-badge ${publication.status}`}>{statusLabels[publication.status]}</span></li>)}</ul>}
-      </article>
-      <article className="content-activity-card">
-        <div className="activity-heading"><span>PERFORMANCE</span><h2>Plattformvergleich</h2></div>
-        {data.performance.length === 0 ? <EmptyState title="Noch keine Performancewerte" detail="Nicht verfügbare Plattformmetriken werden nicht als Nullwerte dargestellt." /> : <ul className="activity-list">{data.performance.map((snapshot, index) => <li key={`${snapshot.contentId}-${snapshot.platform}-${index}`}><div><strong>{snapshot.contentId}</strong><small>{snapshot.platform}</small></div><span>{formatNumber(snapshot.views)} Views</span></li>)}</ul>}
-      </article>
-    </section>
-
-    <footer>Flaggenbande Content-System · GitHub Pages zeigt keine Tokens, API-Schlüssel, lokalen Pfade oder unveröffentlichten Videoinhalte.</footer>
+    <footer>Flaggenbande Video-Studio · GitHub Pages zeigt keine Tokens, API-Schlüssel, lokalen Pfade oder unveröffentlichten Videoinhalte.</footer>
   </section>
 }
