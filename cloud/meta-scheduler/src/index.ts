@@ -5,7 +5,10 @@ interface D1Statement {
   first<T>(): Promise<T | null>;
 }
 
-interface D1Database { prepare(query: string): D1Statement; }
+interface D1Database {
+  prepare(query: string): D1Statement;
+  batch(statements: D1Statement[]): Promise<unknown>;
+}
 interface ScheduledEvent { readonly scheduledTime: number; }
 interface ExportedHandler<T> {
   fetch?(request: Request, env: T): Response | Promise<Response>;
@@ -15,6 +18,12 @@ interface ExportedHandler<T> {
 export interface Env {
   DB: D1Database;
   META_QUEUE_TOKEN: string;
+  /** Optional dedicated token for the non-publishing staging lane. */
+  UPLOAD_STAGING_TOKEN?: string;
+  /** Public expected YouTube destination; used only for server-side idempotency binding. */
+  YOUTUBE_CHANNEL_ID?: string;
+  /** Only this temporary Cloudflare Pages project may serve staging media. */
+  UPLOAD_STAGING_MEDIA_PROJECT?: string;
   ANALYTICS_INGEST_TOKEN?: string;
   META_ACCESS_TOKEN: string;
   META_INSTAGRAM_ACCOUNT_ID: string;
@@ -29,6 +38,12 @@ export interface Env {
 type Platform = "instagram" | "facebook";
 type SocialPlatform = Platform | "youtube" | "tiktok";
 type JobStatus = "scheduled" | "processing" | "waiting_for_meta" | "published" | "failed";
+type StagingPlatform = "youtube" | "instagram" | "facebook" | "tiktok";
+type StagingMode = "private" | "container_unpublished" | "draft" | "manual_uploaded";
+type StagingTransport = "planned" | "uploading" | "processing" | "ready" | "failed" | "expired" | "reconcile_required";
+type StagingWorkflow = "ready" | "private_uploaded" | "container_unpublished" | "draft" | "manual_uploaded" | "failed" | "expired" | "reconcile_required" | "safety_violation";
+type StagingRunStatus = "planned" | "running" | "partial" | "completed" | "failed" | "expired" | "reconcile_required" | "safety_violation";
+type StagingVisibility = "not_created" | "non_public" | "unknown";
 
 interface SocialMetrics {
   readonly views: number | null;
@@ -97,6 +112,114 @@ interface EnqueuePayload {
   readonly mediaBranch: string;
 }
 
+interface StagingTargetInput {
+  readonly platform: StagingPlatform;
+  readonly mode: StagingMode;
+  readonly accountFingerprint: string;
+  readonly idempotencyKey: string;
+  readonly transportState: StagingTransport;
+  readonly visibilityState: StagingVisibility;
+  readonly workflowState: StagingWorkflow;
+  readonly publishedAt: null;
+  readonly scheduledFor: null;
+  readonly publicUrl: null;
+}
+
+interface StagingMetadata {
+  readonly youtubeTitle: string;
+  readonly description: string;
+  readonly language: "en";
+  readonly hashtags?: readonly string[];
+  readonly forbiddenAnswerTerms?: readonly string[];
+}
+
+interface StagingRunPayload {
+  readonly schemaVersion: 1;
+  readonly lane: "non-publishing";
+  readonly runId: string;
+  readonly contentId: string;
+  readonly assetSha256: string;
+  readonly metadataSha256: string;
+  readonly createdAt: string;
+  readonly qualityStatus: "passed";
+  readonly publicationAuthorized: false;
+  readonly metadata: StagingMetadata;
+  readonly targets: readonly StagingTargetInput[];
+  readonly executeMeta?: boolean;
+  readonly mediaUrl?: string;
+  readonly mediaProject?: string;
+  readonly mediaBranch?: string;
+}
+
+interface StagingRunRow {
+  readonly run_id: string;
+  readonly content_id: string;
+  readonly asset_sha256: string;
+  readonly metadata_sha256: string;
+  readonly metadata_json: string;
+  readonly status: StagingRunStatus;
+  readonly quality_status: "passed";
+  readonly publication_authorized: 0;
+  readonly execution_requested: 0 | 1;
+  readonly media_url: string | null;
+  readonly media_project: string | null;
+  readonly media_branch: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly completed_at: string | null;
+  readonly media_cleaned_at: string | null;
+}
+
+interface StagingTargetRow {
+  readonly run_id: string;
+  readonly platform: StagingPlatform;
+  readonly mode: StagingMode;
+  readonly idempotency_key: string;
+  readonly initial_transport_state: "planned" | "ready";
+  readonly initial_visibility_state: "not_created" | "unknown";
+  readonly initial_workflow_state: "ready" | "manual_uploaded";
+  readonly transport_state: StagingTransport;
+  readonly visibility_state: StagingVisibility;
+  readonly workflow_state: StagingWorkflow;
+  readonly remote_object_id: string | null;
+  readonly provider_status: string | null;
+  readonly expires_at: string | null;
+  readonly receipt_sha256: string | null;
+  readonly remote_create_started_at: string | null;
+  readonly lease_owner: string | null;
+  readonly lease_expires_at: string | null;
+  readonly last_error: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+interface StagingReceiptPayload {
+  readonly schemaVersion: 1;
+  readonly lane: "non-publishing";
+  readonly runId: string;
+  readonly platform: StagingPlatform;
+  readonly idempotencyKey: string;
+  readonly claimId: string;
+  readonly accountFingerprint: string;
+  readonly confirmedAt: string;
+  readonly transportState: "ready";
+  readonly visibilityState: "non_public";
+  readonly workflowState: "private_uploaded" | "container_unpublished" | "draft" | "manual_uploaded";
+  readonly remoteObjectId?: string | null;
+  readonly providerStatus?: string | null;
+  readonly publishedAt: null;
+  readonly scheduledFor: null;
+  readonly publicUrl: null;
+}
+
+interface StagingClaimPayload {
+  readonly schemaVersion: 1;
+  readonly lane: "non-publishing";
+  readonly runId: string;
+  readonly platform: "youtube";
+  readonly idempotencyKey: string;
+}
+
 const json = (value: unknown, status = 200): Response => new Response(JSON.stringify(value), {
   status,
   headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
@@ -114,6 +237,322 @@ const validPayload = (value: unknown): value is EnqueuePayload => {
     typeof item.mediaUrl === "string" && item.mediaUrl.startsWith("https://") &&
     typeof item.mediaProject === "string" && typeof item.mediaBranch === "string" &&
     typeof item.metadata === "object" && item.metadata !== null && !Array.isArray(item.metadata);
+};
+
+const stagingPlatforms: readonly StagingPlatform[] = ["youtube", "instagram", "facebook", "tiktok"];
+const stagingModes: Readonly<Record<StagingPlatform, StagingMode>> = {
+  youtube: "private",
+  instagram: "container_unpublished",
+  facebook: "draft",
+  tiktok: "manual_uploaded",
+};
+const completedStagingWorkflows: Readonly<Record<StagingPlatform, StagingWorkflow>> = {
+  youtube: "private_uploaded",
+  instagram: "container_unpublished",
+  facebook: "draft",
+  tiktok: "manual_uploaded",
+};
+
+const recordValue = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const canonicalJson = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (recordValue(value)) {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const sha256Hex = async (value: unknown): Promise<string> => {
+  const bytes = new TextEncoder().encode(canonicalJson(value));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((part) => part.toString(16).padStart(2, "0")).join("");
+};
+
+const safeHttpsUrl = (value: unknown): value is string => {
+  if (typeof value !== "string" || value.length > 2048) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+};
+
+const validStagingPayload = (value: unknown): value is StagingRunPayload => {
+  if (!recordValue(value)) return false;
+  const item = value as Record<string, unknown>;
+  if (item.schemaVersion !== 1 || item.lane !== "non-publishing" || item.qualityStatus !== "passed" || item.publicationAuthorized !== false) return false;
+  if (typeof item.runId !== "string" || !/^[a-z0-9][a-z0-9_-]{3,119}$/i.test(item.runId)) return false;
+  if (typeof item.contentId !== "string" || !/^flaggenbande-[a-f0-9]{64}$/i.test(item.contentId)) return false;
+  if (typeof item.assetSha256 !== "string" || !/^[a-f0-9]{64}$/i.test(item.assetSha256)) return false;
+  if (typeof item.metadataSha256 !== "string" || !/^[a-f0-9]{64}$/i.test(item.metadataSha256)) return false;
+  if (item.contentId.toLowerCase() !== `flaggenbande-${item.assetSha256.toLowerCase()}`) return false;
+  if (typeof item.createdAt !== "string" || !Number.isFinite(Date.parse(item.createdAt))) return false;
+  if (item.executeMeta !== undefined && typeof item.executeMeta !== "boolean") return false;
+  if (!recordValue(item.metadata)) return false;
+  const details = item.metadata as Record<string, unknown>;
+  if (typeof details.youtubeTitle !== "string" || !details.youtubeTitle.trim() || details.youtubeTitle.length > 100) return false;
+  if (typeof details.description !== "string" || !details.description.trim() || details.description.length > 2200 || details.language !== "en") return false;
+  if (details.hashtags !== undefined && (!Array.isArray(details.hashtags) || details.hashtags.some((tag) => typeof tag !== "string"))) return false;
+  if (details.forbiddenAnswerTerms !== undefined && (!Array.isArray(details.forbiddenAnswerTerms) || details.forbiddenAnswerTerms.some((term) => typeof term !== "string"))) return false;
+  if (!Array.isArray(item.targets) || item.targets.length !== stagingPlatforms.length) return false;
+  const platforms = new Set<string>();
+  const idempotencyKeys = new Set<string>();
+  for (const raw of item.targets) {
+    if (!recordValue(raw)) return false;
+    const target = raw as Record<string, unknown>;
+    const platform = target.platform as StagingPlatform;
+    if (!stagingPlatforms.includes(platform) || platforms.has(platform) || target.mode !== stagingModes[platform]) return false;
+    if (typeof target.accountFingerprint !== "string" || !target.accountFingerprint.trim() || target.accountFingerprint.length > 200) return false;
+    if (typeof target.idempotencyKey !== "string" || !/^[a-f0-9]{64}$/i.test(target.idempotencyKey) || idempotencyKeys.has(target.idempotencyKey)) return false;
+    if (target.publishedAt !== null || target.scheduledFor !== null || target.publicUrl !== null) return false;
+    const validInitialState = platform === "tiktok"
+      ? (target.transportState === "planned" && target.workflowState === "ready" && target.visibilityState === "not_created") ||
+        (target.transportState === "ready" && target.workflowState === "manual_uploaded" && target.visibilityState === "unknown")
+      : target.transportState === "planned" && target.workflowState === "ready" && target.visibilityState === "not_created";
+    if (!validInitialState) return false;
+    platforms.add(platform);
+    idempotencyKeys.add(target.idempotencyKey);
+  }
+  if (item.executeMeta === true) {
+    if (!safeHttpsUrl(item.mediaUrl)) return false;
+    if (typeof item.mediaProject !== "string" || !item.mediaProject.trim()) return false;
+    if (typeof item.mediaBranch !== "string" || !item.mediaBranch.trim()) return false;
+  } else if (item.mediaUrl !== undefined || item.mediaProject !== undefined || item.mediaBranch !== undefined) {
+    return false;
+  }
+  return platforms.size === stagingPlatforms.length;
+};
+
+const validStagingHashes = async (payload: StagingRunPayload): Promise<boolean> => {
+  if (await sha256Hex(payload.metadata) !== payload.metadataSha256.toLowerCase()) return false;
+  const expectedKeys = await Promise.all(payload.targets.map((target) => sha256Hex({
+    schemaVersion: 1,
+    lane: "non-publishing",
+    platform: target.platform,
+    accountFingerprint: target.accountFingerprint.trim(),
+    assetSha256: payload.assetSha256.toLowerCase(),
+    mode: target.mode,
+  })));
+  return expectedKeys.every((key, index) => key === payload.targets[index].idempotencyKey.toLowerCase());
+};
+
+const configuredStagingAccount = (env: Env, platform: StagingPlatform, input: StagingTargetInput): string | null => {
+  if (platform === "youtube") return env.YOUTUBE_CHANNEL_ID?.trim() || null;
+  if (platform === "instagram") return env.META_INSTAGRAM_ACCOUNT_ID?.trim() || null;
+  if (platform === "facebook") return env.META_FACEBOOK_PAGE_ID?.trim() || null;
+  return input.accountFingerprint.trim() || null;
+};
+
+const serverStagingKeys = async (
+  env: Env,
+  payload: StagingRunPayload,
+): Promise<Map<StagingPlatform, string> | null> => {
+  const entries: Array<readonly [StagingPlatform, string]> = [];
+  for (const target of payload.targets) {
+    const accountId = configuredStagingAccount(env, target.platform, target);
+    if (!accountId) return null;
+    const accountFingerprint = await sha256Hex({ platform: target.platform, accountId });
+    const key = await sha256Hex({
+      schemaVersion: 1,
+      lane: "non-publishing",
+      platform: target.platform,
+      accountFingerprint,
+      assetSha256: payload.assetSha256.toLowerCase(),
+      mode: target.mode,
+    });
+    entries.push([target.platform, key]);
+  }
+  return new Map(entries);
+};
+
+const validStagingMediaOrigin = (payload: StagingRunPayload, env: Env): boolean => {
+  if (payload.executeMeta !== true) return true;
+  const expectedProject = env.UPLOAD_STAGING_MEDIA_PROJECT?.trim();
+  if (!expectedProject || payload.mediaProject !== expectedProject ||
+      !/^upload-test-[a-z0-9][a-z0-9-]{0,50}$/i.test(payload.mediaBranch ?? "")) return false;
+  try {
+    const url = new URL(payload.mediaUrl!);
+    const expectedHost = `${expectedProject}.pages.dev`;
+    const validHost = url.hostname === expectedHost || url.hostname.endsWith(`.${expectedHost}`);
+    return url.protocol === "https:" && validHost && !url.username && !url.password &&
+      !url.search && !url.hash && url.pathname.toLowerCase().endsWith(".mp4");
+  } catch {
+    return false;
+  }
+};
+
+const validStagingReceipt = (value: unknown): value is StagingReceiptPayload => {
+  if (!recordValue(value)) return false;
+  const item = value as Record<string, unknown>;
+  if (item.schemaVersion !== 1 || item.lane !== "non-publishing") return false;
+  if (typeof item.runId !== "string" || !/^[a-z0-9][a-z0-9_-]{3,119}$/i.test(item.runId)) return false;
+  const platform = item.platform as StagingPlatform;
+  if (platform !== "youtube" || item.workflowState !== completedStagingWorkflows.youtube) return false;
+  if (typeof item.idempotencyKey !== "string" || !/^[a-f0-9]{64}$/i.test(item.idempotencyKey)) return false;
+  if (typeof item.claimId !== "string" || !/^[a-f0-9-]{20,100}$/i.test(item.claimId)) return false;
+  if (typeof item.accountFingerprint !== "string" || !/^[a-f0-9]{64}$/i.test(item.accountFingerprint)) return false;
+  if (typeof item.confirmedAt !== "string" || !Number.isFinite(Date.parse(item.confirmedAt))) return false;
+  if (item.transportState !== "ready" || item.visibilityState !== "non_public") return false;
+  if (item.publishedAt !== null || item.scheduledFor !== null || item.publicUrl !== null) return false;
+  if (item.remoteObjectId !== undefined && item.remoteObjectId !== null &&
+      (typeof item.remoteObjectId !== "string" || !item.remoteObjectId.trim() || item.remoteObjectId.length > 300)) return false;
+  if (typeof item.remoteObjectId !== "string" || !item.remoteObjectId.trim()) return false;
+  return typeof item.providerStatus === "string" && item.providerStatus.toUpperCase() === "PRIVATE";
+};
+
+const validStagingClaim = (value: unknown): value is StagingClaimPayload => {
+  if (!recordValue(value)) return false;
+  const item = value as Record<string, unknown>;
+  return item.schemaVersion === 1 && item.lane === "non-publishing" && item.platform === "youtube" &&
+    typeof item.runId === "string" && /^[a-z0-9][a-z0-9_-]{3,119}$/i.test(item.runId) &&
+    typeof item.idempotencyKey === "string" && /^[a-f0-9]{64}$/i.test(item.idempotencyKey);
+};
+
+const ensureStagingSchema = async (env: Env): Promise<void> => {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS upload_staging_runs (
+      run_id TEXT PRIMARY KEY, content_id TEXT NOT NULL, asset_sha256 TEXT NOT NULL, metadata_sha256 TEXT NOT NULL,
+      metadata_json TEXT NOT NULL, status TEXT NOT NULL, quality_status TEXT NOT NULL,
+      publication_authorized INTEGER NOT NULL DEFAULT 0, execution_requested INTEGER NOT NULL DEFAULT 0,
+      media_url TEXT, media_project TEXT, media_branch TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT, media_cleaned_at TEXT
+    )`,
+    `CREATE TABLE IF NOT EXISTS upload_staging_targets (
+      run_id TEXT NOT NULL, platform TEXT NOT NULL, mode TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE,
+      initial_transport_state TEXT NOT NULL, initial_visibility_state TEXT NOT NULL, initial_workflow_state TEXT NOT NULL,
+      transport_state TEXT NOT NULL, visibility_state TEXT NOT NULL, workflow_state TEXT NOT NULL,
+      remote_object_id TEXT, provider_status TEXT, expires_at TEXT, receipt_sha256 TEXT,
+      remote_create_started_at TEXT, lease_owner TEXT, lease_expires_at TEXT, last_error TEXT,
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+      PRIMARY KEY(run_id, platform)
+    )`,
+    `CREATE TABLE IF NOT EXISTS upload_staging_events (
+      event_id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, platform TEXT,
+      timestamp TEXT NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL
+    )`,
+    "CREATE INDEX IF NOT EXISTS upload_staging_targets_status_idx ON upload_staging_targets(platform, transport_state, updated_at)",
+    "CREATE INDEX IF NOT EXISTS upload_staging_targets_lease_idx ON upload_staging_targets(lease_expires_at, transport_state)",
+    "CREATE INDEX IF NOT EXISTS upload_staging_events_run_idx ON upload_staging_events(run_id, timestamp)",
+  ];
+  for (const statement of statements) await env.DB.prepare(statement).run();
+};
+
+const stagingEvent = async (
+  env: Env,
+  runId: string,
+  platform: StagingPlatform | null,
+  level: "info" | "warning" | "error",
+  message: string,
+): Promise<void> => {
+  await env.DB.prepare("INSERT INTO upload_staging_events (run_id, platform, timestamp, level, message) VALUES (?, ?, ?, ?, ?)")
+    .bind(runId, platform, now(), level, message.slice(0, 600)).run();
+};
+
+const setStagingTarget = async (
+  env: Env,
+  runId: string,
+  platform: StagingPlatform,
+  values: Readonly<{
+    transport: StagingTransport;
+    visibility: StagingVisibility;
+    workflow: StagingWorkflow;
+    remoteObjectId?: string | null;
+    providerStatus?: string | null;
+    expiresAt?: string | null;
+    receiptSha256?: string | null;
+    error?: string | null;
+    clearLease?: boolean;
+    leaseOwner?: string;
+  }>,
+): Promise<void> => {
+  await env.DB.prepare(`UPDATE upload_staging_targets SET transport_state = ?, visibility_state = ?, workflow_state = ?,
+    remote_object_id = CASE WHEN ? = 1 THEN ? ELSE remote_object_id END,
+    provider_status = CASE WHEN ? = 1 THEN ? ELSE provider_status END,
+    expires_at = CASE WHEN ? = 1 THEN ? ELSE expires_at END,
+    receipt_sha256 = CASE WHEN ? = 1 THEN ? ELSE receipt_sha256 END,
+    last_error = CASE WHEN ? = 1 THEN ? ELSE last_error END,
+    lease_owner = CASE WHEN ? = 1 THEN NULL ELSE lease_owner END,
+    lease_expires_at = CASE WHEN ? = 1 THEN NULL ELSE lease_expires_at END,
+    updated_at = ?
+    WHERE run_id = ? AND platform = ? AND (? IS NULL OR lease_owner = ?)`)
+    .bind(
+      values.transport,
+      values.visibility,
+      values.workflow,
+      values.remoteObjectId === undefined ? 0 : 1,
+      values.remoteObjectId ?? null,
+      values.providerStatus === undefined ? 0 : 1,
+      values.providerStatus ?? null,
+      values.expiresAt === undefined ? 0 : 1,
+      values.expiresAt ?? null,
+      values.receiptSha256 === undefined ? 0 : 1,
+      values.receiptSha256 ?? null,
+      values.error === undefined ? 0 : 1,
+      values.error?.slice(0, 600) ?? null,
+      values.clearLease ? 1 : 0,
+      values.clearLease ? 1 : 0,
+      now(),
+      runId,
+      platform,
+      values.leaseOwner ?? null,
+      values.leaseOwner ?? null,
+    ).run();
+};
+
+const stagingLeaseDurationMs = 30 * 60 * 1000;
+
+const claimStagingCreate = async (env: Env, runId: string, platform: "instagram" | "facebook"): Promise<string | null> => {
+  const owner = crypto.randomUUID();
+  const claimedAt = now();
+  const leaseExpiresAt = new Date(Date.now() + stagingLeaseDurationMs).toISOString();
+  await env.DB.prepare(`UPDATE upload_staging_targets SET
+      transport_state = 'uploading', visibility_state = 'unknown', provider_status = 'CREATE_STARTED',
+      remote_create_started_at = ?, lease_owner = ?, lease_expires_at = ?, updated_at = ?
+    WHERE run_id = ? AND platform = ? AND transport_state = 'planned' AND workflow_state = 'ready'
+      AND remote_object_id IS NULL AND receipt_sha256 IS NULL
+      AND (lease_owner IS NULL OR lease_expires_at <= ?)`)
+    .bind(claimedAt, owner, leaseExpiresAt, claimedAt, runId, platform, claimedAt).run();
+  const row = await env.DB.prepare("SELECT lease_owner FROM upload_staging_targets WHERE run_id = ? AND platform = ?")
+    .bind(runId, platform).first<{ lease_owner: string | null }>();
+  return row?.lease_owner === owner ? owner : null;
+};
+
+const claimInstagramInspection = async (env: Env, target: StagingTargetRow): Promise<string | null> => {
+  const owner = crypto.randomUUID();
+  const claimedAt = now();
+  const leaseExpiresAt = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+  await env.DB.prepare(`UPDATE upload_staging_targets SET lease_owner = ?, lease_expires_at = ?, updated_at = ?
+    WHERE run_id = ? AND platform = 'instagram'
+      AND ((transport_state = 'processing' AND workflow_state = 'ready')
+        OR (transport_state = 'ready' AND workflow_state = 'container_unpublished'))
+      AND remote_object_id = ? AND (lease_owner IS NULL OR lease_expires_at <= ?)`)
+    .bind(owner, leaseExpiresAt, claimedAt, target.run_id, target.remote_object_id, claimedAt).run();
+  const row = await env.DB.prepare("SELECT lease_owner FROM upload_staging_targets WHERE run_id = ? AND platform = 'instagram'")
+    .bind(target.run_id).first<{ lease_owner: string | null }>();
+  return row?.lease_owner === owner ? owner : null;
+};
+
+const failClosedExpiredCreateLeases = async (env: Env): Promise<void> => {
+  const cutoff = now();
+  const stale = await env.DB.prepare(`SELECT run_id, platform FROM upload_staging_targets
+    WHERE transport_state = 'uploading' AND remote_create_started_at IS NOT NULL
+      AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`).bind(cutoff)
+    .all<{ run_id: string; platform: StagingPlatform }>();
+  await env.DB.prepare(`UPDATE upload_staging_targets SET
+      transport_state = 'reconcile_required', visibility_state = 'unknown', workflow_state = 'reconcile_required',
+      provider_status = 'CREATE_RESULT_UNKNOWN',
+      last_error = 'Remote-Erstellung wurde begonnen, aber nicht eindeutig bestätigt; automatischer Wiederholungsversuch gesperrt.',
+      lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
+    WHERE transport_state = 'uploading' AND remote_create_started_at IS NOT NULL
+      AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?`)
+    .bind(cutoff, cutoff).run();
+  for (const target of stale.results ?? []) {
+    await stagingEvent(env, target.run_id, target.platform, "error", "Abgelaufener Create-Lease wurde fail-closed gesperrt; manuelle Abstimmung erforderlich.");
+    await recalculateStagingRun(env, target.run_id);
+  }
 };
 
 const event = async (env: Env, jobId: string, level: "info" | "warning" | "error", message: string): Promise<void> => {
@@ -142,11 +581,11 @@ const pageTokenFor = async (env: Env): Promise<string> => {
 const tokenFor = async (platform: Platform, env: Env): Promise<string> =>
   platform === "instagram" ? env.META_ACCESS_TOKEN : pageTokenFor(env);
 
-const graph = async (job: Job, env: Env, path: string, values: Record<string, string>, method: "GET" | "POST" = "POST"): Promise<Record<string, unknown>> => {
-  const params = new URLSearchParams({ ...values, access_token: await tokenFor(job.platform, env) });
+const graphForPlatform = async (platform: Platform, env: Env, path: string, values: Record<string, string>, method: "GET" | "POST" = "POST"): Promise<Record<string, unknown>> => {
+  const params = new URLSearchParams({ ...values, access_token: await tokenFor(platform, env) });
   const response = method === "GET"
-    ? await fetch(`${graphUrl(job.platform, env, path)}?${params.toString()}`)
-    : await fetch(graphUrl(job.platform, env, path), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: params });
+    ? await fetch(`${graphUrl(platform, env, path)}?${params.toString()}`)
+    : await fetch(graphUrl(platform, env, path), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: params });
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
     const error = typeof body.error === "object" && body.error ? JSON.stringify(body.error) : `HTTP ${response.status}`;
@@ -154,6 +593,9 @@ const graph = async (job: Job, env: Env, path: string, values: Record<string, st
   }
   return body;
 };
+
+const graph = async (job: Job, env: Env, path: string, values: Record<string, string>, method: "GET" | "POST" = "POST"): Promise<Record<string, unknown>> =>
+  graphForPlatform(job.platform, env, path, values, method);
 
 const metadata = (job: Job): Metadata => JSON.parse(job.metadata_json) as Metadata;
 
@@ -238,6 +680,259 @@ const publishFacebook = async (job: Job, env: Env): Promise<void> => {
   await removeTemporaryPagesDeployment(job, env);
 };
 
+const recalculateStagingRun = async (env: Env, runId: string): Promise<void> => {
+  const targets = await env.DB.prepare("SELECT * FROM upload_staging_targets WHERE run_id = ?")
+    .bind(runId).all<StagingTargetRow>();
+  const rows = targets.results ?? [];
+  const completed = rows.length === stagingPlatforms.length && rows.every((target) =>
+    ["private_uploaded", "container_unpublished", "draft", "manual_uploaded"].includes(target.workflow_state));
+  const safetyViolation = rows.some((target) => target.workflow_state === "safety_violation");
+  const failed = rows.some((target) => target.workflow_state === "failed");
+  const expired = rows.some((target) => target.workflow_state === "expired");
+  const reconcile = rows.some((target) => target.workflow_state === "reconcile_required");
+  const running = rows.some((target) => ["uploading", "processing"].includes(target.transport_state));
+  const allPlanned = rows.length === stagingPlatforms.length && rows.every((target) => target.transport_state === "planned");
+  const status: StagingRunStatus = safetyViolation ? "safety_violation"
+    : reconcile ? "reconcile_required"
+      : failed ? "failed"
+        : expired ? "expired"
+          : completed ? "completed"
+            : running ? "running"
+              : allPlanned ? "planned" : "partial";
+  const updatedAt = now();
+  await env.DB.prepare("UPDATE upload_staging_runs SET status = ?, updated_at = ?, completed_at = ? WHERE run_id = ?")
+    .bind(status, updatedAt, completed ? updatedAt : null, runId).run();
+};
+
+const cleanupStagingMediaIfSafe = async (env: Env, runId: string): Promise<void> => {
+  const run = await env.DB.prepare("SELECT * FROM upload_staging_runs WHERE run_id = ?")
+    .bind(runId).first<StagingRunRow>();
+  if (!run || run.media_cleaned_at || !run.media_project || !run.media_branch || !run.media_url) return;
+  const targets = await env.DB.prepare("SELECT * FROM upload_staging_targets WHERE run_id = ?")
+    .bind(runId).all<StagingTargetRow>();
+  const byPlatform = new Map((targets.results ?? []).map((target) => [target.platform, target]));
+  const instagram = byPlatform.get("instagram");
+  const facebook = byPlatform.get("facebook");
+  const instagramNoLongerNeedsMedia = Boolean(instagram &&
+    ["container_unpublished", "expired", "failed", "reconcile_required", "safety_violation"].includes(instagram.workflow_state));
+  const facebookNoLongerNeedsMedia = Boolean(facebook &&
+    ["draft", "failed", "reconcile_required", "safety_violation"].includes(facebook.workflow_state));
+  if (!instagramNoLongerNeedsMedia || !facebookNoLongerNeedsMedia) return;
+  if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID ||
+      run.media_project !== env.UPLOAD_STAGING_MEDIA_PROJECT) {
+    await stagingEvent(env, runId, null, "error", "Temporäre Staging-MP4 konnte wegen fehlendem Cleanup-Schutz nicht entfernt werden.");
+    return;
+  }
+  try {
+    const list = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${run.media_project}/deployments`, {
+      headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
+    });
+    const payload = await list.json().catch(() => null) as {
+      result?: Array<{ id?: string; url?: string; deployment_trigger?: { metadata?: { branch?: string } } }>;
+    } | null;
+    if (!list.ok) throw new Error(`Deployment-Liste HTTP ${list.status}`);
+    const deployments = (payload?.result ?? []).filter((deployment) =>
+      deployment.deployment_trigger?.metadata?.branch === run.media_branch && deployment.id);
+    if (deployments.length === 0) throw new Error("Kein eindeutig passendes Pages-Deployment gefunden.");
+    for (const deployment of deployments) {
+      const removed = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/pages/projects/${run.media_project}/deployments/${deployment.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` },
+      });
+      if (!removed.ok && removed.status !== 404) throw new Error(`Deployment-Cleanup HTTP ${removed.status}`);
+    }
+    const cleanedAt = now();
+    await env.DB.prepare("UPDATE upload_staging_runs SET media_cleaned_at = ?, updated_at = ? WHERE run_id = ? AND media_cleaned_at IS NULL")
+      .bind(cleanedAt, cleanedAt, runId).run();
+    await stagingEvent(env, runId, null, "info", "Temporäre Pages-MP4 wurde nach sicherer Meta-Übernahme entfernt.");
+  } catch (error) {
+    await stagingEvent(env, runId, null, "warning", `Temporäres Pages-Deployment bleibt für Cleanup-Retry erhalten: ${error instanceof Error ? error.message : "unbekannter Fehler"}`);
+  }
+};
+
+const stageInstagramContainer = async (env: Env, run: StagingRunPayload): Promise<void> => {
+  const platform = "instagram" as const;
+  const leaseOwner = await claimStagingCreate(env, run.runId, platform);
+  if (!leaseOwner) return;
+  let containerId: string | null = null;
+  try {
+    await stagingEvent(env, run.runId, platform, "info", "Instagram-Container wird nichtöffentlich erstellt.");
+    const container = await graphForPlatform("instagram", env, `${accountFor("instagram", env)}/media`, {
+      media_type: "REELS",
+      video_url: run.mediaUrl!,
+      caption: run.metadata.description,
+    });
+    containerId = typeof container.id === "string" && container.id ? container.id : null;
+    if (!containerId) throw new Error("Instagram lieferte keine Container-ID.");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await setStagingTarget(env, run.runId, platform, {
+      transport: "processing", visibility: "non_public", workflow: "ready",
+      remoteObjectId: containerId, providerStatus: "IN_PROGRESS", expiresAt,
+      error: null, clearLease: true, leaseOwner,
+    });
+    await stagingEvent(env, run.runId, platform, "info", "Instagram verarbeitet den unveröffentlichten Container; es gibt keinen Veröffentlichungsaufruf in der Staging-Lane.");
+  } catch (error) {
+    await setStagingTarget(env, run.runId, platform, {
+      transport: "reconcile_required", visibility: "unknown", workflow: "reconcile_required",
+      remoteObjectId: containerId, providerStatus: "CREATE_RESULT_UNKNOWN",
+      error: error instanceof Error ? error.message : "Unklarer Instagram-Fehler.",
+      clearLease: true, leaseOwner,
+    });
+    await stagingEvent(env, run.runId, platform, "error", "Instagram-Ergebnis ist unklar; es wird kein zweiter Container erstellt.");
+  }
+};
+
+const stageFacebookDraft = async (env: Env, run: StagingRunPayload): Promise<void> => {
+  const platform = "facebook" as const;
+  const leaseOwner = await claimStagingCreate(env, run.runId, platform);
+  if (!leaseOwner) return;
+  let videoId: string | null = null;
+  try {
+    await stagingEvent(env, run.runId, platform, "info", "Facebook-Reel-Entwurf wird hochgeladen.");
+    const edge = `${accountFor("facebook", env)}/video_reels`;
+    const session = await graphForPlatform("facebook", env, edge, { upload_phase: "start" });
+    videoId = typeof session.video_id === "string" && session.video_id ? session.video_id : null;
+    const uploadUrl = typeof session.upload_url === "string" ? session.upload_url : null;
+    if (!videoId || !uploadUrl) throw new Error("Facebook lieferte keine Upload-Session.");
+    await setStagingTarget(env, run.runId, platform, {
+      transport: "uploading", visibility: "unknown", workflow: "ready",
+      remoteObjectId: videoId, providerStatus: "UPLOAD_SESSION_CREATED", leaseOwner,
+    });
+    const media = await fetch(run.mediaUrl!);
+    if (!media.ok || !media.body) throw new Error("Die temporäre Cloud-MP4 ist nicht erreichbar.");
+    const uploaded = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `OAuth ${await tokenFor("facebook", env)}`,
+        offset: "0",
+        file_size: media.headers.get("content-length") || "0",
+        "content-type": "application/octet-stream",
+      },
+      body: media.body,
+    });
+    if (!uploaded.ok) throw new Error(`Facebook-Medienupload fehlgeschlagen (HTTP ${uploaded.status}).`);
+    await graphForPlatform("facebook", env, edge, {
+      video_id: videoId,
+      upload_phase: "finish",
+      video_state: "DRAFT",
+      description: run.metadata.description,
+      title: run.metadata.youtubeTitle.replace(/(?:\s+#[\p{L}\p{N}_]+){5}$/u, "").trim(),
+    });
+    const verification = await graphForPlatform("facebook", env, videoId, { fields: "published,status" }, "GET");
+    if (verification.published !== false) {
+      throw new Error("Facebook bestätigte den nichtöffentlichen Entwurfsstatus nicht.");
+    }
+    await setStagingTarget(env, run.runId, platform, {
+      transport: "ready", visibility: "non_public", workflow: "draft",
+      remoteObjectId: videoId, providerStatus: "DRAFT", error: null,
+      clearLease: true, leaseOwner,
+    });
+    await stagingEvent(env, run.runId, platform, "info", "Facebook bestätigte den nichtöffentlichen Entwurf.");
+  } catch (error) {
+    await setStagingTarget(env, run.runId, platform, {
+      transport: "reconcile_required", visibility: "unknown", workflow: "reconcile_required",
+      remoteObjectId: videoId, providerStatus: "CREATE_OR_FINISH_RESULT_UNKNOWN",
+      error: error instanceof Error ? error.message : "Unklarer Facebook-Fehler.",
+      clearLease: true, leaseOwner,
+    });
+    await stagingEvent(env, run.runId, platform, "error", "Facebook-Ergebnis ist unklar; es wird kein zweiter Entwurf erstellt.");
+  }
+};
+
+const inspectInstagramStaging = async (env: Env): Promise<void> => {
+  await ensureStagingSchema(env);
+  await failClosedExpiredCreateLeases(env);
+  const finishedPollCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const targets = await env.DB.prepare(`SELECT * FROM upload_staging_targets
+    WHERE platform = 'instagram' AND (
+      (transport_state = 'processing' AND workflow_state = 'ready')
+      OR (transport_state = 'ready' AND workflow_state = 'container_unpublished'
+        AND (expires_at <= ? OR updated_at <= ?))
+    ) ORDER BY updated_at ASC LIMIT 10`).bind(now(), finishedPollCutoff)
+    .all<StagingTargetRow>();
+  for (const target of targets.results ?? []) {
+    if (!target.remote_object_id) {
+      await setStagingTarget(env, target.run_id, "instagram", {
+        transport: "reconcile_required", visibility: "unknown", workflow: "reconcile_required",
+        providerStatus: "MISSING_CONTAINER_ID", error: "Verarbeitung ohne Container-ID kann nicht sicher abgestimmt werden.",
+        clearLease: true,
+      });
+      await recalculateStagingRun(env, target.run_id);
+      await cleanupStagingMediaIfSafe(env, target.run_id);
+      continue;
+    }
+    const leaseOwner = await claimInstagramInspection(env, target);
+    if (!leaseOwner) continue;
+    if (target.expires_at && Date.parse(target.expires_at) <= Date.now()) {
+      await setStagingTarget(env, target.run_id, "instagram", {
+        transport: "expired", visibility: "non_public", workflow: "expired",
+        remoteObjectId: target.remote_object_id, providerStatus: "EXPIRED", expiresAt: target.expires_at,
+        clearLease: true, leaseOwner,
+      });
+      await stagingEvent(env, target.run_id, "instagram", "warning", "Der unveröffentlichte Instagram-Container ist erwartungsgemäß abgelaufen.");
+      await recalculateStagingRun(env, target.run_id);
+      await cleanupStagingMediaIfSafe(env, target.run_id);
+      continue;
+    }
+    try {
+      const status = await graphForPlatform("instagram", env, target.remote_object_id, { fields: "status_code,status" }, "GET");
+      const code = typeof status.status_code === "string" ? status.status_code.toUpperCase() : "";
+      if (code === "FINISHED") {
+        await setStagingTarget(env, target.run_id, "instagram", {
+          transport: "ready", visibility: "non_public", workflow: "container_unpublished",
+          remoteObjectId: target.remote_object_id, providerStatus: code, expiresAt: target.expires_at,
+          error: null, clearLease: true, leaseOwner,
+        });
+        await stagingEvent(env, target.run_id, "instagram", "info", "Instagram-Container ist uploadbereit und bleibt unveröffentlicht.");
+      } else if (code === "PUBLISHED") {
+        await setStagingTarget(env, target.run_id, "instagram", {
+          transport: "failed", visibility: "unknown", workflow: "safety_violation",
+          remoteObjectId: target.remote_object_id, providerStatus: code, expiresAt: target.expires_at,
+          error: "Unerwarteter öffentlicher Instagram-Status.", clearLease: true, leaseOwner,
+        });
+        await stagingEvent(env, target.run_id, "instagram", "error", "Sicherheitsverletzung: Instagram meldet unerwartet PUBLISHED.");
+      } else if (code === "IN_PROGRESS") {
+        if (target.workflow_state === "container_unpublished") {
+          await setStagingTarget(env, target.run_id, "instagram", {
+            transport: "reconcile_required", visibility: "unknown", workflow: "reconcile_required",
+            remoteObjectId: target.remote_object_id, providerStatus: code, expiresAt: target.expires_at,
+            error: "Instagram fiel nach FINISHED auf IN_PROGRESS zurück; automatische Verarbeitung wurde gesperrt.",
+            clearLease: true, leaseOwner,
+          });
+        } else {
+          await setStagingTarget(env, target.run_id, "instagram", {
+            transport: "processing", visibility: "non_public", workflow: "ready",
+            remoteObjectId: target.remote_object_id, providerStatus: code, expiresAt: target.expires_at,
+            clearLease: true, leaseOwner,
+          });
+        }
+      } else if (code === "ERROR" || code === "EXPIRED") {
+        await setStagingTarget(env, target.run_id, "instagram", {
+          transport: code === "EXPIRED" ? "expired" : "failed", visibility: "non_public",
+          workflow: code === "EXPIRED" ? "expired" : "failed", remoteObjectId: target.remote_object_id,
+          providerStatus: code, expiresAt: target.expires_at, error: `Instagram-Containerstatus: ${code}`,
+          clearLease: true, leaseOwner,
+        });
+      } else {
+        await setStagingTarget(env, target.run_id, "instagram", {
+          transport: "reconcile_required", visibility: "unknown", workflow: "reconcile_required",
+          remoteObjectId: target.remote_object_id, providerStatus: code || "STATUS_MISSING", expiresAt: target.expires_at,
+          error: "Instagram lieferte einen unbekannten Containerstatus; automatische Verarbeitung wurde gesperrt.",
+          clearLease: true, leaseOwner,
+        });
+      }
+    } catch {
+      // Read-only polling is retried by the next cron tick. No create call is repeated.
+      await setStagingTarget(env, target.run_id, "instagram", {
+        transport: "processing", visibility: "non_public", workflow: "ready",
+        remoteObjectId: target.remote_object_id, clearLease: true, leaseOwner,
+      });
+    }
+    await recalculateStagingRun(env, target.run_id);
+    await cleanupStagingMediaIfSafe(env, target.run_id);
+  }
+};
+
 const processJob = async (job: Job, env: Env): Promise<void> => {
   try {
     if (job.platform === "instagram") await publishInstagram(job, env);
@@ -281,6 +976,366 @@ const enqueue = async (request: Request, env: Env): Promise<Response> => {
       payload.mediaUrl, payload.mediaProject, payload.mediaBranch, createdAt, createdAt).run();
   await event(env, payload.jobId, "info", "Cloud-Veröffentlichung eingeplant.");
   return json({ jobId: payload.jobId, status: "scheduled" }, 201);
+};
+
+const stagingAuthError = (request: Request, env: Env): Response | null => {
+  if (!env.UPLOAD_STAGING_TOKEN) return json({ error: "Staging-API ist nicht konfiguriert." }, 503);
+  return request.headers.get("authorization") === `Bearer ${env.UPLOAD_STAGING_TOKEN}`
+    ? null
+    : json({ error: "Nicht autorisiert." }, 401);
+};
+
+const stagingTargetResponse = (target: StagingTargetRow): Record<string, unknown> => ({
+  platform: target.platform,
+  mode: target.mode,
+  idempotencyKey: target.idempotency_key,
+  transportState: target.transport_state,
+  visibilityState: target.visibility_state,
+  workflowState: target.workflow_state,
+  remoteObjectId: target.remote_object_id,
+  providerStatus: target.provider_status,
+  expiresAt: target.expires_at,
+  lastError: target.last_error,
+  publishedAt: null,
+  scheduledFor: null,
+  publicUrl: null,
+});
+
+const stagingRunResponse = async (env: Env, runId: string): Promise<Record<string, unknown> | null> => {
+  const run = await env.DB.prepare("SELECT * FROM upload_staging_runs WHERE run_id = ?")
+    .bind(runId).first<StagingRunRow>();
+  if (!run) return null;
+  const targets = await env.DB.prepare(`SELECT * FROM upload_staging_targets WHERE run_id = ?
+    ORDER BY CASE platform WHEN 'youtube' THEN 1 WHEN 'instagram' THEN 2 WHEN 'facebook' THEN 3 ELSE 4 END`)
+    .bind(runId).all<StagingTargetRow>();
+  return {
+    schemaVersion: 1,
+    lane: "non-publishing",
+    runId: run.run_id,
+    contentId: run.content_id,
+    status: run.status,
+    qualityStatus: run.quality_status,
+    createdAt: run.created_at,
+    updatedAt: run.updated_at,
+    completedAt: run.completed_at,
+    targets: (targets.results ?? []).map(stagingTargetResponse),
+  };
+};
+
+const sameStagingRun = (
+  run: StagingRunRow,
+  targets: readonly StagingTargetRow[],
+  payload: StagingRunPayload,
+  idempotencyKeys: ReadonlyMap<StagingPlatform, string>,
+): boolean => {
+  let storedMetadata: unknown;
+  try {
+    storedMetadata = JSON.parse(run.metadata_json);
+  } catch {
+    return false;
+  }
+  const executionCompatible = payload.executeMeta === true
+    ? run.execution_requested === 0 || (run.execution_requested === 1 &&
+      run.media_url === payload.mediaUrl && run.media_project === payload.mediaProject && run.media_branch === payload.mediaBranch)
+    : true;
+  if (run.run_id !== payload.runId || run.content_id !== payload.contentId.toLowerCase() ||
+      run.asset_sha256 !== payload.assetSha256.toLowerCase() || run.metadata_sha256 !== payload.metadataSha256.toLowerCase() ||
+      canonicalJson(storedMetadata) !== canonicalJson(payload.metadata) || run.quality_status !== "passed" ||
+      run.publication_authorized !== 0 || !executionCompatible ||
+      run.created_at !== new Date(payload.createdAt).toISOString() ||
+      targets.length !== stagingPlatforms.length) return false;
+  const storedTargets = new Map(targets.map((target) => [target.platform, target]));
+  return payload.targets.every((target) => {
+    const stored = storedTargets.get(target.platform);
+    return stored?.mode === target.mode && stored.idempotency_key === idempotencyKeys.get(target.platform) &&
+      stored.initial_transport_state === target.transportState && stored.initial_visibility_state === target.visibilityState &&
+      stored.initial_workflow_state === target.workflowState;
+  });
+};
+
+const insertStagingRun = async (
+  env: Env,
+  payload: StagingRunPayload,
+  idempotencyKeys: ReadonlyMap<StagingPlatform, string>,
+): Promise<void> => {
+  const insertedAt = now();
+  const initialStatus: StagingRunStatus = payload.targets.every((target) => target.transportState === "planned") ? "planned" : "partial";
+  const statements = [
+    env.DB.prepare(`INSERT INTO upload_staging_runs (
+      run_id, content_id, asset_sha256, metadata_sha256, metadata_json, status, quality_status,
+      publication_authorized, execution_requested, media_url, media_project, media_branch,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'passed', 0, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(run_id) DO NOTHING`).bind(
+      payload.runId,
+      payload.contentId.toLowerCase(),
+      payload.assetSha256.toLowerCase(),
+      payload.metadataSha256.toLowerCase(),
+      canonicalJson(payload.metadata),
+      initialStatus,
+      payload.executeMeta === true ? 1 : 0,
+      payload.mediaUrl ?? null,
+      payload.mediaProject ?? null,
+      payload.mediaBranch ?? null,
+      new Date(payload.createdAt).toISOString(),
+      insertedAt,
+    ),
+    ...payload.targets.map((target) => env.DB.prepare(`INSERT INTO upload_staging_targets (
+      run_id, platform, mode, idempotency_key, initial_transport_state, initial_visibility_state, initial_workflow_state,
+      transport_state, visibility_state, workflow_state, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(run_id, platform) DO NOTHING`).bind(
+      payload.runId,
+      target.platform,
+      target.mode,
+      idempotencyKeys.get(target.platform)!,
+      target.transportState,
+      target.visibilityState,
+      target.workflowState,
+      target.transportState,
+      target.visibilityState,
+      target.workflowState,
+      insertedAt,
+      insertedAt,
+    )),
+  ];
+  await env.DB.batch(statements);
+};
+
+const metaStagingConfiguration = (env: Env): string[] => [
+  ["META_ACCESS_TOKEN", env.META_ACCESS_TOKEN],
+  ["META_INSTAGRAM_ACCOUNT_ID", env.META_INSTAGRAM_ACCOUNT_ID],
+  ["META_FACEBOOK_PAGE_ACCESS_TOKEN", env.META_FACEBOOK_PAGE_ACCESS_TOKEN],
+  ["META_FACEBOOK_PAGE_ID", env.META_FACEBOOK_PAGE_ID],
+  ["CLOUDFLARE_API_TOKEN", env.CLOUDFLARE_API_TOKEN],
+  ["CLOUDFLARE_ACCOUNT_ID", env.CLOUDFLARE_ACCOUNT_ID],
+  ["UPLOAD_STAGING_MEDIA_PROJECT", env.UPLOAD_STAGING_MEDIA_PROJECT],
+].filter(([, value]) => !value).map(([name]) => name);
+
+const createStagingRun = async (request: Request, env: Env): Promise<Response> => {
+  const authorizationError = stagingAuthError(request, env);
+  if (authorizationError) return authorizationError;
+  const payload = await request.json().catch(() => null);
+  if (!validStagingPayload(payload)) return json({ error: "Ungültiger oder nicht sicherer Staging-Auftrag." }, 400);
+  if (!await validStagingHashes(payload)) return json({ error: "Metadaten-Hash oder Idempotenzschlüssel ist ungültig." }, 400);
+  if (!validStagingMediaOrigin(payload, env)) return json({ error: "Die temporäre Medienquelle gehört nicht zum erlaubten Pages-Projekt." }, 400);
+  const idempotencyKeys = await serverStagingKeys(env, payload);
+  if (!idempotencyKeys) return json({ error: "Mindestens ein Zielkonto für den Staging-Test ist nicht konfiguriert." }, 503);
+  const missing = payload.executeMeta === true ? metaStagingConfiguration(env) : [];
+  if (missing.length > 0) return json({ error: "Meta-Staging ist nicht vollständig konfiguriert.", missing }, 503);
+  await ensureStagingSchema(env);
+  await failClosedExpiredCreateLeases(env);
+
+  const existing = await env.DB.prepare("SELECT * FROM upload_staging_runs WHERE run_id = ?")
+    .bind(payload.runId).first<StagingRunRow>();
+  let created = false;
+  if (!existing) {
+    try {
+      await insertStagingRun(env, payload, idempotencyKeys);
+      created = true;
+    } catch {
+      return json({ error: "Run-ID oder Idempotenzschlüssel steht bereits für einen anderen Staging-Auftrag." }, 409);
+    }
+  }
+
+  const [storedRun, storedTargets] = await Promise.all([
+    env.DB.prepare("SELECT * FROM upload_staging_runs WHERE run_id = ?").bind(payload.runId).first<StagingRunRow>(),
+    env.DB.prepare("SELECT * FROM upload_staging_targets WHERE run_id = ? ORDER BY platform")
+      .bind(payload.runId).all<StagingTargetRow>(),
+  ]);
+  if (!storedRun || !sameStagingRun(storedRun, storedTargets.results ?? [], payload, idempotencyKeys)) {
+    return json({ error: "Run-ID steht bereits für einen abweichenden Staging-Auftrag." }, 409);
+  }
+
+  if (payload.executeMeta === true && storedRun.execution_requested === 0) {
+    const upgradedAt = now();
+    await env.DB.prepare(`UPDATE upload_staging_runs SET execution_requested = 1,
+        media_url = ?, media_project = ?, media_branch = ?, updated_at = ?
+      WHERE run_id = ? AND execution_requested = 0 AND media_url IS NULL AND media_project IS NULL AND media_branch IS NULL`)
+      .bind(payload.mediaUrl!, payload.mediaProject!, payload.mediaBranch!, upgradedAt, payload.runId).run();
+    const upgraded = await env.DB.prepare("SELECT * FROM upload_staging_runs WHERE run_id = ?")
+      .bind(payload.runId).first<StagingRunRow>();
+    if (!upgraded || upgraded.execution_requested !== 1 || upgraded.media_url !== payload.mediaUrl ||
+        upgraded.media_project !== payload.mediaProject || upgraded.media_branch !== payload.mediaBranch) {
+      return json({ error: "Der Staging-Plan wurde gleichzeitig mit einer anderen Medienquelle gestartet." }, 409);
+    }
+  }
+
+  if (created) await stagingEvent(env, payload.runId, null, "info", "Nichtveröffentlichender Staging-Auftrag wurde angelegt.");
+  if (payload.executeMeta === true) {
+    await Promise.all([stageInstagramContainer(env, payload), stageFacebookDraft(env, payload)]);
+  }
+  await recalculateStagingRun(env, payload.runId);
+  await cleanupStagingMediaIfSafe(env, payload.runId);
+  const response = await stagingRunResponse(env, payload.runId);
+  return json(response, created ? 201 : 200);
+};
+
+const claimExternalStagingUpload = async (request: Request, env: Env): Promise<Response> => {
+  const authorizationError = stagingAuthError(request, env);
+  if (authorizationError) return authorizationError;
+  const payload = await request.json().catch(() => null);
+  if (!validStagingClaim(payload)) return json({ error: "Ungültiger Staging-Claim." }, 400);
+  await ensureStagingSchema(env);
+  await failClosedExpiredCreateLeases(env);
+  const target = await env.DB.prepare("SELECT * FROM upload_staging_targets WHERE run_id = ? AND platform = 'youtube'")
+    .bind(payload.runId).first<StagingTargetRow>();
+  if (!target) return json({ error: "Staging-Auftrag nicht gefunden." }, 404);
+  if (target.idempotency_key !== payload.idempotencyKey.toLowerCase()) {
+    return json({ error: "Idempotenzschlüssel passt nicht zum verifizierten YouTube-Ziel." }, 409);
+  }
+  if (target.workflow_state === "private_uploaded" && target.receipt_sha256) {
+    return json({ status: "already_completed", target: stagingTargetResponse(target) });
+  }
+  if (target.transport_state !== "planned" || target.workflow_state !== "ready" || target.remote_create_started_at) {
+    return json({ error: "YouTube-Ziel ist bereits beansprucht oder muss abgestimmt werden." }, 409);
+  }
+  const claimId = crypto.randomUUID();
+  const claimedAt = now();
+  const leaseExpiresAt = new Date(Date.now() + stagingLeaseDurationMs).toISOString();
+  await env.DB.prepare(`UPDATE upload_staging_targets SET transport_state = 'uploading', visibility_state = 'unknown',
+      provider_status = 'EXTERNAL_CREATE_INTENT', remote_create_started_at = ?, lease_owner = ?, lease_expires_at = ?, updated_at = ?
+    WHERE run_id = ? AND platform = 'youtube' AND idempotency_key = ?
+      AND transport_state = 'planned' AND workflow_state = 'ready' AND remote_create_started_at IS NULL`)
+    .bind(claimedAt, claimId, leaseExpiresAt, claimedAt, payload.runId, payload.idempotencyKey.toLowerCase()).run();
+  const claimed = await env.DB.prepare("SELECT * FROM upload_staging_targets WHERE run_id = ? AND platform = 'youtube'")
+    .bind(payload.runId).first<StagingTargetRow>();
+  if (!claimed || claimed.lease_owner !== claimId) {
+    return json({ error: "YouTube-Ziel wurde gleichzeitig von einem anderen Lauf beansprucht." }, 409);
+  }
+  await stagingEvent(env, payload.runId, "youtube", "info", "Globaler YouTube-Claim wurde vor der Session-Erstellung gesetzt.");
+  await recalculateStagingRun(env, payload.runId);
+  return json({ status: "claimed", claimId, leaseExpiresAt }, 201);
+};
+
+const saveStagingReceipt = async (request: Request, env: Env): Promise<Response> => {
+  const authorizationError = stagingAuthError(request, env);
+  if (authorizationError) return authorizationError;
+  const payload = await request.json().catch(() => null);
+  if (!validStagingReceipt(payload)) return json({ error: "Ungültiger oder veröffentlichender Staging-Beleg." }, 400);
+  await ensureStagingSchema(env);
+  const target = await env.DB.prepare("SELECT * FROM upload_staging_targets WHERE run_id = ? AND platform = ?")
+    .bind(payload.runId, payload.platform).first<StagingTargetRow>();
+  if (!target) return json({ error: "Staging-Auftrag nicht gefunden." }, 404);
+  if (target.idempotency_key !== payload.idempotencyKey.toLowerCase()) {
+    return json({ error: "Idempotenzschlüssel passt nicht zum Staging-Ziel." }, 409);
+  }
+  const expectedAccountFingerprint = env.YOUTUBE_CHANNEL_ID
+    ? await sha256Hex({ platform: "youtube", accountId: env.YOUTUBE_CHANNEL_ID.trim() })
+    : null;
+  if (!expectedAccountFingerprint || payload.accountFingerprint.toLowerCase() !== expectedAccountFingerprint) {
+    return json({ error: "YouTube-Beleg gehört nicht zum konfigurierten Zielkanal." }, 409);
+  }
+  if (target.workflow_state === "safety_violation" || target.workflow_state === "expired" ||
+      target.provider_status?.toUpperCase() === "PUBLISHED") {
+    return json({ error: "Der Plattformzustand kann nicht sicher durch einen Beleg überschrieben werden." }, 409);
+  }
+  const remoteObjectId = payload.remoteObjectId ?? null;
+  if (target.remote_object_id && target.remote_object_id !== remoteObjectId) {
+    return json({ error: "Remote-Objekt-ID widerspricht dem bereits bekannten Plattformzustand." }, 409);
+  }
+  const receiptSha256 = await sha256Hex({
+    schemaVersion: 1,
+    lane: "non-publishing",
+    runId: payload.runId,
+    platform: payload.platform,
+    idempotencyKey: payload.idempotencyKey.toLowerCase(),
+    claimId: payload.claimId,
+    accountFingerprint: payload.accountFingerprint.toLowerCase(),
+    confirmedAt: new Date(payload.confirmedAt).toISOString(),
+    transportState: payload.transportState,
+    visibilityState: payload.visibilityState,
+    workflowState: payload.workflowState,
+    remoteObjectId,
+    providerStatus: payload.providerStatus ?? null,
+    publishedAt: null,
+    scheduledFor: null,
+    publicUrl: null,
+  });
+  if (target.receipt_sha256 && target.receipt_sha256 !== receiptSha256) {
+    return json({ error: "Für dieses Staging-Ziel wurde bereits ein anderer Beleg angenommen." }, 409);
+  }
+  if (!target.receipt_sha256) {
+    if (target.lease_owner !== payload.claimId || target.transport_state !== "uploading") {
+      return json({ error: "Der YouTube-Beleg gehört zu keinem aktiven globalen Claim." }, 409);
+    }
+    const receivedAt = now();
+    await env.DB.prepare(`UPDATE upload_staging_targets SET
+        transport_state = 'ready', visibility_state = 'non_public', workflow_state = ?,
+        remote_object_id = ?, provider_status = ?, receipt_sha256 = ?, last_error = NULL,
+        lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
+      WHERE run_id = ? AND platform = ? AND idempotency_key = ? AND receipt_sha256 IS NULL
+        AND workflow_state NOT IN ('safety_violation', 'expired')`)
+      .bind(payload.workflowState, remoteObjectId, payload.providerStatus ?? null, receiptSha256,
+        receivedAt, payload.runId, payload.platform, payload.idempotencyKey.toLowerCase()).run();
+    const saved = await env.DB.prepare("SELECT receipt_sha256 FROM upload_staging_targets WHERE run_id = ? AND platform = ?")
+      .bind(payload.runId, payload.platform).first<{ receipt_sha256: string | null }>();
+    if (saved?.receipt_sha256 !== receiptSha256) {
+      return json({ error: "Gleichzeitiger abweichender Beleg; Zustand wurde nicht überschrieben." }, 409);
+    }
+    await stagingEvent(env, payload.runId, payload.platform, "info", "Nichtveröffentlichender Plattformbeleg wurde angenommen.");
+  }
+  await recalculateStagingRun(env, payload.runId);
+  return json(await stagingRunResponse(env, payload.runId), target.receipt_sha256 ? 200 : 202);
+};
+
+const getStagingRun = async (request: Request, env: Env, runId: string): Promise<Response> => {
+  const authorizationError = stagingAuthError(request, env);
+  if (authorizationError) return authorizationError;
+  if (!/^[a-z0-9][a-z0-9_-]{3,119}$/i.test(runId)) return json({ error: "Ungültige Run-ID." }, 400);
+  await ensureStagingSchema(env);
+  await failClosedExpiredCreateLeases(env);
+  await recalculateStagingRun(env, runId);
+  const response = await stagingRunResponse(env, runId);
+  return response ? json(response) : json({ error: "Nicht gefunden." }, 404);
+};
+
+interface StagingFeedTargetRow extends StagingTargetRow { readonly content_id: string; }
+
+const stagingFeed = async (env: Env): Promise<Response> => {
+  await ensureStagingSchema(env);
+  const [runs, targets] = await Promise.all([
+    env.DB.prepare("SELECT * FROM upload_staging_runs ORDER BY created_at DESC LIMIT 100").all<StagingRunRow>(),
+    env.DB.prepare(`SELECT target.*, run.content_id FROM upload_staging_targets AS target
+      JOIN upload_staging_runs AS run ON run.run_id = target.run_id
+      WHERE target.run_id IN (SELECT run_id FROM upload_staging_runs ORDER BY created_at DESC LIMIT 100)
+      ORDER BY run.created_at DESC, target.platform`).all<StagingFeedTargetRow>(),
+  ]);
+  const body = {
+    schemaVersion: 1,
+    lane: "non-publishing",
+    publicationAuthorized: false,
+    generatedAt: now(),
+    runs: (runs.results ?? []).map((run) => ({
+      runId: run.run_id,
+      contentId: run.content_id,
+      title: null,
+      status: run.status,
+      qualityStatus: run.quality_status,
+      startedAt: run.created_at,
+      completedAt: run.completed_at,
+    })),
+    publications: (targets.results ?? []).map((target) => ({
+      runId: target.run_id,
+      contentId: target.content_id,
+      platform: target.platform,
+      mode: target.mode,
+      status: target.workflow_state === "container_unpublished" ? "upload_ready"
+        : target.workflow_state === "manual_uploaded" ? "manual_uploaded" : target.transport_state,
+      updatedAt: target.updated_at,
+      title: null,
+      scheduledAt: null,
+      publishedAt: null,
+      publicUrl: null,
+    })),
+  };
+  return new Response(JSON.stringify(body), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=30, s-maxage=30",
+      "access-control-allow-origin": "*",
+    },
+  });
 };
 
 const analyticsMetricNames: ReadonlyArray<keyof SocialMetrics> = [
@@ -620,6 +1675,13 @@ export default {
     if (url.pathname === "/health") return json({ status: "ok", scheduler: "cloudflare", analytics: "enabled" });
     if (request.method === "GET" && url.pathname === "/analytics/feed") return analyticsFeed(env);
     if (request.method === "POST" && url.pathname === "/analytics/ingest") return ingestAnalytics(request, env);
+    if (request.method === "GET" && url.pathname === "/staging/feed") return stagingFeed(env);
+    if (request.method === "POST" && url.pathname === "/staging/runs") return createStagingRun(request, env);
+    if (request.method === "POST" && url.pathname === "/staging/claims") return claimExternalStagingUpload(request, env);
+    if (request.method === "POST" && url.pathname === "/staging/receipts") return saveStagingReceipt(request, env);
+    if (request.method === "GET" && url.pathname.startsWith("/staging/runs/")) {
+      return getStagingRun(request, env, url.pathname.slice("/staging/runs/".length));
+    }
     if (!authorized(request, env)) return json({ error: "Nicht autorisiert." }, 401);
     if (request.method === "GET" && url.pathname === "/ready") {
       const missing = [
@@ -644,6 +1706,6 @@ export default {
     return json({ error: "Nicht gefunden." }, 404);
   },
   async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
-    await Promise.all([processDue(env), refreshMetaAnalyticsIfDue(env)]);
+    await Promise.all([processDue(env), refreshMetaAnalyticsIfDue(env), inspectInstagramStaging(env)]);
   },
 } satisfies ExportedHandler<Env>;

@@ -1,0 +1,133 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  fetchStagingFeed,
+  mergeStagingFeed,
+  normalizeStagingFeed,
+  stagingFeedUrl,
+} from '../scripts/collect-content-operations.mjs'
+
+const contentId = `flaggenbande-${'a'.repeat(64)}`
+const runId = 'upload-test-gameshow-five-flag-elevenlabs-v6'
+
+const feed = () => ({
+  schemaVersion: 1,
+  generatedAt: '2026-07-21T12:00:00Z',
+  runs: [{
+    runId,
+    contentId,
+    status: 'completed',
+    qualityStatus: 'passed',
+    startedAt: '2026-07-21T11:00:00Z',
+    completedAt: '2026-07-21T11:30:00Z',
+    remoteObjectId: 'must-not-leak-from-run',
+  }],
+  publications: [
+    { contentId, platform: 'youtube', status: 'ready', remoteObjectId: 'youtube-private-id' },
+    { contentId, platform: 'instagram', status: 'upload_ready', containerId: 'instagram-container-id' },
+    { contentId, platform: 'facebook', status: 'ready', providerStatus: 'DRAFT' },
+    { contentId, platform: 'tiktok', status: 'manual_uploaded', accountFingerprint: 'private-account-fingerprint' },
+  ],
+  metadata: { title: 'unveröffentlichter Titel', answers: ['Brazil'] },
+})
+
+const previous = () => ({
+  schemaVersion: 1,
+  generatedAt: '2026-07-20T10:03:20Z',
+  status: 'partial',
+  messages: ['Bestehender sicherer Hinweis.'],
+  system: [],
+  platforms: ['youtube', 'instagram', 'tiktok', 'facebook'].map(platform => ({
+    platform,
+    label: platform,
+    status: 'not_configured',
+    uploads: 0,
+    publications: 0,
+    performanceAvailable: false,
+    reason: 'Noch kein Testlauf.',
+    updatedAt: null,
+  })),
+  runs: [],
+  publications: [],
+  performance: [],
+})
+
+test('staging feed is reduced to safe content-operation fields and confirmed non-public states', () => {
+  const normalized = normalizeStagingFeed(feed())
+  assert.equal(normalized.runs.length, 1)
+  assert.equal(normalized.runs[0].title, null)
+  assert.deepEqual(Object.fromEntries(normalized.publications.map(entry => [entry.platform, entry.status])), {
+    youtube: 'private',
+    instagram: 'upload_ready',
+    tiktok: 'manual_uploaded',
+    facebook: 'draft',
+  })
+  assert.ok(normalized.publications.every(entry => entry.title === null && entry.scheduledAt === null && entry.publishedAt === null && entry.publicUrl === null))
+  assert.doesNotMatch(JSON.stringify(normalized), /remoteObjectId|containerId|accountFingerprint|providerStatus|unveröffentlichter Titel|Brazil|private-id/)
+})
+
+test('transport problems remain explicit and container_unpublished mode is preserved', () => {
+  const payload = feed()
+  payload.runs[0].status = 'reconcile_required'
+  payload.runs[0].completedAt = null
+  payload.publications[0].status = 'private_uploaded'
+  payload.publications[1].status = 'ready'
+  payload.publications[1].mode = 'container_unpublished'
+  payload.publications[2].status = 'reconcile_required'
+  payload.publications[3].status = 'expired'
+
+  const normalized = normalizeStagingFeed(payload)
+  assert.equal(normalized.runs[0].status, 'reconcile_required')
+  assert.deepEqual(Object.fromEntries(normalized.publications.map(entry => [entry.platform, entry.status])), {
+    youtube: 'private',
+    instagram: 'container_unpublished',
+    tiktok: 'expired',
+    facebook: 'reconcile_required',
+  })
+})
+
+test('staging feed rejects public claims, authorization, mismatched modes, and incomplete runs', () => {
+  const published = feed()
+  published.publications[0].status = 'published'
+  assert.throws(() => normalizeStagingFeed(published), /keine Veröffentlichung/)
+
+  const authorized = feed()
+  authorized.publicationAuthorized = true
+  assert.throws(() => normalizeStagingFeed(authorized), /keine Veröffentlichung autorisieren/)
+
+  const wrongMode = feed()
+  wrongMode.publications[0].mode = 'draft'
+  assert.throws(() => normalizeStagingFeed(wrongMode), /passt nicht zur Plattform/)
+
+  const incomplete = feed()
+  incomplete.publications.pop()
+  assert.throws(() => normalizeStagingFeed(incomplete), /nicht alle vier Plattformstatus/)
+})
+
+test('merge updates only safe staging sections and leaves publication counts at zero', () => {
+  const merged = mergeStagingFeed(previous(), normalizeStagingFeed(feed()))
+  assert.equal(merged.generatedAt, '2026-07-21T12:00:00.000Z')
+  assert.equal(merged.status, 'partial')
+  assert.equal(merged.runs.length, 1)
+  assert.equal(merged.publications.length, 4)
+  assert.ok(merged.platforms.every(entry => entry.status === 'ready'))
+  assert.ok(merged.platforms.every(entry => entry.uploads === 1 && entry.publications === 0))
+  assert.ok(merged.messages.some(message => message.includes('keine Veröffentlichung autorisiert')))
+})
+
+test('collector uses a public HTTPS feed without authorization headers', async () => {
+  const expectedUrl = 'https://staging.example.test/staging/feed'
+  assert.equal(stagingFeedUrl({ UPLOAD_STAGING_API_URL: 'https://staging.example.test/private/path' }), expectedUrl)
+  assert.equal(stagingFeedUrl({}), null)
+  assert.throws(() => stagingFeedUrl({ UPLOAD_STAGING_FEED_URL: 'http://staging.example.test/staging/feed' }), /HTTPS/)
+
+  let request
+  const normalized = await fetchStagingFeed(expectedUrl, async (url, options) => {
+    request = { url, options }
+    return new Response(JSON.stringify(feed()), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  assert.equal(request.url, expectedUrl)
+  assert.deepEqual(request.options.headers, { accept: 'application/json' })
+  assert.equal('authorization' in request.options.headers, false)
+  assert.equal(normalized.publications.length, 4)
+})
