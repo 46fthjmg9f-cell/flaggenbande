@@ -20,6 +20,10 @@ export interface DailyMetric {
   revenue?: Numeric
   proceeds?: Numeric
   purchases?: Numeric
+  appUnits?: Numeric
+  inAppPurchaseUnits?: Numeric
+  restoredInAppPurchaseUnits?: Numeric
+  unclassifiedSalesUnits?: Numeric
   refunds?: Numeric
   retention?: Numeric
 }
@@ -42,6 +46,12 @@ export interface SocialMetrics {
   followersGained: Numeric
 }
 
+export interface RetentionPoint {
+  elapsedVideoTimeRatio: number
+  audienceWatchRatio: number
+  relativeRetentionPerformance: number | null
+}
+
 export interface SocialVideo {
   platform: SocialPlatform
   platformVideoId: string
@@ -54,6 +64,21 @@ export interface SocialVideo {
   status: string
   durationSeconds: Numeric
   metrics: SocialMetrics
+  retention?: RetentionPoint[]
+  retentionCheckedAt?: string | null
+  retentionCheckStatus?: 'available' | 'error'
+  retentionCheckReason?: string
+}
+
+export interface AppleSalesSummary {
+  reportDate: string | null
+  classificationStatus: 'complete' | 'partial' | 'unavailable'
+  appUnits: Numeric
+  inAppPurchaseUnits: Numeric
+  restoredInAppPurchaseUnits: Numeric
+  unclassifiedUnits: Numeric
+  refunds: Numeric
+  unknownProductTypeIdentifiers: string[]
 }
 
 export interface SocialUpload {
@@ -114,6 +139,7 @@ export interface DashboardData {
     build?: string
     buildProcessingState?: string
   }
+  sales?: AppleSalesSummary
   finance?: { period: string; proceeds: number; currency: string } | null
   cloudKit: {
     daily: Array<CloudDay & { mode?: string }>

@@ -64,7 +64,7 @@ const youtubeFetch = ({
         snippet: {
           title: `Flag quiz ${id}`,
           description: 'Quiz description',
-          publishedAt: `2026-07-20T1${index}:00:00Z`,
+          publishedAt: `2026-07-20T${String(index % 24).padStart(2, '0')}:00:00Z`,
           thumbnails: { default: { url: `https://img.test/${id}.jpg` } },
         },
         status: {
@@ -183,6 +183,21 @@ test('YouTube fails closed before reading uploads when YOUTUBE_CHANNEL_ID mismat
   assert.equal(calls.some(value => value.includes('/youtube/v3/videos')), false)
 })
 
+test('non-retryable API responses are not requested repeatedly', async () => {
+  let calls = 0
+  const social = await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-test-token' },
+    fetchImpl: async () => {
+      calls += 1
+      return jsonResponse({ error: { message: 'invalid credentials' } }, 401)
+    },
+  })
+
+  assert.equal(calls, 1)
+  assert.equal(social.platforms.youtube.status, 'error')
+  assert.equal(social.platforms.youtube.reason, 'API request failed with HTTP 401.')
+})
+
 test('a successful refresh removes a formerly public YouTube video after it becomes private', async () => {
   const previousVideo = socialVideo('youtube', 'old-public')
   const previous = {
@@ -282,6 +297,284 @@ test('Meta collectors keep Instagram Login and Facebook Page credentials on sepa
   assert.ok(facebookCalls.length >= 2)
   assert.ok(instagramCalls.every(call => call.authorization === 'Bearer instagram-login-token'))
   assert.ok(facebookCalls.every(call => call.authorization === 'Bearer facebook-page-token'))
+})
+
+test('Facebook keeps basic video data, reports missing insights and builds a working Reel fallback URL', async () => {
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    assert.equal(options.headers?.authorization, 'Bearer facebook-page-token')
+    if (value.includes('/fb-page/videos')) {
+      return jsonResponse({
+        data: [{
+          id: '1594633352224956',
+          title: 'Flag quiz',
+          description: 'Quiz description',
+          created_time: '2026-07-21T13:17:29Z',
+          permalink_url: 'https://www.facebook.com/1594633352224956',
+          published: true,
+          status: { video_status: 'ready' },
+          length: 66.5,
+          likes: { summary: { total_count: 7 } },
+          comments: { summary: { total_count: 2 } },
+        }],
+      })
+    }
+    if (value.includes('/1594633352224956/video_insights')) {
+      return jsonResponse({ error: { message: 'access_token=must-not-leak' } }, 403)
+    }
+    if (value.includes('/fb-page?')) return jsonResponse({ name: 'Flaggenbande' })
+    throw new Error(`Unexpected request: ${value}`)
+  }
+
+  const social = await collectSocialPlatforms({
+    env: {
+      META_FACEBOOK_PAGE_ACCESS_TOKEN: 'facebook-page-token',
+      META_FACEBOOK_PAGE_ID: 'fb-page',
+    },
+    fetchImpl,
+  })
+
+  assert.equal(social.platforms.facebook.status, 'partial')
+  assert.match(social.platforms.facebook.reason, /Insights fehlen fuer 1 Video/)
+  assert.match(social.platforms.facebook.reason, /HTTP 403/)
+  assert.doesNotMatch(social.platforms.facebook.reason, /must-not-leak|facebook-page-token|access_token/)
+  const facebook = social.videos.find(entry => entry.platform === 'facebook')
+  assert.equal(facebook.url, 'https://www.facebook.com/reel/1594633352224956')
+  assert.equal(facebook.metrics.likes, 7)
+  assert.equal(facebook.metrics.comments, 2)
+  assert.equal(facebook.metrics.views, null)
+})
+
+test('Facebook maps official Reel insights before considering classic video metrics', async () => {
+  const insightRequests = []
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    assert.equal(options.headers?.authorization, 'Bearer facebook-page-token')
+    if (value.includes('/fb-page/videos')) {
+      return jsonResponse({ data: [{
+        id: 'reel-1', created_time: '2026-07-21T13:17:29Z', published: true, length: 40,
+        permalink_url: 'https://www.facebook.com/reel/reel-1',
+        likes: { summary: { total_count: 3 } }, comments: { summary: { total_count: 1 } },
+      }] })
+    }
+    if (value.includes('/reel-1/video_insights')) {
+      const metric = new URL(value).searchParams.get('metric')
+      insightRequests.push(metric)
+      return jsonResponse({ data: [
+        { name: 'blue_reels_play_count', values: [{ value: 125 }] },
+        { name: 'post_impressions_unique', values: [{ value: 90 }] },
+        { name: 'post_video_avg_time_watched', values: [{ value: 12_500 }] },
+        { name: 'post_video_view_time', values: [{ value: 750_000 }] },
+        { name: 'post_video_followers', values: [{ value: 4 }] },
+      ] })
+    }
+    if (value.includes('/fb-page?')) return jsonResponse({ name: 'Flaggenbande' })
+    throw new Error(`Unexpected request: ${value}`)
+  }
+
+  const social = await collectSocialPlatforms({
+    env: { META_FACEBOOK_PAGE_ACCESS_TOKEN: 'facebook-page-token', META_FACEBOOK_PAGE_ID: 'fb-page' },
+    fetchImpl,
+  })
+
+  assert.equal(social.platforms.facebook.status, 'available')
+  assert.equal(insightRequests.length, 1)
+  assert.match(insightRequests[0], /blue_reels_play_count/)
+  assert.doesNotMatch(insightRequests[0], /total_video_views/)
+  const facebook = social.videos.find(entry => entry.platform === 'facebook')
+  assert.equal(facebook.metrics.views, 125)
+  assert.equal(facebook.metrics.reach, 90)
+  assert.equal(facebook.metrics.averageViewDurationSeconds, 12.5)
+  assert.equal(facebook.metrics.watchTimeMinutes, 12.5)
+  assert.equal(facebook.metrics.followersGained, 4)
+})
+
+test('Facebook falls back to classic video metrics and treats two empty insight responses as partial', async () => {
+  const run = async classicPayload => {
+    const requests = []
+    const fetchImpl = async (url, options = {}) => {
+      const value = String(url)
+      assert.equal(options.headers?.authorization, 'Bearer facebook-page-token')
+      if (value.includes('/fb-page/videos')) {
+        return jsonResponse({ data: [{ id: 'video-1', created_time: '2026-07-21T13:17:29Z', published: true, length: 50 }] })
+      }
+      if (value.includes('/video-1/video_insights')) {
+        const metric = new URL(value).searchParams.get('metric')
+        requests.push(metric)
+        return metric.includes('blue_reels_play_count') ? jsonResponse({ data: [] }) : jsonResponse(classicPayload)
+      }
+      if (value.includes('/fb-page?')) return jsonResponse({ name: 'Flaggenbande' })
+      throw new Error(`Unexpected request: ${value}`)
+    }
+    return {
+      requests,
+      social: await collectSocialPlatforms({
+        env: { META_FACEBOOK_PAGE_ACCESS_TOKEN: 'facebook-page-token', META_FACEBOOK_PAGE_ID: 'fb-page' },
+        fetchImpl,
+      }),
+    }
+  }
+
+  const classic = await run({ data: [
+    { name: 'total_video_views', values: [{ value: 40 }] },
+    { name: 'total_video_views_unique', values: [{ value: 32 }] },
+    { name: 'total_video_view_total_time', values: [{ value: 180_000 }] },
+    { name: 'total_video_avg_time_watched', values: [{ value: 4_500 }] },
+  ] })
+  assert.equal(classic.requests.length, 2)
+  assert.match(classic.requests[1], /total_video_views/)
+  assert.equal(classic.social.platforms.facebook.status, 'available')
+  assert.equal(classic.social.videos[0].metrics.views, 40)
+  assert.equal(classic.social.videos[0].metrics.reach, 32)
+  assert.equal(classic.social.videos[0].metrics.watchTimeMinutes, 3)
+  assert.equal(classic.social.videos[0].metrics.averageViewDurationSeconds, 4.5)
+
+  const empty = await run({ data: [] })
+  assert.equal(empty.social.platforms.facebook.status, 'partial')
+  assert.match(empty.social.platforms.facebook.reason, /Insights fehlen fuer 1 Video/)
+  assert.equal(empty.social.videos[0].metrics.views, null)
+})
+
+test('YouTube collects validated audience retention per public video without inventing missing points', async () => {
+  const calls = []
+  const baseFetch = youtubeFetch()
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    if (value.includes('youtubeanalytics.googleapis.com')) {
+      const query = new URL(value).searchParams
+      if (query.get('dimensions') === 'elapsedVideoTimeRatio') {
+        calls.push(query)
+        const validRows = Array.from({ length: 101 }, (_, index) => [index / 100, 1 - (index / 200), index / 100])
+        return jsonResponse({
+          columnHeaders: [
+            { name: 'elapsedVideoTimeRatio' },
+            { name: 'audienceWatchRatio' },
+            { name: 'relativeRetentionPerformance' },
+          ],
+          rows: [[-0.1, 1, 0.5], [0.5, -1, 0.5], [0.005, 0.9, null], [0.5, 1, 2], ...validRows],
+        })
+      }
+    }
+    return baseFetch(url, options)
+  }
+
+  const social = await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-token' },
+    fetchImpl,
+  })
+
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].get('filters'), 'video==public')
+  assert.equal(calls[0].get('metrics'), 'audienceWatchRatio,relativeRetentionPerformance')
+  assert.equal(calls[0].get('maxResults'), '100')
+  const youtube = social.videos.find(entry => entry.platform === 'youtube')
+  assert.equal(youtube.retention.length, 100)
+  assert.deepEqual(youtube.retention[0], {
+    elapsedVideoTimeRatio: 0.005,
+    audienceWatchRatio: 0.9,
+    relativeRetentionPerformance: null,
+  })
+  assert.ok(youtube.retention.every(point => point.elapsedVideoTimeRatio > 0 && point.elapsedVideoTimeRatio <= 1))
+})
+
+test('YouTube retention checks are cached for 24 hours and capped at 12 overdue videos per run', async () => {
+  const privacyById = Object.fromEntries(Array.from({ length: 16 }, (_, index) => [`public-${String(index + 1).padStart(2, '0')}`, 'public']))
+  const baseFetch = youtubeFetch({ privacyById })
+  let retentionCalls = 0
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    if (value.includes('youtubeanalytics.googleapis.com')) {
+      const query = new URL(value).searchParams
+      if (query.get('dimensions') === 'elapsedVideoTimeRatio') {
+        retentionCalls += 1
+        return jsonResponse({
+          columnHeaders: [
+            { name: 'elapsedVideoTimeRatio' },
+            { name: 'audienceWatchRatio' },
+            { name: 'relativeRetentionPerformance' },
+          ],
+          rows: [[0.01, 1, 0.5], [1, 0.4, 0.3]],
+        })
+      }
+    }
+    return baseFetch(url, options)
+  }
+
+  const first = await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-token' },
+    fetchImpl,
+  })
+
+  assert.equal(retentionCalls, 12)
+  assert.equal(first.platforms.youtube.status, 'partial')
+  assert.match(first.platforms.youtube.reason, /Retention fuer 4 Videos werden in spaeteren Laeufen nachgeladen/)
+  assert.equal(first.videos.filter(entry => entry.retentionCheckedAt).length, 12)
+  assert.equal(first.videos.filter(entry => entry.retention?.length === 2).length, 12)
+
+  const second = await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-token' },
+    fetchImpl,
+    previous: first,
+  })
+
+  assert.equal(retentionCalls, 16)
+  assert.equal(second.platforms.youtube.status, 'available')
+  assert.equal(second.videos.filter(entry => entry.retentionCheckedAt).length, 16)
+  assert.ok(second.videos.every(entry => entry.retention?.length === 2))
+})
+
+test('YouTube retention API errors mark the platform partial and preserve the last known curve', async () => {
+  const oldCheckedAt = new Date(Date.now() - (25 * 60 * 60 * 1000)).toISOString().replace(/\.\d{3}Z$/, 'Z')
+  const previousPoint = { elapsedVideoTimeRatio: 0.5, audienceWatchRatio: 0.62, relativeRetentionPerformance: 0.4 }
+  const previousVideo = socialVideo('youtube', 'public', {
+    retention: [previousPoint],
+    retentionCheckedAt: oldCheckedAt,
+  })
+  const previous = {
+    platforms: { youtube: { status: 'available', accountName: 'Flaggenbande', videoCount: 1 } },
+    videos: [previousVideo],
+    snapshots: [],
+  }
+  const baseFetch = youtubeFetch()
+  let retentionCalls = 0
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    if (value.includes('youtubeanalytics.googleapis.com')) {
+      const query = new URL(value).searchParams
+      if (query.get('dimensions') === 'elapsedVideoTimeRatio') {
+        retentionCalls += 1
+        return jsonResponse({ error: { message: 'quota exceeded' } }, 429)
+      }
+    }
+    return baseFetch(url, options)
+  }
+
+  const attemptedAt = Date.now()
+  const social = await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-token' },
+    fetchImpl,
+    previous,
+  })
+
+  assert.equal(retentionCalls, 1)
+  assert.equal(social.platforms.youtube.status, 'partial')
+  assert.match(social.platforms.youtube.reason, /Retention konnte fuer 1 Video nicht aktualisiert werden/)
+  assert.deepEqual(social.videos[0].retention, [previousPoint])
+  assert.ok(Date.parse(social.videos[0].retentionCheckedAt) >= attemptedAt - 1_000)
+  assert.equal(social.videos[0].retentionCheckStatus, 'error')
+
+  const checkedAtAfterFailure = social.videos[0].retentionCheckedAt
+  const cached = await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-token' },
+    fetchImpl,
+    previous: social,
+  })
+
+  assert.equal(retentionCalls, 1)
+  assert.equal(cached.platforms.youtube.status, 'partial')
+  assert.deepEqual(cached.videos[0].retention, [previousPoint])
+  assert.equal(cached.videos[0].retentionCheckedAt, checkedAtAfterFailure)
+  assert.equal(cached.videos[0].retentionCheckStatus, 'error')
 })
 
 test('TikTok refresh credentials obtain a short-lived access token before video collection', async () => {
@@ -622,6 +915,36 @@ test('history merge retains videos and adds one timestamped metric snapshot', ()
   assert.equal(updated.videos.length, 1)
   assert.equal(updated.videos[0].metrics.views, 18)
   assert.equal(updated.snapshots.length, 2)
+})
+
+test('partial refresh preserves known metrics and retention using the independent previous index', () => {
+  const retentionCheckedAt = '2026-07-20T08:00:00Z'
+  const previousPoint = { elapsedVideoTimeRatio: 0.5, audienceWatchRatio: 0.64, relativeRetentionPerformance: 0.45 }
+  const previousVideo = socialVideo('youtube', 'video-1', {
+    metrics: metrics({ views: 100, likes: 8 }),
+    retention: [previousPoint],
+    retentionCheckedAt,
+  })
+  const previous = {
+    platforms: { youtube: { status: 'available' } },
+    videos: [previousVideo],
+    snapshots: [],
+  }
+  const refreshed = socialVideo('youtube', 'video-1', {
+    metrics: metrics({ views: null, likes: 9 }),
+    retention: [],
+  })
+  const merged = mergeSocialHistory(previous, {
+    platforms: { youtube: { status: 'partial' } },
+    videos: [refreshed],
+    refreshedPlatforms: ['youtube'],
+  }, '2026-07-21T10:00:00Z')
+
+  assert.equal(merged.videos[0].metrics.views, 100)
+  assert.equal(merged.videos[0].metrics.likes, 9)
+  assert.deepEqual(merged.videos[0].retention, [previousPoint])
+  assert.equal(merged.videos[0].retentionCheckedAt, retentionCheckedAt)
+  assert.equal(merged.snapshots[0].metrics.views, 100)
 })
 
 test('totals sum additive metrics only and leave averages unset', () => {

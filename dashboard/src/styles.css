@@ -127,6 +127,60 @@
 .connection-details { margin-top: 18px; border-top: 1px solid #253c58; padding-top: 14px; }
 .connection-details summary { cursor: pointer; color: #829ab5; font-size: .78rem; font-weight: 750; }
 
+.social-export { min-height: 40px; border: 1px solid #1688d4; border-radius: 9px; background: #1688d4; color: #fff; padding: 0 13px; cursor: pointer; font-weight: 750; white-space: nowrap; }
+.social-export:hover { background: #249ce9; }
+.social-export:focus-visible, .platform-comparison-filter button:focus-visible, .social-video-title-button:focus-visible, .dialog-close:focus-visible, .platform-detail-heading a:focus-visible { outline: 2px solid #75c7ff; outline-offset: 3px; }
+.platform-comparison-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-top: 20px; padding: 12px; border: 1px solid #253c58; border-radius: 12px; background: rgba(7, 17, 31, .72); }
+.platform-comparison-filter button { min-height: 34px; border: 1px solid #344c68; border-radius: 999px; background: #0e1d30; color: #91a8c1; padding: 0 12px; cursor: pointer; font-size: .72rem; font-weight: 800; }
+.platform-comparison-filter button:hover { border-color: #5a7695; color: #edf5ff; }
+.platform-comparison-filter button.active { border-color: #75c7ff; background: #183450; color: #edf5ff; }
+.platform-comparison-filter .platform-filter-chip.youtube.active { border-color: #ff7181; background: rgba(255, 113, 129, .16); }
+.platform-comparison-filter .platform-filter-chip.instagram.active { border-color: #d59aff; background: rgba(213, 154, 255, .14); }
+.platform-comparison-filter .platform-filter-chip.facebook.active { border-color: #75c7ff; background: rgba(117, 199, 255, .14); }
+.platform-comparison-filter .platform-filter-chip.tiktok.active { border-color: #62e6cf; background: rgba(98, 230, 207, .13); }
+.platform-comparison-filter small { margin-left: auto; color: #607b99; font-size: .68rem; }
+.social-video-card { cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.social-video-card:hover { border-color: #3f6082; background: #0d2035; }
+.social-video-title-button { display: grid; gap: 4px; min-width: 0; max-width: 760px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.social-video-title { color: #edf5ff; font-size: 1rem; font-weight: 800; letter-spacing: -.015em; }
+.social-video-open-label { margin-top: 3px; color: #75c7ff; font-size: .67rem; font-weight: 700; }
+.platform-pill.unavailable { opacity: .46; cursor: default; filter: saturate(.5); }
+
+.social-video-dialog { width: min(1180px, calc(100vw - 32px)); max-height: calc(100vh - 40px); margin: auto; padding: 0; overflow: auto; border: 1px solid #34516f; border-radius: 17px; background: #091728; color: #edf5ff; box-shadow: 0 24px 90px rgba(0, 0, 0, .55); }
+.social-video-dialog::backdrop { background: rgba(2, 8, 15, .82); backdrop-filter: blur(5px); }
+.social-video-dialog-content { padding: 22px; }
+.social-video-dialog-content > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid #253c58; }
+.social-video-dialog-content > header h2 { margin: 6px 0 4px; font-size: clamp(1.35rem, 3vw, 2rem); letter-spacing: -.035em; }
+.social-video-dialog-content > header p { margin: 0; color: #829ab5; font-size: .8rem; }
+.dialog-close { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; padding: 0; border: 1px solid #344c68; border-radius: 50%; background: #10233a; color: #edf5ff; cursor: pointer; font-size: 1.5rem; line-height: 1; }
+.dialog-close:hover { border-color: #75c7ff; }
+.platform-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(310px, 100%), 1fr)); gap: 12px; margin-top: 18px; }
+.platform-detail-card { min-width: 0; padding: 16px; border: 1px solid #263d58; border-radius: 13px; background: #0b1c30; }
+.platform-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.platform-detail-heading a { color: #75c7ff; font-size: .7rem; font-weight: 750; text-decoration: none; }
+.external-link-unavailable { color: #607b99; font-size: .68rem; }
+.platform-detail-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 14px 0 18px; }
+.platform-detail-meta div, .platform-metric-grid div { min-width: 0; padding: 9px; border: 1px solid #20364f; border-radius: 8px; background: rgba(7, 17, 31, .55); }
+.platform-detail-meta dt, .platform-metric-grid dt, .snapshot-summary dt { color: #7189a5; font-size: .62rem; }
+.platform-detail-meta dd, .platform-metric-grid dd, .snapshot-summary dd { margin: 4px 0 0; overflow-wrap: anywhere; font-size: .76rem; font-weight: 780; }
+.platform-detail-card h3 { margin: 16px 0 8px; color: #b9cce0; font-size: .76rem; letter-spacing: .02em; }
+.platform-metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.retention-availability, .snapshot-summary { margin-top: 16px; padding: 12px; border: 1px solid #223b56; border-radius: 10px; background: rgba(7, 17, 31, .48); }
+.retention-availability h3, .snapshot-summary h3 { margin: 0 0 7px; }
+.retention-availability p, .snapshot-summary p { margin: 0; color: #829ab5; font-size: .7rem; line-height: 1.55; }
+.retention-availability p strong { color: #c9d9e9; }
+.snapshot-summary dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin: 10px 0 0; }
+.snapshot-summary dl div { padding: 7px; border-radius: 7px; background: #0a192a; }
+.retention-chart { margin: 9px 0; }
+.retention-chart svg { display: block; width: 100%; height: auto; min-height: 110px; border-radius: 8px; background: #081524; }
+.retention-axis { stroke: #2a425d; stroke-width: 1; }
+.retention-line { fill: none; stroke: #75c7ff; stroke-width: 4; stroke-linejoin: round; stroke-linecap: round; }
+.retention-line.youtube { stroke: #ff7181; }
+.retention-line.instagram { stroke: #d59aff; }
+.retention-line.facebook { stroke: #75c7ff; }
+.retention-line.tiktok { stroke: #62e6cf; }
+.retention-chart-labels { display: flex; justify-content: space-between; margin-top: 4px; color: #607b99; font-size: .58rem; }
+
 @media (max-width: 1050px) {
   .social-kpis-focused { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
@@ -137,4 +191,11 @@
   .video-platform-links { justify-content: flex-start; }
   .social-kpis-focused { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .finance-source-list li { align-items: flex-start; }
+  .social-heading { align-items: flex-start; }
+  .social-export { width: 100%; margin-top: 14px; }
+  .platform-comparison-filter small { width: 100%; margin: 4px 0 0; }
+  .social-video-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); border-radius: 12px; }
+  .social-video-dialog-content { padding: 15px; }
+  .platform-detail-grid, .platform-detail-meta, .platform-metric-grid { grid-template-columns: 1fr; }
+  .snapshot-summary dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -619,7 +619,23 @@ const setState = async (env: Env, job: Job, state: JobStatus, changes: Partial<J
       changes.last_error ?? job.last_error, now(), changes.publishedAt ?? (state === "published" ? now() : null), job.job_id).run();
 };
 
-const publicUrl = (platform: Platform, id: string): string => platform === "instagram" ? `https://www.instagram.com/p/${id}/` : `https://www.facebook.com/${id}`;
+const facebookReelUrl = (id: string): string => `https://www.facebook.com/reel/${encodeURIComponent(id)}`;
+
+const publicUrl = (platform: Platform, id: string): string =>
+  platform === "instagram" ? `https://www.instagram.com/p/${id}/` : facebookReelUrl(id);
+
+const verifiedFacebookPermalink = (id: unknown, value: unknown): string => {
+  try {
+    const candidate = new URL(String(value ?? ""));
+    const hostname = candidate.hostname.toLowerCase();
+    const isVideoPath = /^\/reel\/[^/]+/.test(candidate.pathname) || /\/videos\/[^/]+/.test(candidate.pathname) ||
+      (candidate.pathname.startsWith("/watch") && candidate.searchParams.has("v"));
+    if (candidate.protocol === "https:" && (hostname === "facebook.com" || hostname.endsWith(".facebook.com")) && isVideoPath) {
+      return candidate.toString();
+    }
+  } catch { /* Missing or malformed Graph permalinks use the stable Reel route. */ }
+  return facebookReelUrl(String(id));
+};
 
 /**
  * Pages is used as a short-lived, free Meta import origin. Cleanup is enabled
@@ -1525,17 +1541,37 @@ const setAnalyticsState = async (env: Env, key: string, value: string): Promise<
     .bind(key, value, now()).run();
 };
 
+const safeAnalyticsReason = (reason: unknown): string => {
+  const value = String(reason ?? "");
+  if (/^Facebook-Basisdaten geladen; Video-Insights fehlen fuer \d+ Videos?\.$/.test(value)) return value;
+  const status = value.match(/HTTP\s+(\d{3})/i)?.[1];
+  return status
+    ? `Meta Analytics HTTP ${status}. Berechtigung oder Metrikverfuegbarkeit pruefen.`
+    : "Meta Analytics konnte voruebergehend nicht vollstaendig aktualisiert werden.";
+};
+
 const saveAnalyticsPlatform = async (
   env: Env,
   platform: SocialPlatform,
   accountName: string | null,
   videos: SocialVideo[],
   collectedAt: string,
+  status: "available" | "partial" = "available",
+  reason: string | null = null,
 ): Promise<void> => {
+  const previousMetrics = new Map<string, SocialMetrics>();
+  if (status === "partial") {
+    const previous = await env.DB.prepare("SELECT platform_video_id, metrics_json FROM social_analytics_videos WHERE platform = ?")
+      .bind(platform).all<{ platform_video_id: string; metrics_json: string }>();
+    for (const row of previous.results ?? []) {
+      try { previousMetrics.set(row.platform_video_id, normalizedMetrics(JSON.parse(row.metrics_json))); } catch { /* Ignore invalid legacy metrics. */ }
+    }
+  }
   await env.DB.prepare(`INSERT INTO social_analytics_platforms (platform, status, account_name, reason, updated_at)
-    VALUES (?, 'available', ?, NULL, ?)
-    ON CONFLICT(platform) DO UPDATE SET status = 'available', account_name = excluded.account_name,
-      reason = NULL, updated_at = excluded.updated_at`).bind(platform, accountName, collectedAt).run();
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(platform) DO UPDATE SET status = excluded.status, account_name = excluded.account_name,
+      reason = excluded.reason, updated_at = excluded.updated_at`)
+    .bind(platform, status, accountName, reason ? safeAnalyticsReason(reason) : null, collectedAt).run();
   await env.DB.prepare("DELETE FROM social_analytics_videos WHERE platform = ?").bind(platform).run();
   const capturedDate = collectedAt.slice(0, 10);
   for (const item of videos) {
@@ -1546,7 +1582,11 @@ const saveAnalyticsPlatform = async (
         .first<{ source_video_id: string }>();
       contentId = link?.source_video_id ?? null;
     }
-    const metricsJson = JSON.stringify(item.metrics);
+    const previous = previousMetrics.get(item.platformVideoId);
+    const effectiveMetrics = previous
+      ? Object.fromEntries(analyticsMetricNames.map((name) => [name, item.metrics[name] ?? previous[name] ?? null])) as unknown as SocialMetrics
+      : item.metrics;
+    const metricsJson = JSON.stringify(effectiveMetrics);
     await env.DB.prepare(`INSERT INTO social_analytics_videos (
       platform, platform_video_id, content_id, title, description, published_at, url, thumbnail_url,
       status, duration_seconds, metrics_json, updated_at
@@ -1587,7 +1627,7 @@ const saveAnalyticsError = async (env: Env, platform: SocialPlatform, reason: st
   await env.DB.prepare(`INSERT INTO social_analytics_platforms (platform, status, account_name, reason, updated_at)
     VALUES (?, ?, NULL, ?, ?)
     ON CONFLICT(platform) DO UPDATE SET status = excluded.status, reason = excluded.reason, updated_at = excluded.updated_at`)
-    .bind(platform, status, reason.replace(/[^a-zA-Z0-9 äöüÄÖÜß.,:;()_-]/g, "").slice(0, 240), now()).run();
+    .bind(platform, status, safeAnalyticsReason(reason), now()).run();
 };
 
 const insightValues = (payload: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(
@@ -1610,6 +1650,49 @@ const analyticsGraph = async (
   const response = await fetch(`${graphUrl(platform, env, path)}?${query.toString()}`);
   if (!response.ok) throw new Error(`${platform} Analytics HTTP ${response.status}`);
   return response.json() as Promise<Record<string, unknown>>;
+};
+
+const facebookReelMetrics = [
+  "blue_reels_play_count",
+  "post_impressions_unique",
+  "post_video_avg_time_watched",
+  "post_video_view_time",
+  "post_video_followers",
+] as const;
+const facebookClassicVideoMetrics = [
+  "total_video_views",
+  "total_video_views_unique",
+  "total_video_view_total_time",
+  "total_video_avg_time_watched",
+] as const;
+
+const hasNumericInsight = (insights: Record<string, unknown>, names: readonly string[]): boolean =>
+  names.some((name) => nullableNumber(insights[name]) !== null);
+
+const facebookVideoInsights = async (env: Env, videoId: string): Promise<{
+  kind: "reel" | "classic" | null;
+  insights: Record<string, unknown>;
+  reason: string | null;
+}> => {
+  const read = async (names: readonly string[]): Promise<Record<string, unknown>> => insightValues(
+    await analyticsGraph("facebook", env, `${videoId}/video_insights`, { metric: names.join(","), period: "lifetime" }),
+  );
+  const safeFailures: string[] = [];
+  try {
+    const insights = await read(facebookReelMetrics);
+    if (hasNumericInsight(insights, facebookReelMetrics)) return { kind: "reel", insights, reason: null };
+    safeFailures.push("Der Reel-Insights-Endpunkt lieferte keine nutzbaren Metriken.");
+  } catch (error) {
+    safeFailures.push(safeAnalyticsReason(error instanceof Error ? error.message : error));
+  }
+  try {
+    const insights = await read(facebookClassicVideoMetrics);
+    if (hasNumericInsight(insights, facebookClassicVideoMetrics)) return { kind: "classic", insights, reason: null };
+    safeFailures.push("Der klassische Video-Insights-Endpunkt lieferte keine nutzbaren Metriken.");
+  } catch (error) {
+    safeFailures.push(safeAnalyticsReason(error instanceof Error ? error.message : error));
+  }
+  return { kind: null, insights: {}, reason: [...new Set(safeFailures)].join(" ").slice(0, 240) };
 };
 
 const collectInstagramAnalytics = async (env: Env): Promise<{ accountName: string | null; videos: SocialVideo[] }> => {
@@ -1647,7 +1730,12 @@ const collectInstagramAnalytics = async (env: Env): Promise<{ accountName: strin
   return { accountName: String(account.username ?? account.name ?? "") || null, videos };
 };
 
-const collectFacebookAnalytics = async (env: Env): Promise<{ accountName: string | null; videos: SocialVideo[] }> => {
+const collectFacebookAnalytics = async (env: Env): Promise<{
+  accountName: string | null;
+  videos: SocialVideo[];
+  status: "available" | "partial";
+  reason: string | null;
+}> => {
   const pageId = accountFor("facebook", env);
   const account = await analyticsGraph("facebook", env, pageId, { fields: "name" });
   const media = await analyticsGraph("facebook", env, `${pageId}/videos`, {
@@ -1655,39 +1743,48 @@ const collectFacebookAnalytics = async (env: Env): Promise<{ accountName: string
     limit: "100",
   });
   const videos: SocialVideo[] = [];
+  const insightFailures: string[] = [];
   for (const raw of Array.isArray(media.data) ? media.data : []) {
     const item = raw as Record<string, unknown>;
     const rawStatus = String((item.status as Record<string, unknown> | undefined)?.video_status ?? "").toLowerCase();
     if (item.published === false || ["processing", "error", "blocked", "copyright_blocked"].includes(rawStatus)) continue;
-    let insights: Record<string, unknown> = {};
-    try {
-      insights = insightValues(await analyticsGraph("facebook", env, `${String(item.id)}/video_insights`, {
-        metric: "total_video_views,total_video_view_total_time,total_video_avg_time_watched",
-      }));
-    } catch { /* Basic counters still provide a valid partial record. */ }
+    const insightResult = await facebookVideoInsights(env, String(item.id));
+    const insights = insightResult.insights;
+    if (!insightResult.kind && insightResult.reason) insightFailures.push(insightResult.reason);
+    const isReel = insightResult.kind === "reel";
     const likes = (item.likes as Record<string, unknown> | undefined)?.summary as Record<string, unknown> | undefined;
     const comments = (item.comments as Record<string, unknown> | undefined)?.summary as Record<string, unknown> | undefined;
-    const totalTime = nullableNumber(insights.total_video_view_total_time);
-    const averageTime = nullableNumber(insights.total_video_avg_time_watched);
+    const totalTime = nullableNumber(isReel ? insights.post_video_view_time : insights.total_video_view_total_time);
+    const averageTime = nullableNumber(isReel ? insights.post_video_avg_time_watched : insights.total_video_avg_time_watched);
     const entry = normalizedSocialVideo({
       platformVideoId: item.id,
       title: item.title,
       description: item.description,
       publishedAt: item.created_time,
-      url: item.permalink_url,
+      url: verifiedFacebookPermalink(item.id, item.permalink_url),
       status: "published",
       durationSeconds: item.length,
       metrics: {
-        views: insights.total_video_views,
+        views: isReel ? insights.blue_reels_play_count : insights.total_video_views,
+        reach: isReel ? insights.post_impressions_unique : insights.total_video_views_unique,
         likes: likes?.total_count,
         comments: comments?.total_count,
         watchTimeMinutes: totalTime === null ? null : totalTime / 60000,
         averageViewDurationSeconds: averageTime === null ? null : averageTime / 1000,
+        followersGained: isReel ? insights.post_video_followers : null,
       },
     });
     if (entry) videos.push(entry);
   }
-  return { accountName: String(account.name ?? "") || null, videos };
+  const failureCount = insightFailures.length;
+  return {
+    accountName: String(account.name ?? "") || null,
+    videos,
+    status: failureCount > 0 ? "partial" : "available",
+    reason: failureCount > 0
+      ? `Facebook-Basisdaten geladen; Video-Insights fehlen fuer ${failureCount} ${failureCount === 1 ? "Video" : "Videos"}.`
+      : null,
+  };
 };
 
 const refreshMetaAnalyticsIfDue = async (env: Env, force = false): Promise<void> => {
@@ -1702,7 +1799,9 @@ const refreshMetaAnalyticsIfDue = async (env: Env, force = false): Promise<void>
   ] as const) {
     try {
       const result = await collector(env);
-      await saveAnalyticsPlatform(env, platform, result.accountName, result.videos, collectedAt);
+      const status = "status" in result ? result.status : "available";
+      const reason = "reason" in result ? result.reason : null;
+      await saveAnalyticsPlatform(env, platform, result.accountName, result.videos, collectedAt, status, reason);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Meta Analytics konnte nicht aktualisiert werden.";
       await saveAnalyticsError(env, platform, message);
