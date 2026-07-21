@@ -7,6 +7,7 @@ import {
   facebookDraftFinishPayload,
   instagramContainerPayload,
   publicStagingSnapshot,
+  resolveExecutionErrors,
   validateStagingApiBaseUrl,
   validatePlatformMetadata,
   validateStagingRegistration,
@@ -116,6 +117,20 @@ test('manual TikTok confirmation requires account and timestamp evidence', () =>
     ...basePlanInput,
     manualTikTokReceipt: { confirmedManualUpload: true, accountFingerprint: 'other-account', confirmedAt: '2026-07-21T08:00:00Z' },
   }), /Zielkonto/)
+})
+
+test('a successful retry resolves only the matching active error without losing history', () => {
+  const execution = {
+    errors: [
+      { platform: 'meta', message: 'temporary' },
+      { platform: 'youtube', message: 'still active' },
+    ],
+  }
+  resolveExecutionErrors(execution, 'meta', '2026-07-21T09:30:00.000Z')
+  assert.deepEqual(execution.errors, [{ platform: 'youtube', message: 'still active' }])
+  assert.deepEqual(execution.resolvedErrors, [{
+    platform: 'meta', message: 'temporary', resolvedAt: '2026-07-21T09:30:00.000Z',
+  }])
 })
 
 test('provider payloads cannot accidentally publish', () => {

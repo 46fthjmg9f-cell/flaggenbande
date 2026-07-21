@@ -280,6 +280,19 @@ export function validateStagingRegistration(plan, value) {
   return value
 }
 
+export function resolveExecutionErrors(execution, platform, resolvedAt = new Date().toISOString()) {
+  if (!isRecord(execution)) throw new Error('execution muss ein Objekt sein.')
+  const errors = Array.isArray(execution.errors) ? execution.errors : []
+  const resolved = errors.filter(error => isRecord(error) && error.platform === platform)
+  if (resolved.length === 0) return execution
+  execution.errors = errors.filter(error => !isRecord(error) || error.platform !== platform)
+  execution.resolvedErrors = [
+    ...(Array.isArray(execution.resolvedErrors) ? execution.resolvedErrors : []),
+    ...resolved.map(error => ({ ...error, resolvedAt })),
+  ]
+  return execution
+}
+
 function targetPublicStatus(target, receipt) {
   const workflow = receipt?.workflowState ?? target.workflowState
   const transport = receipt?.transportState ?? target.transportState

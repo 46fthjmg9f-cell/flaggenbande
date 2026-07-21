@@ -11,6 +11,7 @@ import {
   buildStagingPlan,
   publicStagingSnapshot,
   remoteAccountFingerprint,
+  resolveExecutionErrors,
   validateStagingApiBaseUrl,
   validateStagingRegistration,
 } from './upload-staging-core.mjs'
@@ -30,6 +31,7 @@ function argumentsFrom(argv) {
   }
   const selectedPlatforms = (value('--platforms') ?? 'youtube,meta')
     .split(',').map(item => item.trim()).filter(Boolean)
+  if (selectedPlatforms.length === 0) throw new Error('--platforms benötigt mindestens youtube oder meta.')
   if (selectedPlatforms.some(item => !['youtube', 'meta'].includes(item))) {
     throw new Error('--platforms erlaubt nur youtube, meta oder youtube,meta.')
   }
@@ -630,6 +632,7 @@ async function main() {
               idempotencyKey: target.idempotencyKey,
             })),
           }
+          resolveExecutionErrors(record.execution, 'dashboard')
           await persist()
         } catch (error) {
           record.execution.targets.registry = { operationState: 'failed', transportState: 'failed' }
@@ -673,6 +676,7 @@ async function main() {
                 })
                 record.execution.receipts.push(receipt)
                 record.execution.targets.youtube = { operationState: 'confirmed', transportState: 'ready', dashboardSync: 'confirmed' }
+                resolveExecutionErrors(record.execution, 'youtube')
                 await persist()
               } else {
                 record.execution.targets.youtube = {
@@ -687,6 +691,7 @@ async function main() {
                 }, preflight)
                 record.execution.receipts.push(receipt)
                 record.execution.targets.youtube = { ...record.execution.targets.youtube, operationState: 'confirmed', transportState: 'ready' }
+                resolveExecutionErrors(record.execution, 'youtube')
                 try {
                   await postStagingReceipt(plan, receipt, serverTarget.idempotencyKey, claim.claimId)
                   record.execution.targets.youtube.dashboardSync = 'confirmed'
@@ -715,6 +720,7 @@ async function main() {
             }
             await persist()
             const result = await stageMeta(plan, args, recoverOnly)
+            resolveExecutionErrors(record.execution, 'meta')
             for (const receipt of normalizedMetaReceipts(result)) {
               const index = record.execution.receipts.findIndex(existing => existing.platform === receipt.platform)
               if (index >= 0) record.execution.receipts[index] = receipt
@@ -746,8 +752,20 @@ async function main() {
         ? 'staged_non_public'
         : record.execution.errors.length > 0 ? 'partial_or_reconcile_required' : 'processing'
       record.execution.completedAt = record.execution.status === 'staged_non_public' ? new Date().toISOString() : null
+      const requestedTargets = [
+        ...(args.selectedPlatforms.includes('youtube') ? ['youtube'] : []),
+        ...(args.selectedPlatforms.includes('meta') ? ['instagram', 'facebook'] : []),
+      ]
+      const requestedErrors = new Set(record.execution.errors.map(error => error.platform))
+      const requestedSucceeded = requestedTargets.every(platform => completedPlatforms.has(platform)) &&
+        !requestedTargets.some(platform => requestedErrors.has(platform))
+      record.execution.lastAttempt = {
+        platforms: [...args.selectedPlatforms],
+        status: requestedSucceeded ? 'succeeded' : 'incomplete_or_failed',
+        completedAt: new Date().toISOString(),
+      }
       await persist()
-      if (record.execution.status !== 'staged_non_public') process.exitCode = 1
+      if (!requestedSucceeded) process.exitCode = 1
     }
 
     const outcome = args.execute

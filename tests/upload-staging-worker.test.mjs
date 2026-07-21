@@ -40,3 +40,13 @@ test('public staging feed omits remote IDs and private metadata', async () => {
   assert.match(feed, /publishedAt:\s*null/)
   assert.match(feed, /publicUrl:\s*null/)
 })
+
+test('protected staging receipts expose an authoritative confirmation timestamp', async () => {
+  const source = await readFile(workerUrl, 'utf8')
+  const start = source.indexOf('const stagingTargetResponse =')
+  const end = source.indexOf('const stagingRunResponse =', start)
+  assert.ok(start >= 0 && end > start)
+  const response = source.slice(start, end)
+  assert.match(response, /confirmedAt:/)
+  assert.match(response, /target\.updated_at/)
+})
