@@ -1,30 +1,30 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-21T09:59:06Z",
+  "generatedAt": "2026-07-21T11:47:06Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
       "available": true,
-      "updatedAt": "2026-07-21T09:59:06Z"
+      "updatedAt": "2026-07-21T11:47:06Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-21T09:59:06Z"
+      "updatedAt": "2026-07-21T11:47:06Z"
     },
     "Sales & Trends": {
       "available": false,
       "reason": "Apple meldet für den abgefragten Tag noch keine Verkäufe.",
-      "updatedAt": "2026-07-21T09:59:06Z"
+      "updatedAt": "2026-07-21T11:47:06Z"
     },
     "CloudKit Public DB": {
       "available": true,
-      "updatedAt": "2026-07-21T09:59:06Z"
+      "updatedAt": "2026-07-21T11:47:06Z"
     },
     "Finance": {
       "available": false,
       "reason": "Der monatliche Finanzreport ist noch nicht verfügbar.",
-      "updatedAt": "2026-07-21T09:59:06Z"
+      "updatedAt": "2026-07-21T11:47:06Z"
     },
     "YouTube": {
       "available": true,
@@ -44,7 +44,7 @@
     "TikTok": {
       "available": false,
       "reason": "TikTok access token or refresh credentials are missing.",
-      "updatedAt": "2026-07-21T09:59:03Z"
+      "updatedAt": "2026-07-21T11:47:01Z"
     }
   },
   "kpis": {
@@ -617,6 +617,82 @@
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
+      "appVersion": "1.0.1",
+      "downloads": 0,
+      "firstTimeDownloads": 0,
+      "redownloads": 0,
+      "impressions": 0,
+      "productPageViews": 0,
+      "sessions": 0,
+      "activeDevices": 0,
+      "activeUsers": 0,
+      "installations": 0,
+      "deletions": 0,
+      "crashes": 0,
+      "retention": 0
+    },
+    {
+      "date": "2026-07-20",
+      "country": "GB",
+      "device": "iPhone",
+      "osVersion": "iOS 26.5",
+      "appVersion": "1.0.1",
+      "downloads": 0,
+      "firstTimeDownloads": 0,
+      "redownloads": 0,
+      "impressions": 0,
+      "productPageViews": 0,
+      "sessions": 0,
+      "activeDevices": 0,
+      "activeUsers": 0,
+      "installations": 0,
+      "deletions": 0,
+      "crashes": 0,
+      "retention": 0
+    },
+    {
+      "date": "2026-07-20",
+      "country": "DE",
+      "device": "iPhone",
+      "osVersion": "iOS 26.4",
+      "appVersion": "1.0.1",
+      "downloads": 0,
+      "firstTimeDownloads": 0,
+      "redownloads": 0,
+      "impressions": 0,
+      "productPageViews": 0,
+      "sessions": 0,
+      "activeDevices": 0,
+      "activeUsers": 0,
+      "installations": 0,
+      "deletions": 0,
+      "crashes": 0,
+      "retention": 0
+    },
+    {
+      "date": "2026-07-20",
+      "country": "DE",
+      "device": "iPhone",
+      "osVersion": "iOS 18.7",
+      "appVersion": "1.0.1",
+      "downloads": 0,
+      "firstTimeDownloads": 0,
+      "redownloads": 0,
+      "impressions": 0,
+      "productPageViews": 0,
+      "sessions": 0,
+      "activeDevices": 0,
+      "activeUsers": 0,
+      "installations": 0,
+      "deletions": 0,
+      "crashes": 0,
+      "retention": 0
+    },
+    {
+      "date": "2026-07-20",
+      "country": "DE",
+      "device": "iPhone",
+      "osVersion": "iOS 26.5",
       "downloads": 0,
       "firstTimeDownloads": 0,
       "redownloads": 0,
@@ -634,6 +710,10 @@
   "countries": [
     {
       "key": "DE",
+      "value": 0
+    },
+    {
+      "key": "GB",
       "value": 0
     },
     {
@@ -690,6 +770,10 @@
   "versions": [
     {
       "key": "1.0",
+      "value": 0
+    },
+    {
+      "key": "1.0.1",
       "value": 0
     }
   ],
@@ -953,14 +1037,14 @@
   },
   "social": {
     "schemaVersion": 1,
-    "syncedAt": "2026-07-21T09:59:03Z",
+    "syncedAt": "2026-07-21T11:47:01Z",
     "platforms": {
       "youtube": {
         "status": "available",
         "reason": null,
         "accountName": "Flaggenbande",
         "videoCount": 2,
-        "startedAt": "2026-07-21T09:59:03.100Z",
+        "startedAt": "2026-07-21T11:47:01.566Z",
         "completedAt": "2026-07-21T09:39:29.077Z"
       },
       "instagram": {
@@ -968,7 +1052,7 @@
         "reason": null,
         "accountName": "flaggenbande",
         "videoCount": 2,
-        "startedAt": "2026-07-21T09:59:03.100Z",
+        "startedAt": "2026-07-21T11:47:01.566Z",
         "completedAt": "2026-07-21T08:32:58.559Z"
       },
       "facebook": {
@@ -976,7 +1060,7 @@
         "reason": null,
         "accountName": "Flaggenbande",
         "videoCount": 2,
-        "startedAt": "2026-07-21T09:59:03.100Z",
+        "startedAt": "2026-07-21T11:47:01.566Z",
         "completedAt": "2026-07-21T08:32:58.559Z"
       },
       "tiktok": {
@@ -984,8 +1068,8 @@
         "reason": "TikTok access token or refresh credentials are missing.",
         "accountName": null,
         "videoCount": 0,
-        "startedAt": "2026-07-21T09:59:03Z",
-        "completedAt": "2026-07-21T09:59:03Z"
+        "startedAt": "2026-07-21T11:47:01Z",
+        "completedAt": "2026-07-21T11:47:01Z"
       }
     },
     "totals": {
@@ -1440,6 +1524,108 @@
         "platform": "facebook",
         "platformVideoId": "2303128737184032",
         "capturedAt": "2026-07-21T09:59:03Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "6k737HP6lDg",
+        "capturedAt": "2026-07-21T11:47:01Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": null,
+          "comments": null,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "1E6mxi4V3IY",
+        "capturedAt": "2026-07-21T11:47:01Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": null,
+          "comments": null,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "17950735707015400",
+        "capturedAt": "2026-07-21T11:47:01Z",
+        "metrics": {
+          "views": 172,
+          "reach": 152,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "18084176021208292",
+        "capturedAt": "2026-07-21T11:47:01Z",
+        "metrics": {
+          "views": 148,
+          "reach": 121,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1527700882467308",
+        "capturedAt": "2026-07-21T11:47:01Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 2,
+          "comments": 1,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "2303128737184032",
+        "capturedAt": "2026-07-21T11:47:01Z",
         "metrics": {
           "views": null,
           "reach": null,
