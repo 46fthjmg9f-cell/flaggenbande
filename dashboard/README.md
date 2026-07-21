@@ -1,10 +1,10 @@
-# Flaggenbande Analytics Dashboard
+# Flaggenbande Auswertungsübersicht
 
-Das Dashboard ist ein statisches Vite/React-Frontend für GitHub Pages. Es trennt die öffentlichen Daten in vier unabhängig benannte Hauptbereiche: **App & Entwicklung**, **Videos**, **Social Stats** und **Finanzen**. Die sichtbaren Namen und ihre Reihenfolge liegen zentral in `src/dashboardSections.ts` und können ohne Änderung der Seitenlogik angepasst werden.
+Die Übersicht ist ein statisches Vite/React-Frontend für GitHub Pages. Sie trennt die öffentlichen Daten in vier unabhängig benannte Hauptbereiche: **App & Entwicklung**, **Videos**, **Soziale Medien** und **Finanzen**. Die sichtbaren Namen und ihre Reihenfolge liegen zentral in `src/dashboardSections.ts` und können ohne Änderung der Seitenlogik angepasst werden.
 
-Die App-, Social- und Finanzauswertung liest `public/data/dashboard.json`. Diese Datei enthält nur aggregierte Kennzahlen und wird durch GitHub Actions erzeugt; weder API-Schlüssel noch CloudKit-Rohdaten noch Spieleridentitäten werden publiziert.
+Die App-, Plattform- und Finanzauswertung liest `public/data/dashboard.json`. Diese Datei enthält nur zusammengefasste Kennzahlen und wird durch GitHub Actions erzeugt; weder API-Schlüssel noch CloudKit-Rohdaten noch Spieleridentitäten werden veröffentlicht.
 
-Der Bereich **Videos** liest zusätzlich den versionierten öffentlichen Vertrag `public/data/content-operations.json`. Er zeigt pro Video den freigegebenen Produktions-, Quality- und Plattformstatus. Social-Performance wird ausschließlich in **Social Stats**, Finanzwerte ausschließlich in **Finanzen** dargestellt. Unveröffentlichte Titel, lokale Pfade, Rohdaten und Zugangsdaten dürfen nicht in die öffentlichen Dateien geschrieben werden. Der serverseitige Social-Collector erkennt veröffentlichte Plattformvideos über die autorisierten Konten automatisch; manuelle Videolinks sind nicht erforderlich.
+Der Bereich **Videos** liest zusätzlich den versionierten öffentlichen Vertrag `public/data/content-operations.json`. Er zeigt pro Video den freigegebenen Produktions-, Qualitäts- und Plattformstatus. Die Plattformleistung wird ausschließlich in **Soziale Medien**, Finanzwerte ausschließlich in **Finanzen** dargestellt. Unveröffentlichte Titel, lokale Pfade, Rohdaten und Zugangsdaten dürfen nicht in die öffentlichen Dateien geschrieben werden. Die serverseitige Datensammlung erkennt veröffentlichte Plattformvideos über die autorisierten Konten automatisch; manuelle Videolinks sind nicht erforderlich.
 
 ## Lokale Prüfung
 
@@ -36,12 +36,12 @@ npm run build
 
 Optional kann `META_GRAPH_API_VERSION` als GitHub-Variable gesetzt werden; ohne Angabe verwendet der Collector `v24.0`.
 
-Für den nichtöffentlichen Upload-Testlauf kann zusätzlich die GitHub-Variable `UPLOAD_STAGING_FEED_URL` auf den öffentlichen HTTPS-Endpunkt `/staging/feed` zeigen. Alternativ reicht `UPLOAD_STAGING_API_URL` als Basisadresse; der Collector ergänzt den Pfad selbst. Der Abruf sendet bewusst keinen Token und übernimmt ausschließlich freigegebene Lauf- und Plattformstatus in `content-operations.json`. Private Objekt-IDs, Container-IDs, Medienadressen, Metadaten und Providerfehler werden nicht veröffentlicht.
+Für den nichtöffentlichen Testlauf zum Hochladen kann zusätzlich die GitHub-Variable `UPLOAD_STAGING_FEED_URL` auf den öffentlichen HTTPS-Endpunkt `/staging/feed` zeigen. Alternativ reicht `UPLOAD_STAGING_API_URL` als Basisadresse; die Datensammlung ergänzt den Pfad selbst. Der Abruf sendet bewusst keine Zugangsdaten und übernimmt ausschließlich freigegebene Lauf- und Plattformstatus in `content-operations.json`. Private Objekt-IDs, Container-IDs, Medienadressen, Metadaten und Fehler externer Dienste werden nicht veröffentlicht.
 
 CloudKit muss dafür im CloudKit Dashboard unter **API Access → Server-to-Server Keys** einen P-256-Schlüssel erhalten. Der private Schlüssel gehört nur in `CLOUDKIT_PRIVATE_KEY`; niemals in App, Pages-Build oder Repository.
 
 ## Datenschutz
 
-Der Collector fragt aus CloudKit und den Plattform-APIs nur die für Aggregate notwendigen Felder ab. Er veröffentlicht weder Namen, Game-Center-IDs, Record-Namen, Profil-Snapshots, Antwortverläufe noch Zugangsdaten. Nicht verfügbare Plattformmetriken bleiben `null`, statt als Nullleistung interpretiert zu werden. App Analytics kann aufgrund Apples Datenschutzschwellen und Reporting-Latenzen zunächst leer sein; das Dashboard kennzeichnet das statt Nullwerte zu erfinden.
+Die Datensammlung fragt aus CloudKit und den Plattform-APIs nur die für Zusammenfassungen notwendigen Felder ab. Sie veröffentlicht weder Namen, Game-Center-IDs, Datensatznamen, Profil-Zwischenstände, Antwortverläufe noch Zugangsdaten. Nicht verfügbare Plattformkennzahlen bleiben `null`, statt als Nullleistung interpretiert zu werden. Die App-Auswertung kann aufgrund Apples Datenschutzschwellen und Berichtsverzögerungen zunächst leer sein; die Übersicht kennzeichnet das, statt Nullwerte zu erfinden.
 
 Der Abruf läuft stündlich zur Minute 17, folgt den paginierten Analytics-Instanzen und CloudKit-Continuation-Markern, nutzt exponentielle Wiederholungsversuche bei temporären API-Fehlern und schreibt die JSON-Datei atomar. Schlägt ein Abruf fehl, bleibt die letzte sichere Aggregation sichtbar. Bei Bedarf kann er in GitHub Actions manuell gestartet werden.

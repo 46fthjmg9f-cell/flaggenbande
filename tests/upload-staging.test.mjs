@@ -14,10 +14,10 @@ import {
 } from '../scripts/upload-staging-core.mjs'
 
 const metadata = {
-  youtubeTitle: 'The 0.14% Flag Challenge #FlagQuiz #Flags #Geography #Quiz #Shorts',
-  description: 'Five flags. Keep your score—no spoilers.\n\n#FlagQuiz #GeographyQuiz #GuessTheFlag #Flaggenbande #QuizChallenge\n\nhttps://apps.apple.com/us/app/flaggenbande/id6778848528',
-  language: 'en',
-  forbiddenAnswerTerms: ['Brazil', 'Sweden'],
+  youtubeTitle: 'Das Flaggenquiz #Flaggenquiz #Flaggen #Geografie #Quiz #Shorts',
+  description: 'Fünf Flaggen. Merke dir deine Punktzahl – ohne Spoiler.\n\n#Flaggenquiz #Geografiequiz #Flaggenraten #Flaggenbande #Quizchallenge\n\nhttps://apps.apple.com/us/app/flaggenbande/id6778848528',
+  language: 'de',
+  forbiddenAnswerTerms: ['Brasilien', 'Schweden'],
 }
 
 const basePlanInput = {
@@ -35,32 +35,34 @@ const basePlanInput = {
 
 test('platform copy has five case-insensitively unique hashtags and does not leak whole answers', () => {
   const result = validatePlatformMetadata(metadata)
+  assert.equal(result.language, 'de')
   assert.equal(result.hashtags.length, 5)
   assert.equal('forbiddenAnswerTerms' in result, false)
   assert.throws(() => validatePlatformMetadata({
     ...metadata,
-    description: metadata.description.replace('\n\nhttps://apps.apple.com', '\nBrazil\n\nhttps://apps.apple.com'),
+    description: metadata.description.replace('\n\nhttps://apps.apple.com', '\nBrasilien\n\nhttps://apps.apple.com'),
   }), /Quizantwort/)
-  assert.doesNotThrow(() => validatePlatformMetadata({ ...metadata, forbiddenAnswerTerms: ['Oman'], description: metadata.description.replace('Five', 'Woman-friendly five') }))
+  assert.doesNotThrow(() => validatePlatformMetadata({ ...metadata, forbiddenAnswerTerms: ['Oman'], description: metadata.description.replace('Fünf', 'Fünf spannende') }))
   assert.throws(() => validatePlatformMetadata({
     ...metadata,
     youtubeTitle: 'Quiz #FlagQuiz #flagquiz #Geography #Quiz #Shorts',
   }), /exakt fünf/)
   assert.throws(() => validatePlatformMetadata({ ...metadata, description: `x${'a'.repeat(2200)}\n${metadata.description}` }), /2\.200/)
+  assert.throws(() => validatePlatformMetadata({ ...metadata, language: 'en' }), /deutsche Metadaten/)
 })
 
 test('plan creates stable provider/account keys that do not change for QA-only answer terms', () => {
   const first = buildStagingPlan(basePlanInput)
   const second = buildStagingPlan({
     ...basePlanInput,
-    metadata: { ...metadata, forbiddenAnswerTerms: ['Brazil', 'Sweden', 'Estonia'] },
+    metadata: { ...metadata, forbiddenAnswerTerms: ['Brasilien', 'Schweden', 'Estland'] },
   })
   assert.deepEqual(first.targets.map(target => target.idempotencyKey), second.targets.map(target => target.idempotencyKey))
   assert.equal(new Set(first.targets.map(target => target.idempotencyKey)).size, 4)
   assert.equal(first.publicationAuthorized, false)
   assert.equal(first.targets.find(target => target.platform === 'tiktok').workflowState, 'manual_uploaded')
   assert.equal(first.targets.find(target => target.platform === 'tiktok').visibilityState, 'unknown')
-  assert.equal(JSON.stringify(first).includes('Brazil'), false)
+  assert.equal(JSON.stringify(first).includes('Brasilien'), false)
 })
 
 test('staging API is HTTPS-host-pinned and registration confirms an unchanged non-public plan', () => {
@@ -177,6 +179,6 @@ test('public snapshot reflects receipts, not optimistic plan values', () => {
   assert.equal(completed.publications.find(item => item.platform === 'instagram').status, 'container_unpublished')
   assert.equal(completed.publications.find(item => item.platform === 'facebook').status, 'draft')
   const serialized = JSON.stringify(completed)
-  assert.doesNotMatch(serialized, /Brazil|Sweden|\/Users\//)
+  assert.doesNotMatch(serialized, /Brasilien|Schweden|\/Users\//)
   assert.ok(completed.publications.every(item => item.publicUrl === null && item.publishedAt === null))
 })

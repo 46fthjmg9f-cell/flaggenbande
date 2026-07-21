@@ -12,6 +12,12 @@ const formatNumber = (value: Numeric) => value === null || value === undefined ?
 const formatPercent = (value: Numeric) => value === null || value === undefined ? '—' : new Intl.NumberFormat('de-DE', { style: 'percent', maximumFractionDigits: 1 }).format(value)
 const numeric = (value: unknown) => typeof value === 'number' ? value : 0
 const unique = (values: Array<string | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))].sort()
+const availabilityLabels: Record<string, string> = {
+  'App Analytics': 'App-Auswertung',
+  'App Store Feedback & Release': 'App-Store-Bewertungen und Freigabe',
+  'Sales & Trends': 'Verkäufe und Entwicklungen',
+  Finance: 'Finanzen',
+}
 
 function Chart({ option, label }: { option: EChartsOption; label: string }) {
   const [element, setElement] = useState<HTMLDivElement | null>(null)
@@ -90,7 +96,7 @@ export default function Dashboard() {
       })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason)
-      setError(`Dashboard-Daten konnten nicht geladen werden: ${message}`)
+      setError(`Übersichtsdaten konnten nicht geladen werden: ${message}`)
     } finally {
       setRefreshing(false)
     }
@@ -167,7 +173,7 @@ export default function Dashboard() {
     backgroundColor: 'transparent', tooltip: { trigger: 'axis' }, legend: { textStyle: { color: '#b7c7d9' } }, grid: baseGrid,
     xAxis: { type: 'category', data: labels, axisLabel: lineStyle }, yAxis: { type: 'value', axisLabel: lineStyle, splitLine },
     series: [
-      { name: 'Impressions', type: 'line', smooth: true, showSymbol: false, data: series.map(row => numeric(row.impressions)), lineStyle: { color: '#a78bfa', width: 2 } },
+      { name: 'Einblendungen', type: 'line', smooth: true, showSymbol: false, data: series.map(row => numeric(row.impressions)), lineStyle: { color: '#a78bfa', width: 2 } },
       { name: 'Produktseiten-Aufrufe', type: 'line', smooth: true, showSymbol: false, data: series.map(row => numeric(row.productPageViews)), lineStyle: { color: '#41d6a2', width: 2 } },
     ],
   }), [labels, series])
@@ -175,7 +181,7 @@ export default function Dashboard() {
     backgroundColor: 'transparent', tooltip: { trigger: 'axis' }, legend: { textStyle: { color: '#b7c7d9' } }, grid: baseGrid,
     xAxis: { type: 'category', data: labels, axisLabel: lineStyle }, yAxis: { type: 'value', axisLabel: lineStyle, splitLine },
     series: [
-      { name: 'Sessions', type: 'line', smooth: true, showSymbol: false, data: series.map(row => numeric(row.sessions)), lineStyle: { color: '#59b7ff', width: 2 } },
+      { name: 'Sitzungen', type: 'line', smooth: true, showSymbol: false, data: series.map(row => numeric(row.sessions)), lineStyle: { color: '#59b7ff', width: 2 } },
       { name: 'Aktive Geräte', type: 'line', smooth: true, showSymbol: false, data: series.map(row => numeric(row.activeDevices)), lineStyle: { color: '#f7b955', width: 2 } },
     ],
   }), [labels, series])
@@ -183,8 +189,8 @@ export default function Dashboard() {
     backgroundColor: 'transparent', tooltip: { trigger: 'axis' }, legend: { textStyle: { color: '#b7c7d9' } }, grid: baseGrid,
     xAxis: { type: 'category', data: labels, axisLabel: lineStyle }, yAxis: [{ type: 'value', axisLabel: lineStyle, splitLine }, { type: 'value', min: 0, max: 1, axisLabel: { ...lineStyle, formatter: (value: number) => `${Math.round(value * 100)}%` }, splitLine: { show: false } }],
     series: [
-      { name: 'Crashes', type: 'bar', data: series.map(row => numeric(row.crashes)), itemStyle: { color: '#ff7e8a', borderRadius: [4, 4, 0, 0] } },
-      { name: 'Retention', type: 'line', yAxisIndex: 1, smooth: true, showSymbol: false, data: series.map(row => numeric(row.retention)), lineStyle: { color: '#41d6a2', width: 2 } },
+      { name: 'Abstürze', type: 'bar', data: series.map(row => numeric(row.crashes)), itemStyle: { color: '#ff7e8a', borderRadius: [4, 4, 0, 0] } },
+      { name: 'Nutzerbindung', type: 'line', yAxisIndex: 1, smooth: true, showSymbol: false, data: series.map(row => numeric(row.retention)), lineStyle: { color: '#41d6a2', width: 2 } },
     ],
   }), [labels, series])
   const cloudOption = useMemo<EChartsOption>(() => ({
@@ -221,7 +227,7 @@ export default function Dashboard() {
   const select = (label: string, value: string, setValue: (value: string) => void, entries: string[], allLabel: string) => <label>{label}<select aria-label={label} value={value} onChange={event => setValue(event.target.value)}><option value="all">{allLabel}</option>{entries.map(entry => <option key={entry} value={entry}>{entry}</option>)}</select></label>
 
   return <main>
-    <nav className="dashboard-tabs" role="tablist" aria-label="Dashboard-Bereiche">
+    <nav className="dashboard-tabs" role="tablist" aria-label="Bereiche der Übersicht">
       {DASHBOARD_SECTIONS.map((section, index) => <button
         id={`${section.id}-tab`}
         key={section.id}
@@ -240,14 +246,14 @@ export default function Dashboard() {
     {activeView === 'finance' && <FinancePage data={data} rows={data.daily} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
     {activeView === 'app-development' && <section id="app-development-view" className="dashboard-view" role="tabpanel" aria-labelledby="app-development-tab" tabIndex={0}>
     <header className="hero">
-      <div><span className="eyebrow">FLAGGENBANDE · APP & ENTWICKLUNG</span><h1>Produkt, Nutzung und Qualität.</h1><p>App Store, Versionen, technische Qualität und anonymisierte CloudKit-Nutzung – klar getrennt von Videos, Social Performance und Finanzen.</p></div>
+      <div><span className="eyebrow">FLAGGENBANDE · APP & ENTWICKLUNG</span><h1>Produkt, Nutzung und Qualität.</h1><p>App Store, Versionen, technische Qualität und anonymisierte CloudKit-Nutzung – klar getrennt von Videos, Plattformleistung und Finanzen.</p></div>
       <div className="sync-controls">
-        <div className={`sync-state ${data.status}`}><span className="pulse" />{data.generatedAt ? `Aktualisiert ${new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.generatedAt))}` : 'Warte auf ersten Cloud-Sync'}</div>
-        <button className="refresh" onClick={() => void refreshDashboard()} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Dashboard aktualisieren'}</button>
+        <div className={`sync-state ${data.status}`}><span className="pulse" />{data.generatedAt ? `Aktualisiert ${new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.generatedAt))}` : 'Warte auf den ersten Cloud-Abgleich'}</div>
+        <button className="refresh" onClick={() => void refreshDashboard()} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Übersicht aktualisieren'}</button>
         <small>Automatischer Datenabruf stündlich zur Minute 17.</small>
       </div>
     </header>
-    <section className="filters" aria-label="Dashboard-Filter">
+    <section className="filters" aria-label="Filter der Übersicht">
       <label>Zeitraum<select aria-label="Zeitraum" value={days} onChange={event => setDays(event.target.value)}><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="90">90 Tage</option><option value="all">Gesamt</option></select></label>
       {select('Land', country, setCountry, countries, 'Alle Länder')}{select('Gerät', device, setDevice, devices, 'Alle Geräte')}{select('iOS', osVersion, setOsVersion, osVersions, 'Alle iOS-Versionen')}{select('App-Version', appVersion, setAppVersion, appVersions, 'Alle App-Versionen')}{select('Spielmodus', mode, setMode, modes, 'Alle Modi')}
       <button className="export" onClick={exportCsv} disabled={!series.length}>CSV exportieren</button>
@@ -257,26 +263,26 @@ export default function Dashboard() {
       <KpiCard label="Downloads heute" value={formatNumber(numeric(latest?.downloads) || null)} detail="App Store Connect" />
       <KpiCard label="Downloads · 7 Tage" value={formatNumber(last7.reduce((sum, row) => sum + numeric(row.downloads), 0) || null)} detail="rollierend" />
       <KpiCard label="Produktseiten-Aufrufe" value={formatNumber(numeric(latest?.productPageViews) || null)} detail="heute" accent="purple" />
-      <KpiCard label="Conversion" value={formatPercent(numeric(latest?.impressions) > 0 ? numeric(latest?.downloads) / numeric(latest?.impressions) : null)} detail="Downloads / Impressions" accent="green" />
-      <KpiCard label="Aktive Geräte" value={formatNumber(numeric(latest?.activeDevices) || null)} detail="App Analytics" accent="gold" />
-      <KpiCard label="Crashes" value={formatNumber(numeric(latest?.crashes) || null)} detail="heute" accent="red" />
+      <KpiCard label="Umwandlungsrate" value={formatPercent(numeric(latest?.impressions) > 0 ? numeric(latest?.downloads) / numeric(latest?.impressions) : null)} detail="Downloads / Einblendungen" accent="green" />
+      <KpiCard label="Aktive Geräte" value={formatNumber(numeric(latest?.activeDevices) || null)} detail="App-Auswertung" accent="gold" />
+      <KpiCard label="Abstürze" value={formatNumber(numeric(latest?.crashes) || null)} detail="heute" accent="red" />
       <KpiCard label="App-Store-Bewertung" value={data.kpis.reviewAverage ? `${formatNumber(data.kpis.reviewAverage)} / 5` : '—'} detail={`${formatNumber(data.kpis.reviewCount)} Bewertungen`} accent="purple" />
       <KpiCard label="CloudKit-Profile" value={formatNumber(data.cloudKit.players ?? null)} detail="nur öffentliche Aggregate" accent="purple" />
-      <KpiCard label="Daily Teilnahmen" value={formatNumber(cloudSeries.at(-1)?.players ?? null)} detail={mode === 'all' ? 'alle Spielmodi' : mode} accent="gold" />
-      <KpiCard label="Ø Flaggenrun Score" value={formatNumber(data.cloudKit.averageScore ?? null)} detail="Daily Runs" />
-      <KpiCard label="Aktueller Build" value={data.release?.build ?? '—'} detail={data.release?.buildProcessingState ?? data.release?.appStoreState ?? 'App Store Connect'} accent="green" />
+      <KpiCard label="Tägliche Teilnahmen" value={formatNumber(cloudSeries.at(-1)?.players ?? null)} detail={mode === 'all' ? 'alle Spielmodi' : mode} accent="gold" />
+      <KpiCard label="Ø Flaggenrun-Punktzahl" value={formatNumber(data.cloudKit.averageScore ?? null)} detail="Tägliche Runden" />
+      <KpiCard label="Aktuelle Version" value={data.release?.build ?? '—'} detail={data.release?.buildProcessingState ?? data.release?.appStoreState ?? 'App Store Connect'} accent="green" />
     </section>
     <section className="chart-grid">
-      <Panel eyebrow="ACQUISITION" title="Downloads im Zeitverlauf" detail={hasTrend ? 'Interaktiv filterbar' : 'Daten folgen nach Apples Mindestschwelle'} wide><Chart option={downloadsOption} label="Downloads im Zeitverlauf" /></Panel>
-      <Panel eyebrow="DISCOVERY" title="Sichtbarkeit und Produktseite" detail="Impressions · Page Views" wide><Chart option={discoveryOption} label="App Store Sichtbarkeit" /></Panel>
-      <Panel eyebrow="ENGAGEMENT" title="Sessions und aktive Geräte" detail="App Analytics" wide><Chart option={engagementOption} label="Engagement im Zeitverlauf" /></Panel>
-      <Panel eyebrow="QUALITÄT" title="Crashes und Retention" detail="nur bei Apple-Schwelle" wide><Chart option={qualityOption} label="Crashes und Retention" /></Panel>
-      <Panel eyebrow="CLOUDKIT" title="Daily Flaggenrun" detail="Teilnahmen · Versuche" wide><Chart option={cloudOption} label="Daily Flaggenrun Entwicklung" /></Panel>
-      <Panel eyebrow="SCORES" title="Punkteverteilung" detail="anonym aggregiert"><Chart option={scoreOption} label="Punkteverteilung" /></Panel>
-      <Panel eyebrow="TERRITORIES" title="Downloads nach Land" detail="aktiver Filter berücksichtigt"><Chart option={countryOption} label="Downloads nach Land" /></Panel>
+      <Panel eyebrow="GEWINNUNG" title="Downloads im Zeitverlauf" detail={hasTrend ? 'Interaktiv filterbar' : 'Daten folgen nach Apples Mindestschwelle'} wide><Chart option={downloadsOption} label="Downloads im Zeitverlauf" /></Panel>
+      <Panel eyebrow="SICHTBARKEIT" title="Sichtbarkeit und Produktseite" detail="Einblendungen · Produktseiten-Aufrufe" wide><Chart option={discoveryOption} label="App-Store-Sichtbarkeit" /></Panel>
+      <Panel eyebrow="NUTZUNG" title="Sitzungen und aktive Geräte" detail="App-Auswertung" wide><Chart option={engagementOption} label="Nutzung im Zeitverlauf" /></Panel>
+      <Panel eyebrow="QUALITÄT" title="Abstürze und Nutzerbindung" detail="nur bei Apple-Schwelle" wide><Chart option={qualityOption} label="Abstürze und Nutzerbindung" /></Panel>
+      <Panel eyebrow="CLOUDKIT" title="Täglicher Flaggenrun" detail="Teilnahmen · Versuche" wide><Chart option={cloudOption} label="Entwicklung des täglichen Flaggenruns" /></Panel>
+      <Panel eyebrow="PUNKTZAHLEN" title="Punkteverteilung" detail="anonym zusammengefasst"><Chart option={scoreOption} label="Punkteverteilung" /></Panel>
+      <Panel eyebrow="LÄNDER" title="Downloads nach Land" detail="aktiver Filter berücksichtigt"><Chart option={countryOption} label="Downloads nach Land" /></Panel>
       <Panel eyebrow="SPIELMODI" title="Versuche nach Modus" detail="CloudKit DailyAttempt"><Chart option={modeOption} label="Versuche nach Spielmodus" /></Panel>
       <Panel eyebrow="DATENABDECKUNG" title="Verfügbare Quellen" detail="Sicherer, stündlicher Abruf">
-        <div className="metric-list">{Object.entries(data.availability).length ? <ul>{Object.entries(data.availability).map(([name, entry]) => <li key={name}><span className={entry.available ? 'available-dot' : 'unavailable-dot'} /><b>{name}</b><small>{entry.available ? 'Verfügbar' : entry.reason ?? 'Noch nicht verfügbar'}</small></li>)}</ul> : <p>Der erste Abruf füllt hier transparent die verfügbaren Apple- und CloudKit-Quellen ein.</p>}</div>
+        <div className="metric-list">{Object.entries(data.availability).length ? <ul>{Object.entries(data.availability).map(([name, entry]) => <li key={name}><span className={entry.available ? 'available-dot' : 'unavailable-dot'} /><b>{availabilityLabels[name] ?? name}</b><small>{entry.available ? 'Verfügbar' : entry.reason ?? 'Noch nicht verfügbar'}</small></li>)}</ul> : <p>Der erste Abruf füllt hier transparent die verfügbaren Apple- und CloudKit-Quellen ein.</p>}</div>
       </Panel>
     </section>
     <footer>Flaggenbande App &amp; Entwicklung · GitHub Pages zeigt keine API-Schlüssel, Spieler-IDs, Namen, Texte oder CloudKit-Rohdaten.</footer>

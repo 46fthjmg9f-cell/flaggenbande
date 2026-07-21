@@ -3,15 +3,15 @@
   "generatedAt": "2026-07-21T14:35:52.567Z",
   "status": "error",
   "messages": [
-    "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Review-Einträge.",
+    "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Prüfungen.",
     "Noch ist kein Datensatz für die Produktion freigegeben. Die menschliche Prüfung ist für alle 193 Länder ausstehend.",
-    "Der Cloud-Speicher wurde über den lokalen Mount verifiziert; die tatsächliche Remote-Synchronisierung ist noch nicht bestätigt.",
-    "Nichtöffentlicher Upload-Testlauf: 1 Lauf/Läufe mit 4 sicheren Plattformstatus; keine Veröffentlichung autorisiert."
+    "Der Cloud-Speicher wurde über die lokale Bereitstellung geprüft; der tatsächliche Cloud-Abgleich ist noch nicht bestätigt.",
+    "Nichtöffentlicher Testlauf zum Hochladen: 1 Lauf mit 4 sicheren Plattformzuständen; keine Veröffentlichung autorisiert."
   ],
   "system": [
     {
       "id": "engine",
-      "label": "Production Engine",
+      "label": "Produktionssystem",
       "value": "Grundlage bereit",
       "status": "ready",
       "detail": "Die deterministische TypeScript-Grundlage wurde validiert.",
@@ -19,10 +19,10 @@
     },
     {
       "id": "release",
-      "label": "Stabiler Release",
+      "label": "Stabile Freigabe",
       "value": "0.1.0",
       "status": "ready",
-      "detail": "Foundation, Konfiguration, Logging und Prüfungen sind verfügbar.",
+      "detail": "Grundlage, Konfiguration, Protokollierung und Prüfungen sind verfügbar.",
       "updatedAt": "2026-07-20T09:00:00Z"
     },
     {
@@ -30,15 +30,15 @@
       "label": "Länderdatenbank",
       "value": "0.2.0-candidate.1",
       "status": "planned",
-      "detail": "193 Länder · 193 Flaggen · 193 Reviews offen · 0 produktionsberechtigt · Human Review ausstehend · Cloud-Mount geprüft, Remote-Sync unbestätigt · Tree-Hash 20ae94f73128f458c6938c67a2c5649313f853a87e4796381e5dccf040d31336",
+      "detail": "193 Länder · 193 Flaggen · 193 Prüfungen offen · 0 produktionsberechtigt · menschliche Prüfung ausstehend · Cloud-Bereitstellung geprüft, Cloud-Abgleich unbestätigt · Dateibaum-Prüfsumme 20ae94f73128f458c6938c67a2c5649313f853a87e4796381e5dccf040d31336",
       "updatedAt": "2026-07-20T10:03:20Z"
     },
     {
       "id": "quality",
-      "label": "Quality-Gate",
+      "label": "Qualitätsprüfung",
       "value": "Noch nicht aktiv",
       "status": "planned",
-      "detail": "Blockierende Video-Qualitätsprüfungen folgen vor der Upload-Freigabe.",
+      "detail": "Blockierende Video-Qualitätsprüfungen folgen vor der Freigabe zum Hochladen.",
       "updatedAt": null
     }
   ],
@@ -50,7 +50,7 @@
       "uploads": 0,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
+      "reason": "Das nichtöffentliche Hochladen ist vorbereitet.",
       "updatedAt": "2026-07-21T08:58:10.562Z"
     },
     {
@@ -60,7 +60,7 @@
       "uploads": 0,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Der nichtöffentliche Testupload ist fehlgeschlagen.",
+      "reason": "Das nichtöffentliche Hochladen ist fehlgeschlagen.",
       "updatedAt": "2026-07-21T13:34:16.167Z"
     },
     {
@@ -70,7 +70,7 @@
       "uploads": 1,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Manueller TikTok-Upload bestätigt; Veröffentlichung bleibt unbestätigt.",
+      "reason": "Das TikTok-Video wurde manuell hochgeladen; die Veröffentlichung bleibt unbestätigt.",
       "updatedAt": "2026-07-21T08:58:10.562Z"
     },
     {

@@ -1,7 +1,7 @@
 export const DASHBOARD_SECTIONS = [
   { id: 'app-development', label: 'App & Entwicklung' },
   { id: 'videos', label: 'Videos' },
-  { id: 'social-stats', label: 'Social Stats' },
+  { id: 'social-stats', label: 'Soziale Medien' },
   { id: 'finance', label: 'Finanzen' },
 ] as const
 

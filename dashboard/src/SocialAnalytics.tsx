@@ -11,17 +11,25 @@ const platformLabels: Record<SocialPlatform, string> = {
 const platformOrder = Object.keys(platformLabels) as SocialPlatform[]
 
 const metricLabels: Array<{ key: keyof SocialMetrics; label: string; unit?: string }> = [
-  { key: 'views', label: 'Views' },
-  { key: 'reach', label: 'Reach' },
-  { key: 'likes', label: 'Likes' },
+  { key: 'views', label: 'Aufrufe' },
+  { key: 'reach', label: 'Reichweite' },
+  { key: 'likes', label: 'Gefällt mir' },
   { key: 'comments', label: 'Kommentare' },
-  { key: 'shares', label: 'Shares' },
+  { key: 'shares', label: 'Geteilt' },
   { key: 'saves', label: 'Gespeichert' },
-  { key: 'watchTimeMinutes', label: 'Watchtime', unit: ' min' },
+  { key: 'watchTimeMinutes', label: 'Wiedergabezeit', unit: ' min' },
   { key: 'averageViewDurationSeconds', label: 'Ø Wiedergabedauer', unit: ' s' },
   { key: 'averageViewPercentage', label: 'Ø angesehen', unit: ' %' },
-  { key: 'followersGained', label: 'Neue Follower' },
+  { key: 'followersGained', label: 'Neue Abonnenten' },
 ]
+
+const publicationStatusLabel = (status: string): string => ({
+  published: 'Veröffentlicht',
+  scheduled: 'Eingeplant',
+  private: 'Privat',
+  draft: 'Entwurf',
+  failed: 'Fehlgeschlagen',
+}[status] ?? status)
 
 const formatNumber = (value: Numeric) => value === null || value === undefined
   ? 'Nicht verfügbar'
@@ -239,9 +247,9 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
 
   const coverage = (key: keyof SocialMetrics) => `${visibleVideos.filter(video => video.metrics[key] !== null).length}/${visibleVideos.length}`
 
-  return <section className="social-analytics" aria-label="Social Analytics">
+  return <section className="social-analytics" aria-label="Auswertung der sozialen Medien">
     <div className="social-heading">
-      <div><span className="eyebrow">PERFORMANCE</span><h2>Veröffentlichte Videos</h2><p>Plattformen frei kombinieren und jedes Video für den Detailvergleich öffnen.</p></div>
+      <div><span className="eyebrow">LEISTUNG</span><h2>Veröffentlichte Videos</h2><p>Plattformen frei kombinieren und jedes Video für den Detailvergleich öffnen.</p></div>
       <button className="social-export" type="button" onClick={exportJson}>JSON exportieren</button>
     </div>
 
@@ -258,15 +266,15 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
     </div>
 
     <div className="social-kpis social-kpis-focused">
-      <article><span>Views <small>{coverage('views')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'views'))}</strong></article>
-      <article><span>Reach <small>{coverage('reach')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'reach'))}</strong></article>
-      <article><span>Likes <small>{coverage('likes')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'likes'))}</strong></article>
+      <article><span>Aufrufe <small>{coverage('views')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'views'))}</strong></article>
+      <article><span>Reichweite <small>{coverage('reach')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'reach'))}</strong></article>
+      <article><span>Gefällt mir <small>{coverage('likes')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'likes'))}</strong></article>
       <article><span>Kommentare <small>{coverage('comments')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'comments'))}</strong></article>
-      <article><span>Shares <small>{coverage('shares')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'shares'))}</strong></article>
-      <article><span>Watchtime <small>{coverage('watchTimeMinutes')} Videos</small></span><strong>{formatMetric(metricValue(visibleVideos, 'watchTimeMinutes'), ' min')}</strong></article>
+      <article><span>Geteilt <small>{coverage('shares')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'shares'))}</strong></article>
+      <article><span>Wiedergabezeit <small>{coverage('watchTimeMinutes')} Videos</small></span><strong>{formatMetric(metricValue(visibleVideos, 'watchTimeMinutes'), ' min')}</strong></article>
     </div>
 
-    <div className="social-list-heading"><strong>Content-Performance</strong><span>{groups.length} Inhalte · {visibleVideos.length} Plattformveröffentlichungen</span></div>
+    <div className="social-list-heading"><strong>Leistung der Inhalte</strong><span>{groups.length} Inhalte · {visibleVideos.length} Plattformveröffentlichungen</span></div>
     {groups.length > 0 ? <div className="social-video-grid">{groups.map(group => <article
       className="social-video-card"
       key={group.key}
@@ -288,20 +296,20 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
         })}</div>
       </div>
       <dl className="social-video-metrics">
-        <div><dt>Views</dt><dd>{formatNumber(metricValue(group.videos, 'views'))}</dd></div>
-        <div><dt>Likes</dt><dd>{formatNumber(metricValue(group.videos, 'likes'))}</dd></div>
+        <div><dt>Aufrufe</dt><dd>{formatNumber(metricValue(group.videos, 'views'))}</dd></div>
+        <div><dt>Gefällt mir</dt><dd>{formatNumber(metricValue(group.videos, 'likes'))}</dd></div>
         <div><dt>Kommentare</dt><dd>{formatNumber(metricValue(group.videos, 'comments'))}</dd></div>
-        <div><dt>Shares</dt><dd>{formatNumber(metricValue(group.videos, 'shares'))}</dd></div>
+        <div><dt>Geteilt</dt><dd>{formatNumber(metricValue(group.videos, 'shares'))}</dd></div>
         <div><dt>Ø Wiedergabe</dt><dd>{formatMetric(averageMetric(group.videos, 'averageViewDurationSeconds'), ' s')}</dd></div>
       </dl>
-    </article>)}</div> : <div className="content-empty"><span aria-hidden="true">○</span><div><strong>Noch keine veröffentlichten Videos</strong><p>Nach dem nächsten Plattform-Sync erscheinen hier ausschließlich bestätigte Veröffentlichungen.</p></div></div>}
+    </article>)}</div> : <div className="content-empty"><span aria-hidden="true">○</span><div><strong>Noch keine veröffentlichten Videos</strong><p>Nach dem nächsten Plattformabgleich erscheinen hier ausschließlich bestätigte Veröffentlichungen.</p></div></div>}
 
     <dialog ref={dialogRef} className="social-video-dialog" aria-labelledby="social-video-dialog-title" onClose={handleDialogClose} onClick={event => {
       if (event.target === dialogRef.current) closeDetails()
     }}>
       {selectedGroup ? <div className="social-video-dialog-content">
         <header>
-          <div><span className="eyebrow">VIDEO-DETAILS</span><h2 id="social-video-dialog-title">{selectedGroup.title}</h2><p>{selectedGroup.videos.length} ausgewählte Plattformveröffentlichungen im direkten Vergleich.</p></div>
+          <div><span className="eyebrow">VIDEOEINZELHEITEN</span><h2 id="social-video-dialog-title">{selectedGroup.title}</h2><p>{selectedGroup.videos.length} ausgewählte Plattformveröffentlichungen im direkten Vergleich.</p></div>
           <button type="button" className="dialog-close" onClick={closeDetails} aria-label="Video-Details schließen">×</button>
         </header>
         <div className="platform-detail-grid">{selectedGroup.videos.map(video => {
@@ -316,23 +324,23 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
             <dl className="platform-detail-meta">
               <div><dt>Veröffentlicht</dt><dd>{formatDate(video.publishedAt)}</dd></div>
               <div><dt>Videolänge</dt><dd>{formatMetric(video.durationSeconds, ' s')}</dd></div>
-              <div><dt>Status</dt><dd>{video.status || 'Nicht verfügbar'}</dd></div>
+              <div><dt>Status</dt><dd>{publicationStatusLabel(video.status) || 'Nicht verfügbar'}</dd></div>
             </dl>
             <h3>Verfügbare Plattformwerte</h3>
             <dl className="platform-metric-grid">{metricLabels.map(metric => <div key={metric.key}><dt>{metric.label}</dt><dd>{formatMetric(video.metrics[metric.key], metric.unit)}</dd></div>)}</dl>
-            <section className="retention-availability" aria-label={`${platformLabels[video.platform]} Retention`}>
-              <h3>Retention</h3>
+            <section className="retention-availability" aria-label={`${platformLabels[video.platform]} Nutzerbindung`}>
+              <h3>Nutzerbindung</h3>
               {retention.length > 1
                 ? <><RetentionChart points={retention} platform={video.platform} /><p>{retention.length} echte Messpunkte aus der Plattform-API. Keine Werte wurden ergänzt oder geschätzt. {video.retentionCheckStatus === 'error' ? `Der letzte Abruf am ${formatDate(video.retentionCheckedAt ?? null)} ist fehlgeschlagen; der letzte bekannte Verlauf bleibt sichtbar.` : `Letzte Prüfung: ${formatDate(video.retentionCheckedAt ?? null)}.`}</p></>
                 : typeof video.metrics.averageViewPercentage === 'number'
-                ? <p>Die API liefert aktuell nur den Durchschnitt von <strong>{formatMetric(video.metrics.averageViewPercentage, ' %')}</strong>. Eine zeitbasierte Retention-Kurve ist nicht verfügbar.</p>
-                : <p><strong>Nicht verfügbar.</strong> Die Plattform-API liefert für dieses Video aktuell weder eine Retention-Kurve noch einen verlässlichen Durchschnitt.</p>}
+                ? <p>Die API liefert aktuell nur den Durchschnitt von <strong>{formatMetric(video.metrics.averageViewPercentage, ' %')}</strong>. Eine zeitbasierte Kurve zur Nutzerbindung ist nicht verfügbar.</p>
+                : <p><strong>Nicht verfügbar.</strong> Die Plattform-API liefert für dieses Video aktuell weder eine Kurve zur Nutzerbindung noch einen verlässlichen Durchschnitt.</p>}
             </section>
             <section className="snapshot-summary" aria-label={`${platformLabels[video.platform]} Messverlauf`}>
               <h3>Messverlauf</h3>
               {history.snapshots.length > 1 && history.first && history.latest ? <>
                 <p>{history.snapshots.length} Messpunkte · {formatDate(history.first.capturedAt)} bis {formatDate(history.latest.capturedAt)}</p>
-                <dl><div><dt>Views</dt><dd>{trendDelta(history.first.metrics.views, history.latest.metrics.views)}</dd></div><div><dt>Likes</dt><dd>{trendDelta(history.first.metrics.likes, history.latest.metrics.likes)}</dd></div><div><dt>Kommentare</dt><dd>{trendDelta(history.first.metrics.comments, history.latest.metrics.comments)}</dd></div><div><dt>Shares</dt><dd>{trendDelta(history.first.metrics.shares, history.latest.metrics.shares)}</dd></div></dl>
+                <dl><div><dt>Aufrufe</dt><dd>{trendDelta(history.first.metrics.views, history.latest.metrics.views)}</dd></div><div><dt>Gefällt mir</dt><dd>{trendDelta(history.first.metrics.likes, history.latest.metrics.likes)}</dd></div><div><dt>Kommentare</dt><dd>{trendDelta(history.first.metrics.comments, history.latest.metrics.comments)}</dd></div><div><dt>Geteilt</dt><dd>{trendDelta(history.first.metrics.shares, history.latest.metrics.shares)}</dd></div></dl>
               </> : <p>{history.snapshots.length === 1 ? `Bislang ein Messpunkt vom ${formatDate(history.snapshots[0].capturedAt)}; ein Trend ist noch nicht belastbar.` : 'Noch keine historischen Messpunkte verfügbar.'}</p>}
             </section>
           </article>
@@ -347,7 +355,7 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
           <div><b>{platformLabels[name]}</b><span className="platform-state-dot" /></div>
           <strong>{state.videoCount} veröffentlicht</strong>
           <small title={state.reason ?? state.accountName ?? undefined}>{state.reason ?? state.accountName ?? 'Verbindung vorbereitet'}</small>
-          <em className={isStale(state.completedAt) ? 'stale' : ''}>{state.completedAt ? `${isStale(state.completedAt) ? 'Veraltet · ' : ''}Sync ${formatDate(state.completedAt)}` : 'Noch kein erfolgreicher Sync'}</em>
+          <em className={isStale(state.completedAt) ? 'stale' : ''}>{state.completedAt ? `${isStale(state.completedAt) ? 'Veraltet · ' : ''}Abgleich ${formatDate(state.completedAt)}` : 'Noch kein erfolgreicher Abgleich'}</em>
         </article>)}
       </div>
     </details>

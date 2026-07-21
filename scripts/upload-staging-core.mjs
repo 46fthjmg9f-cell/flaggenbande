@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 
 export const STAGING_SCHEMA_VERSION = 1
 export const STAGING_PLATFORMS = ['youtube', 'instagram', 'facebook', 'tiktok']
+export const STAGING_CONTENT_LANGUAGE = 'de'
 
 export const STAGING_MODES = Object.freeze({
   youtube: 'private',
@@ -62,7 +63,7 @@ export function validatePlatformMetadata(value) {
   const language = normalizedString(value.language, 'language')
   if (youtubeTitle.length > 100) throw new Error('Der YouTube-Titel darf höchstens 100 Zeichen enthalten.')
   if (description.length > 2_200) throw new Error('Die gemeinsame Plattformbeschreibung darf höchstens 2.200 Zeichen enthalten.')
-  if (language.toLowerCase() !== 'en') throw new Error('Der Testlauf benötigt englische Metadaten.')
+  if (language.toLowerCase() !== STAGING_CONTENT_LANGUAGE) throw new Error('Der Testlauf benötigt deutsche Metadaten (language: de).')
   const titleHashtags = uniqueHashtags(youtubeTitle)
   const descriptionHashtags = uniqueHashtags(description)
   if (titleHashtags.length !== 5) throw new Error('Der YouTube-Titel muss exakt fünf eindeutige Hashtags enthalten.')
@@ -81,7 +82,7 @@ export function validatePlatformMetadata(value) {
   return {
     youtubeTitle,
     description,
-    language: 'en',
+    language: STAGING_CONTENT_LANGUAGE,
     hashtags: descriptionHashtags,
   }
 }
