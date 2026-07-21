@@ -2,6 +2,10 @@ name = "factverse-meta-scheduler"
 main = "src/index.ts"
 compatibility_date = "2026-07-19"
 
+[vars]
+YOUTUBE_CHANNEL_ID = "UC6DrB40JdSAQIEUUe-M382w"
+UPLOAD_STAGING_MEDIA_PROJECT = "factverse-instagram-media"
+
 # A Cron Trigger is the authoritative clock. Publication continues even when
 # the FactVerse dashboard and the production Mac are offline.
 [triggers]

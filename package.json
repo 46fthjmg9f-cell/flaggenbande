@@ -1,0 +1,10 @@
+{
+  "name": "flaggenbande-platform-operations",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "upload:test": "node scripts/upload-staging.mjs",
+    "test:upload": "node --test tests/upload-staging.test.mjs"
+  }
+}

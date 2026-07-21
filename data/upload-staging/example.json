@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "runId": "upload-test-example",
+  "createdAt": "2026-07-21T08:00:00Z",
+  "platformMetadata": {
+    "youtubeTitle": "The Flag Challenge #FlagQuiz #Flags #Geography #Quiz #Shorts",
+    "description": "Can you solve every round without a mistake? Keep your score—no spoilers.\n\n#FlagQuiz #GeographyQuiz #GuessTheFlag #Flaggenbande #QuizChallenge\n\nhttps://apps.apple.com/us/app/flaggenbande/id6778848528",
+    "language": "en",
+    "forbiddenAnswerTerms": [
+      "Example answer"
+    ]
+  },
+  "accountFingerprints": {
+    "youtube": "replace-with-a-stable-target-label",
+    "instagram": "replace-with-a-stable-target-label",
+    "facebook": "replace-with-a-stable-target-label",
+    "tiktok": "replace-with-a-stable-target-label"
+  },
+  "tiktok": {
+    "confirmedManualUpload": false
+  }
+}

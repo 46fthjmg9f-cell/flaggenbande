@@ -34,6 +34,8 @@ npm run build
 
 Optional kann `META_GRAPH_API_VERSION` als GitHub-Variable gesetzt werden; ohne Angabe verwendet der Collector `v24.0`.
 
+Für den nichtöffentlichen Upload-Testlauf kann zusätzlich die GitHub-Variable `UPLOAD_STAGING_FEED_URL` auf den öffentlichen HTTPS-Endpunkt `/staging/feed` zeigen. Alternativ reicht `UPLOAD_STAGING_API_URL` als Basisadresse; der Collector ergänzt den Pfad selbst. Der Abruf sendet bewusst keinen Token und übernimmt ausschließlich freigegebene Lauf- und Plattformstatus in `content-operations.json`. Private Objekt-IDs, Container-IDs, Medienadressen, Metadaten und Providerfehler werden nicht veröffentlicht.
+
 CloudKit muss dafür im CloudKit Dashboard unter **API Access → Server-to-Server Keys** einen P-256-Schlüssel erhalten. Der private Schlüssel gehört nur in `CLOUDKIT_PRIVATE_KEY`; niemals in App, Pages-Build oder Repository.
 
 ## Datenschutz

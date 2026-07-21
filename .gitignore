@@ -14,3 +14,6 @@ dashboard/node_modules/
 dashboard/dist/
 .env.platforms
 .wrangler/
+.state/
+data/upload-staging/private/
+dashboard/public/data/upload-staging.json

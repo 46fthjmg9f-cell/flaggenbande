@@ -1,12 +1,13 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-20T10:03:20Z",
+  "generatedAt": "2026-07-21T08:59:41.229Z",
   "status": "partial",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Review-Einträge.",
     "Noch ist kein Datensatz für die Produktion freigegeben. Die menschliche Prüfung ist für alle 193 Länder ausstehend.",
     "Der Cloud-Speicher wurde über den lokalen Mount verifiziert; die tatsächliche Remote-Synchronisierung ist noch nicht bestätigt.",
-    "Produktions- und Plattformdaten werden schrittweise ergänzt. Noch sind keine Upload-Adapter verbunden."
+    "Produktions- und Plattformdaten werden schrittweise ergänzt. Noch sind keine Upload-Adapter verbunden.",
+    "Nichtöffentlicher Upload-Testlauf: 1 Lauf/Läufe mit 4 sicheren Plattformstatus; keine Veröffentlichung autorisiert."
   ],
   "system": [
     {
@@ -46,45 +47,92 @@
     {
       "platform": "youtube",
       "label": "YouTube",
-      "status": "not_configured",
-      "uploads": 0,
+      "status": "planned",
+      "uploads": 1,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Der geprüfte Upload- und Analytics-Adapter ist noch nicht Bestandteil der Production Engine.",
-      "updatedAt": null
+      "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
+      "updatedAt": "2026-07-21T08:59:41.229Z"
     },
     {
       "platform": "instagram",
       "label": "Instagram",
-      "status": "not_configured",
-      "uploads": 0,
+      "status": "planned",
+      "uploads": 1,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Der geprüfte Upload- und Analytics-Adapter ist noch nicht Bestandteil der Production Engine.",
-      "updatedAt": null
+      "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
+      "updatedAt": "2026-07-21T08:59:41.229Z"
     },
     {
       "platform": "tiktok",
       "label": "TikTok",
-      "status": "not_configured",
-      "uploads": 0,
+      "status": "ready",
+      "uploads": 1,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Der geprüfte Upload- und Analytics-Adapter ist noch nicht Bestandteil der Production Engine.",
-      "updatedAt": null
+      "reason": "Manueller TikTok-Upload bestätigt; Veröffentlichung bleibt unbestätigt.",
+      "updatedAt": "2026-07-21T08:59:41.229Z"
     },
     {
       "platform": "facebook",
       "label": "Facebook",
-      "status": "not_configured",
-      "uploads": 0,
+      "status": "planned",
+      "uploads": 1,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Der geprüfte Upload- und Analytics-Adapter ist noch nicht Bestandteil der Production Engine.",
-      "updatedAt": null
+      "reason": "Der nichtöffentliche Testupload ist vorbereitet.",
+      "updatedAt": "2026-07-21T08:59:41.229Z"
     }
   ],
-  "runs": [],
-  "publications": [],
+  "runs": [
+    {
+      "runId": "upload-test-gameshow-five-flag-elevenlabs-v6",
+      "contentId": "flaggenbande-b8caff95a562c7a4e6d356a4d43de4466d23f52d4d800ee3811f776e89d73cd6",
+      "title": null,
+      "status": "partial",
+      "qualityStatus": "passed",
+      "startedAt": "2026-07-21T08:29:15.000Z",
+      "completedAt": null
+    }
+  ],
+  "publications": [
+    {
+      "contentId": "flaggenbande-b8caff95a562c7a4e6d356a4d43de4466d23f52d4d800ee3811f776e89d73cd6",
+      "platform": "youtube",
+      "status": "planned",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "contentId": "flaggenbande-b8caff95a562c7a4e6d356a4d43de4466d23f52d4d800ee3811f776e89d73cd6",
+      "platform": "instagram",
+      "status": "planned",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "contentId": "flaggenbande-b8caff95a562c7a4e6d356a4d43de4466d23f52d4d800ee3811f776e89d73cd6",
+      "platform": "tiktok",
+      "status": "manual_uploaded",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "contentId": "flaggenbande-b8caff95a562c7a4e6d356a4d43de4466d23f52d4d800ee3811f776e89d73cd6",
+      "platform": "facebook",
+      "status": "planned",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    }
+  ],
   "performance": []
 }

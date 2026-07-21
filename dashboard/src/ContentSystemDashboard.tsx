@@ -4,18 +4,33 @@ import {
   parseContentOperations,
   type ContentOperationsData,
   type PlatformStatus,
+  type ProductionRunStatus,
+  type PublicationStatus,
   type SystemStatus,
 } from './contentOperations'
 
-const statusLabels: Record<SystemStatus | PlatformStatus, string> = {
+const statusLabels: Record<SystemStatus | PlatformStatus | PublicationStatus | ProductionRunStatus, string> = {
   ready: 'Bereit',
   planned: 'Geplant',
   not_configured: 'Nicht verbunden',
   error: 'Fehler',
   uploading: 'Upload läuft',
+  processing: 'Verarbeitung läuft',
   scheduled: 'Eingeplant',
   published: 'Veröffentlicht',
   failed: 'Fehlgeschlagen',
+  private: 'Privat',
+  draft: 'Entwurf',
+  container_unpublished: 'Container bereit · unveröffentlicht',
+  upload_ready: 'Upload-bereit · unveröffentlicht',
+  manual_uploaded: 'Manuell hochgeladen',
+  expired: 'Abgelaufen',
+  reconcile_required: 'Abstimmung erforderlich',
+  queued: 'In Warteschlange',
+  running: 'Läuft',
+  partial: 'Teilweise abgeschlossen',
+  qa_failed: 'QA fehlgeschlagen',
+  completed: 'Abgeschlossen',
 }
 
 const platformAbbreviations = {
@@ -64,6 +79,8 @@ export default function ContentSystemDashboard() {
     void refresh()
   }, [])
 
+  const runLabels = new Map(data.runs.map(run => [run.contentId, run.title ?? run.runId]))
+
   return <section id="content-system-view" className="dashboard-view" role="tabpanel" aria-labelledby="content-system-tab" tabIndex={0}>
     <header className="hero content-hero">
       <div>
@@ -103,11 +120,11 @@ export default function ContentSystemDashboard() {
     <section className="content-activity-grid" aria-label="Produktion, Uploads und Performance">
       <article className="content-activity-card">
         <div className="activity-heading"><span>PRODUKTION</span><h2>Letzte Läufe</h2></div>
-        {data.runs.length === 0 ? <EmptyState title="Noch keine Produktionsläufe" detail="Produktionsdaten erscheinen nach dem ersten stabilen Renderer-Lauf." /> : <ul className="activity-list">{data.runs.map(run => <li key={run.runId}><div><strong>{run.title ?? run.contentId}</strong><small>{run.runId}</small></div><span className={`status-badge ${run.status}`}>{run.status}</span></li>)}</ul>}
+        {data.runs.length === 0 ? <EmptyState title="Noch keine Produktionsläufe" detail="Produktionsdaten erscheinen nach dem ersten stabilen Renderer-Lauf." /> : <ul className="activity-list">{data.runs.map(run => <li key={run.runId}><div><strong>{run.title ?? run.runId}</strong><small>{run.contentId}</small></div><span className={`status-badge ${run.status}`}>{statusLabels[run.status]}</span></li>)}</ul>}
       </article>
       <article className="content-activity-card">
-        <div className="activity-heading"><span>UPLOADS</span><h2>Veröffentlichungen</h2></div>
-        {data.publications.length === 0 ? <EmptyState title="Noch keine Uploads" detail="Upload-Daten bleiben leer, bis ein geprüfter Plattformadapter verbunden ist." /> : <ul className="activity-list">{data.publications.map((publication, index) => <li key={`${publication.contentId}-${publication.platform}-${index}`}><div><strong>{publication.title ?? publication.contentId}</strong><small>{publication.platform}</small></div><span className={`status-badge ${publication.status}`}>{statusLabels[publication.status]}</span></li>)}</ul>}
+        <div className="activity-heading"><span>UPLOADS</span><h2>Sichere Teststände</h2></div>
+        {data.publications.length === 0 ? <EmptyState title="Noch keine Testuploads" detail="Nichtöffentliche Teststände erscheinen nach dem ersten sicheren Staging-Lauf." /> : <ul className="activity-list">{data.publications.map((publication, index) => <li key={`${publication.contentId}-${publication.platform}-${index}`}><div><strong>{publication.title ?? runLabels.get(publication.contentId) ?? publication.contentId}</strong><small>{publication.platform} · {publication.contentId}</small></div><span className={`status-badge ${publication.status}`}>{statusLabels[publication.status]}</span></li>)}</ul>}
       </article>
       <article className="content-activity-card">
         <div className="activity-heading"><span>PERFORMANCE</span><h2>Plattformvergleich</h2></div>

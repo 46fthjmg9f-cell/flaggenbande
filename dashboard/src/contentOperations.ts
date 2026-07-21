@@ -6,8 +6,9 @@ export const PLATFORM_IDS = ['youtube', 'instagram', 'tiktok', 'facebook'] as co
 export type PlatformId = typeof PLATFORM_IDS[number]
 export type ContentDataStatus = 'ok' | 'partial' | 'waiting_for_sources' | 'error'
 export type SystemStatus = 'ready' | 'planned' | 'not_configured' | 'error'
-export type PlatformStatus = 'not_configured' | 'ready' | 'uploading' | 'scheduled' | 'published' | 'failed'
-export type ProductionRunStatus = 'queued' | 'running' | 'qa_failed' | 'ready' | 'completed' | 'failed'
+export type PlatformStatus = 'not_configured' | 'planned' | 'ready' | 'uploading' | 'scheduled' | 'published' | 'failed'
+export type PublicationStatus = PlatformStatus | 'planned' | 'processing' | 'private' | 'draft' | 'container_unpublished' | 'upload_ready' | 'manual_uploaded' | 'expired' | 'reconcile_required'
+export type ProductionRunStatus = 'queued' | 'running' | 'partial' | 'qa_failed' | 'ready' | 'completed' | 'failed' | 'expired' | 'reconcile_required'
 export type QualityStatus = 'not_run' | 'passed' | 'failed'
 
 export interface PublicSystemComponent {
@@ -43,7 +44,7 @@ export interface PublicProductionRun {
 export interface PublicPublication {
   contentId: string
   platform: PlatformId
-  status: PlatformStatus
+  status: PublicationStatus
   title: string | null
   scheduledAt: string | null
   publishedAt: string | null
@@ -81,8 +82,9 @@ export interface ContentOperationsData {
 
 const dataStatuses: readonly ContentDataStatus[] = ['ok', 'partial', 'waiting_for_sources', 'error']
 const systemStatuses: readonly SystemStatus[] = ['ready', 'planned', 'not_configured', 'error']
-const platformStatuses: readonly PlatformStatus[] = ['not_configured', 'ready', 'uploading', 'scheduled', 'published', 'failed']
-const runStatuses: readonly ProductionRunStatus[] = ['queued', 'running', 'qa_failed', 'ready', 'completed', 'failed']
+const platformStatuses: readonly PlatformStatus[] = ['not_configured', 'planned', 'ready', 'uploading', 'scheduled', 'published', 'failed']
+const publicationStatuses: readonly PublicationStatus[] = [...platformStatuses, 'planned', 'processing', 'private', 'draft', 'container_unpublished', 'upload_ready', 'manual_uploaded', 'expired', 'reconcile_required']
+const runStatuses: readonly ProductionRunStatus[] = ['queued', 'running', 'partial', 'qa_failed', 'ready', 'completed', 'failed', 'expired', 'reconcile_required']
 const qualityStatuses: readonly QualityStatus[] = ['not_run', 'passed', 'failed']
 const systemIds: readonly PublicSystemComponent['id'][] = ['engine', 'release', 'database', 'quality']
 
@@ -195,7 +197,7 @@ function parsePublication(value: unknown, index: number): PublicPublication {
   return {
     contentId: requiredString(record.contentId, `${path}.contentId`),
     platform: enumValue(record.platform, PLATFORM_IDS, `${path}.platform`),
-    status: enumValue(record.status, platformStatuses, `${path}.status`),
+    status: enumValue(record.status, publicationStatuses, `${path}.status`),
     title: nullableString(record.title, `${path}.title`),
     scheduledAt: nullableString(record.scheduledAt, `${path}.scheduledAt`),
     publishedAt: nullableString(record.publishedAt, `${path}.publishedAt`),

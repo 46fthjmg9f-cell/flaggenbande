@@ -1,0 +1,39 @@
+name: Verify non-publishing upload staging
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'cloud/meta-scheduler/**'
+      - 'scripts/upload-staging*.mjs'
+      - 'scripts/collect-content-operations.mjs'
+      - 'tests/upload-staging*.test.mjs'
+      - 'tests/content-operations-feed.test.mjs'
+      - 'package.json'
+      - '.github/workflows/upload-staging.yml'
+  pull_request:
+    paths:
+      - 'cloud/meta-scheduler/**'
+      - 'scripts/upload-staging*.mjs'
+      - 'scripts/collect-content-operations.mjs'
+      - 'tests/upload-staging*.test.mjs'
+      - 'tests/content-operations-feed.test.mjs'
+      - 'package.json'
+      - '.github/workflows/upload-staging.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Verify staging and dashboard contracts
+        run: node --test tests/upload-staging.test.mjs tests/upload-staging-worker.test.mjs tests/content-operations-feed.test.mjs
+      - name: Type-check and bundle the Cloudflare Worker without deploying
+        run: npx --yes wrangler@4.112.0 deploy --dry-run --config cloud/meta-scheduler/wrangler.toml

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const fixtureUrl = new URL('../public/data/content-operations.json', import.meta.url)
-const forbiddenKey = /(secret|token|password|api.?key|private.?key|authorization|local.?path|onedrive.?path)/i
+const forbiddenKey = /(secret|token|password|api.?key|private.?key|authorization|local.?path|onedrive.?path|remote.?object.?id|container.?id|platform.?video.?id|account.?fingerprint|media.?(url|project|branch)|provider.?status|last.?error)/i
 const forbiddenValue = /(^|\s)(\/Users\/|file:\/\/|~\/|[A-Za-z]:\\)/
 
 async function loadFixture() {
@@ -25,15 +25,15 @@ function inspectPublicValue(value, path = 'root') {
   if (typeof value === 'string') assert.equal(forbiddenValue.test(value), false, `lokaler Pfad in ${path}`)
 }
 
-test('public content contract reports partial data with all four unconfigured platforms', async () => {
+test('public content contract reports partial data with all four platforms without claiming publication', async () => {
   const fixture = await loadFixture()
   assert.equal(fixture.schemaVersion, 1)
   assert.equal(fixture.status, 'partial')
   assert.deepEqual(fixture.system.map(entry => entry.id).sort(), ['database', 'engine', 'quality', 'release'])
   assert.deepEqual(fixture.platforms.map(entry => entry.platform).sort(), ['facebook', 'instagram', 'tiktok', 'youtube'])
-  assert.ok(fixture.platforms.every(entry => entry.status === 'not_configured'))
-  assert.deepEqual(fixture.runs, [])
-  assert.deepEqual(fixture.publications, [])
+  assert.ok(fixture.platforms.every(entry => ['not_configured', 'planned', 'ready', 'uploading', 'failed'].includes(entry.status)))
+  assert.ok(fixture.platforms.every(entry => entry.publications === 0))
+  assert.ok(fixture.publications.every(entry => !['scheduled', 'published'].includes(entry.status)))
   assert.deepEqual(fixture.performance, [])
 })
 
