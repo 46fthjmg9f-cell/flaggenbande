@@ -14,7 +14,7 @@ const statusLabels: Record<SystemStatus | PlatformStatus | PublicationStatus | P
   planned: 'Geplant',
   not_configured: 'Nicht verbunden',
   error: 'Fehler',
-  uploading: 'Upload läuft',
+  uploading: 'Wird hochgeladen',
   processing: 'Verarbeitung läuft',
   scheduled: 'Eingeplant',
   published: 'Veröffentlicht',
@@ -22,14 +22,14 @@ const statusLabels: Record<SystemStatus | PlatformStatus | PublicationStatus | P
   private: 'Privat',
   draft: 'Entwurf',
   container_unpublished: 'Container bereit · unveröffentlicht',
-  upload_ready: 'Upload-bereit · unveröffentlicht',
+  upload_ready: 'Zum Hochladen bereit · unveröffentlicht',
   manual_uploaded: 'Manuell hochgeladen',
   expired: 'Abgelaufen',
   reconcile_required: 'Abstimmung erforderlich',
   queued: 'In Warteschlange',
   running: 'Läuft',
   partial: 'Teilweise abgeschlossen',
-  qa_failed: 'QA fehlgeschlagen',
+  qa_failed: 'Qualitätsprüfung fehlgeschlagen',
   completed: 'Abgeschlossen',
 }
 
@@ -81,7 +81,7 @@ export default function ContentSystemDashboard() {
       setData(parseContentOperations(await response.json()))
     } catch (reason) {
       const detail = reason instanceof Error ? reason.message : String(reason)
-      setError(`Content-System-Daten konnten nicht sicher geladen werden: ${detail}`)
+      setError(`Videodaten konnten nicht sicher geladen werden: ${detail}`)
     } finally {
       setRefreshing(false)
     }
@@ -101,13 +101,13 @@ export default function ContentSystemDashboard() {
     <header className="hero content-hero">
       <div>
         <span className="eyebrow">FLAGGENBANDE · VIDEO-STUDIO</span>
-        <h1>Von der Idee bis zum Upload.</h1>
-        <p>Produktionsstand, Qualitätsprüfung und Plattformstatus jedes Videos in einer gemeinsamen Ansicht. Social Performance und App-Daten befinden sich in ihren eigenen Bereichen.</p>
+        <h1>Von der Idee bis zur Veröffentlichung.</h1>
+        <p>Produktionsstand, Qualitätsprüfung und Plattformstatus jedes Videos in einer gemeinsamen Ansicht. Plattformleistung und App-Daten befinden sich in ihren eigenen Bereichen.</p>
       </div>
       <div className="sync-controls">
         <div className={`sync-state ${data.status}`}><span className="pulse" />{formatTimestamp(data.generatedAt)}</div>
         <button className="refresh" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Video-Status aktualisieren'}</button>
-        <small>Öffentlicher Snapshot · Schema {data.schemaVersion}</small>
+        <small>Öffentlicher Datenstand · Schema {data.schemaVersion}</small>
       </div>
     </header>
 
@@ -121,12 +121,12 @@ export default function ContentSystemDashboard() {
       {data.system.length > 0 ? <div className="system-status-grid">{data.system.map(component => <article className="system-status-card" key={component.id}>
         <div className="status-card-heading"><span className={`status-dot ${component.status}`} /><span className={`status-badge ${component.status}`}>{statusLabels[component.status]}</span></div>
         <p>{component.label}</p><strong>{component.value}</strong><small>{component.detail}</small>
-      </article>)}</div> : <EmptyState title="Systemstatus noch nicht vorhanden" detail="Der erste sichere Datenexport ergänzt Engine, Release, Datenbank und Quality-Gate." />}
+      </article>)}</div> : <EmptyState title="Systemstatus noch nicht vorhanden" detail="Der erste sichere Datenexport ergänzt Produktion, Freigabe, Datenbank und Qualitätsprüfung." />}
     </section>
 
     <section className="content-section" aria-labelledby="video-overview-title">
       <div className="section-heading"><div><span>VIDEOS</span><h2 id="video-overview-title">Produktionsübersicht</h2></div><p>Ein Eintrag pro Video · alle Plattformen gemeinsam</p></div>
-      {videoRuns.length === 0 ? <EmptyState title="Noch keine Produktionsläufe" detail="Nach dem ersten Video-Lauf erscheinen hier Produktion, Quality-Gate und Uploadstatus gemeinsam." /> : <div className="video-operations-list">{videoRuns.map(run => <article className="video-operation-card" key={run.runId}>
+      {videoRuns.length === 0 ? <EmptyState title="Noch keine Produktionsläufe" detail="Nach dem ersten Videolauf erscheinen hier Produktion, Qualitätsprüfung und Veröffentlichungsstatus gemeinsam." /> : <div className="video-operations-list">{videoRuns.map(run => <article className="video-operation-card" key={run.runId}>
         <div className="video-operation-heading">
           <div><span>VIDEO</span><h3>{run.displayTitle}</h3><small>Gestartet {formatTimestamp(run.startedAt)}</small></div>
           <span className={`status-badge ${run.status}`}>{statusLabels[run.status]}</span>
@@ -138,11 +138,11 @@ export default function ContentSystemDashboard() {
         </dl>
         <div className="video-platform-row" aria-label="Plattformstatus">{run.publications.length > 0 ? run.publications.map(publication => <span className={`video-platform-status ${publication.platform} ${publication.status}`} key={publication.platform}>
           <b>{platformAbbreviations[publication.platform]}</b><span>{statusLabels[publication.status]}</span>
-        </span>) : <span className="video-platform-empty">Noch keine Uploadstände</span>}</div>
+        </span>) : <span className="video-platform-empty">Noch keine Veröffentlichungsstände</span>}</div>
         <details className="technical-reference"><summary>Interne Referenz</summary><code>{run.runId}</code></details>
       </article>)}</div>}
     </section>
 
-    <footer>Flaggenbande Video-Studio · GitHub Pages zeigt keine Tokens, API-Schlüssel, lokalen Pfade oder unveröffentlichten Videoinhalte.</footer>
+    <footer>Flaggenbande Video-Studio · GitHub Pages zeigt keine Zugangsdaten, API-Schlüssel, lokalen Pfade oder unveröffentlichten Videoinhalte.</footer>
   </section>
 }

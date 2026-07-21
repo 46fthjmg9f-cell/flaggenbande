@@ -128,7 +128,7 @@ interface StagingTargetInput {
 interface StagingMetadata {
   readonly youtubeTitle: string;
   readonly description: string;
-  readonly language: "en";
+  readonly language: "de";
   readonly hashtags?: readonly string[];
   readonly forbiddenAnswerTerms?: readonly string[];
 }
@@ -294,7 +294,7 @@ const validStagingPayload = (value: unknown): value is StagingRunPayload => {
   if (!recordValue(item.metadata)) return false;
   const details = item.metadata as Record<string, unknown>;
   if (typeof details.youtubeTitle !== "string" || !details.youtubeTitle.trim() || details.youtubeTitle.length > 100) return false;
-  if (typeof details.description !== "string" || !details.description.trim() || details.description.length > 2200 || details.language !== "en") return false;
+  if (typeof details.description !== "string" || !details.description.trim() || details.description.length > 2200 || details.language !== "de") return false;
   if (details.hashtags !== undefined && (!Array.isArray(details.hashtags) || details.hashtags.some((tag) => typeof tag !== "string"))) return false;
   if (details.forbiddenAnswerTerms !== undefined && (!Array.isArray(details.forbiddenAnswerTerms) || details.forbiddenAnswerTerms.some((term) => typeof term !== "string"))) return false;
   if (!Array.isArray(item.targets) || item.targets.length !== stagingPlatforms.length) return false;

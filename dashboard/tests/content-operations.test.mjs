@@ -50,10 +50,10 @@ test('public content contract reports the country-data candidate without claimin
   assert.equal(database.status, 'planned')
   assert.match(database.detail, /193 Länder/)
   assert.match(database.detail, /193 Flaggen/)
-  assert.match(database.detail, /193 Reviews offen/)
+  assert.match(database.detail, /193 Prüfungen offen/)
   assert.match(database.detail, /0 produktionsberechtigt/)
-  assert.match(database.detail, /Human Review ausstehend/)
-  assert.match(database.detail, /Remote-Sync unbestätigt/)
+  assert.match(database.detail, /menschliche Prüfung ausstehend/)
+  assert.match(database.detail, /Cloud-Abgleich unbestätigt/)
   assert.match(database.detail, /20ae94f73128f458c6938c67a2c5649313f853a87e4796381e5dccf040d31336/)
 })
 

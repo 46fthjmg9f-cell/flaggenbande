@@ -234,7 +234,7 @@ function parsePerformance(value: unknown, index: number): PublicPerformanceSnaps
 
 export function parseContentOperations(value: unknown): ContentOperationsData {
   const root = requiredRecord(value, 'content-operations')
-  if (root.schemaVersion !== CONTENT_OPERATIONS_SCHEMA_VERSION) throw new Error('Unbekannte Content-System-Schemaversion.')
+  if (root.schemaVersion !== CONTENT_OPERATIONS_SCHEMA_VERSION) throw new Error('Unbekannte Schemaversion des Videoablaufs.')
 
   const messages = requiredArray(root.messages, 'messages').map((entry, index) => requiredString(entry, `messages[${index}]`))
   const system = requiredArray(root.system, 'system').map(parseSystem)
@@ -242,7 +242,7 @@ export function parseContentOperations(value: unknown): ContentOperationsData {
 
   const componentIds = new Set(system.map(entry => entry.id))
   if (componentIds.size !== systemIds.length || systemIds.some(component => !componentIds.has(component))) {
-    throw new Error('Engine, Release, Datenbank oder Quality-Status fehlen oder sind doppelt.')
+    throw new Error('Produktion, Freigabe, Datenbank oder Qualitätsstatus fehlen oder sind doppelt.')
   }
 
   const platformIds = new Set(platforms.map(entry => entry.platform))

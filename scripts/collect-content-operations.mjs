@@ -22,7 +22,8 @@ const platformForFinalStatus = {
   upload_ready: 'instagram',
   manual_uploaded: 'tiktok',
 }
-const stagingMessagePrefix = 'Nichtöffentlicher Upload-Testlauf:'
+const stagingMessagePrefix = 'Nichtöffentlicher Testlauf zum Hochladen:'
+const legacyStagingMessagePrefix = 'Nichtöffentlicher Upload-Testlauf:'
 const identifierPattern = /^[a-z0-9][a-z0-9._-]{2,199}$/i
 
 const isRecord = value => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -219,18 +220,18 @@ export function normalizeStagingFeed(value) {
 }
 
 const platformReason = status => ({
-  private: 'Privater YouTube-Testupload bestätigt; keine Veröffentlichung autorisiert.',
+  private: 'Privates YouTube-Testvideo wurde hochgeladen; keine Veröffentlichung autorisiert.',
   draft: 'Facebook-Entwurf bestätigt; keine Veröffentlichung autorisiert.',
-  container_unpublished: 'Instagram-Container ist upload-bereit und bleibt unveröffentlicht.',
-  upload_ready: 'Instagram-Container ist upload-bereit und bleibt unveröffentlicht.',
-  manual_uploaded: 'Manueller TikTok-Upload bestätigt; Veröffentlichung bleibt unbestätigt.',
-  expired: 'Das nichtöffentliche Staging-Objekt ist abgelaufen.',
-  reconcile_required: 'Das Remote-Ergebnis ist unklar und muss vor einem neuen Versuch abgestimmt werden.',
-  uploading: 'Der nichtöffentliche Testupload läuft.',
-  processing: 'Die Plattform verarbeitet den nichtöffentlichen Testupload.',
-  planned: 'Der nichtöffentliche Testupload ist vorbereitet.',
-  failed: 'Der nichtöffentliche Testupload ist fehlgeschlagen.',
-  ready: 'Der nichtöffentliche Testupload ist bereit.',
+  container_unpublished: 'Der Instagram-Container ist zum Hochladen bereit und bleibt unveröffentlicht.',
+  upload_ready: 'Der Instagram-Container ist zum Hochladen bereit und bleibt unveröffentlicht.',
+  manual_uploaded: 'Das TikTok-Video wurde manuell hochgeladen; die Veröffentlichung bleibt unbestätigt.',
+  expired: 'Das nichtöffentliche Testobjekt ist abgelaufen.',
+  reconcile_required: 'Das Plattformergebnis ist unklar und muss vor einem neuen Versuch abgestimmt werden.',
+  uploading: 'Das nichtöffentliche Testvideo wird hochgeladen.',
+  processing: 'Die Plattform verarbeitet das nichtöffentliche Testvideo.',
+  planned: 'Das nichtöffentliche Hochladen ist vorbereitet.',
+  failed: 'Das nichtöffentliche Hochladen ist fehlgeschlagen.',
+  ready: 'Das nichtöffentliche Hochladen ist bereit.',
 }[status] ?? 'Nichtöffentlicher Plattformstatus wurde aktualisiert.')
 
 const summaryStatus = status => {
@@ -267,10 +268,11 @@ export function mergeStagingFeed(previous, staging) {
     }
   })
   const messages = requiredArray(base.messages, 'content-operations.messages', 100)
-    .filter(message => typeof message === 'string' && !message.startsWith(stagingMessagePrefix))
+    .filter(message => typeof message === 'string' && !message.startsWith(stagingMessagePrefix) && !message.startsWith(legacyStagingMessagePrefix))
     .filter(message => staging.runs.length === 0 || !message.includes('Noch sind keine Upload-Adapter verbunden.'))
   if (staging.runs.length > 0) {
-    messages.push(`${stagingMessagePrefix} ${staging.runs.length} Lauf/Läufe mit ${staging.publications.length} sicheren Plattformstatus; keine Veröffentlichung autorisiert.`)
+    const runCount = `${staging.runs.length} ${staging.runs.length === 1 ? 'Lauf' : 'Läufe'}`
+    messages.push(`${stagingMessagePrefix} ${runCount} mit ${staging.publications.length} sicheren Plattformzuständen; keine Veröffentlichung autorisiert.`)
   }
   return {
     ...base,
