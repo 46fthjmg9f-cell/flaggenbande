@@ -43,6 +43,37 @@ const groupTitle = (videos: SocialVideo[]): string => {
   return cleanTitle(preferred?.title ?? 'Flaggenbande Video')
 }
 
+const normalizeContentText = (value: string): string => value
+  .normalize('NFKC')
+  .toLocaleLowerCase('en')
+  .replace(/https?:\/\/\S+/gu, ' ')
+  .replace(/#[\p{L}\p{N}_-]+/gu, ' ')
+  .replace(/[^\p{L}\p{N}]+/gu, ' ')
+  .replace(/\s+/gu, ' ')
+  .trim()
+
+const contentSignature = (video: SocialVideo): string | null => {
+  const description = normalizeContentText(video.description)
+  if (description.length >= 40) return description
+  const title = normalizeContentText(video.title)
+  return title.length >= 24 ? title : null
+}
+
+const buildContentIdBySignature = (videos: SocialVideo[]): ReadonlyMap<string, string> => {
+  const candidates = new Map<string, Set<string>>()
+  for (const video of videos) {
+    if (!video.contentId) continue
+    const signature = contentSignature(video)
+    if (!signature) continue
+    const ids = candidates.get(signature) ?? new Set<string>()
+    ids.add(video.contentId)
+    candidates.set(signature, ids)
+  }
+  return new Map([...candidates.entries()]
+    .filter(([, ids]) => ids.size === 1)
+    .map(([signature, ids]) => [signature, [...ids][0]]))
+}
+
 interface SocialVideoGroup {
   readonly key: string
   readonly title: string
@@ -59,9 +90,15 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
   )
 
   const groups = useMemo<SocialVideoGroup[]>(() => {
+    // Direct platform APIs do not always expose our internal content ID. An exact,
+    // normalized description match links those records without guessing by time.
+    const contentIdBySignature = buildContentIdBySignature(data.videos)
     const grouped = new Map<string, SocialVideo[]>()
     for (const video of visibleVideos) {
-      const key = video.contentId ?? `${video.platform}:${video.platformVideoId}`
+      const signature = contentSignature(video)
+      const key = video.contentId
+        ?? (signature ? contentIdBySignature.get(signature) : undefined)
+        ?? `${video.platform}:${video.platformVideoId}`
       grouped.set(key, [...(grouped.get(key) ?? []), video])
     }
     return [...grouped.entries()].map(([key, videos]) => ({
@@ -70,7 +107,7 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
       title: groupTitle(videos),
       publishedAt: videos.map(video => video.publishedAt).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null,
     })).sort((left, right) => String(right.publishedAt ?? '').localeCompare(String(left.publishedAt ?? '')))
-  }, [visibleVideos])
+  }, [data.videos, visibleVideos])
 
   const exportJson = () => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))

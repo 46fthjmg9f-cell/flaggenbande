@@ -111,6 +111,19 @@ export default function Dashboard() {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/${section}`)
   }
 
+  const moveSectionFocus = (event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % DASHBOARD_SECTIONS.length
+    if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + DASHBOARD_SECTIONS.length) % DASHBOARD_SECTIONS.length
+    if (event.key === 'Home') nextIndex = 0
+    if (event.key === 'End') nextIndex = DASHBOARD_SECTIONS.length - 1
+    if (nextIndex === null) return
+    event.preventDefault()
+    const nextSection = DASHBOARD_SECTIONS[nextIndex]
+    openSection(nextSection.id)
+    requestAnimationFrame(() => document.getElementById(`${nextSection.id}-tab`)?.focus())
+  }
+
   const countries = useMemo(() => unique(data.daily.map(row => row.country)), [data.daily])
   const devices = useMemo(() => unique(data.daily.map(row => row.device)), [data.daily])
   const osVersions = useMemo(() => unique(data.daily.map(row => row.osVersion)), [data.daily])
@@ -209,15 +222,17 @@ export default function Dashboard() {
 
   return <main>
     <nav className="dashboard-tabs" role="tablist" aria-label="Dashboard-Bereiche">
-      {DASHBOARD_SECTIONS.map(section => <button
+      {DASHBOARD_SECTIONS.map((section, index) => <button
         id={`${section.id}-tab`}
         key={section.id}
         type="button"
         role="tab"
         aria-selected={activeView === section.id}
         aria-controls={`${section.id}-view`}
+        tabIndex={activeView === section.id ? 0 : -1}
         className={activeView === section.id ? 'active' : ''}
         onClick={() => openSection(section.id)}
+        onKeyDown={event => moveSectionFocus(event, index)}
       >{section.label}</button>)}
     </nav>
     {activeView === 'videos' && <ContentSystemDashboard />}

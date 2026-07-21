@@ -13,6 +13,13 @@ const formatTimestamp = (value: string | null) => value
   : 'Warte auf ersten Social-Sync'
 
 export default function SocialStatsPage({ data, generatedAt, refreshing, onRefresh }: SocialStatsPageProps) {
+  const platformStates = Object.values(data.platforms).map(platform => platform.status)
+  const syncStatus = platformStates.includes('error')
+    ? 'error'
+    : platformStates.every(status => status === 'available')
+      ? 'ok'
+      : 'partial'
+
   return <section id="social-stats-view" className="dashboard-view" role="tabpanel" aria-labelledby="social-stats-tab" tabIndex={0}>
     <header className="hero section-hero">
       <div>
@@ -21,7 +28,7 @@ export default function SocialStatsPage({ data, generatedAt, refreshing, onRefre
         <p>Nur veröffentlichte Inhalte und tatsächlich verfügbare Plattformwerte. Produktion, App-Entwicklung und Finanzen bleiben bewusst außerhalb dieser Ansicht.</p>
       </div>
       <div className="sync-controls">
-        <div className="sync-state ok"><span className="pulse" />{formatTimestamp(data.syncedAt ?? generatedAt)}</div>
+        <div className={`sync-state ${syncStatus}`}><span className="pulse" />{formatTimestamp(data.syncedAt ?? generatedAt)}</div>
         <button className="refresh" onClick={onRefresh} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Social-Daten aktualisieren'}</button>
         <small>Automatischer Datenabruf stündlich zur Minute 17.</small>
       </div>
