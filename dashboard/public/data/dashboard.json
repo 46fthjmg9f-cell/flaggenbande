@@ -1,49 +1,49 @@
 {
   "schemaVersion": 3,
-  "generatedAt": "2026-07-22T09:52:01Z",
+  "generatedAt": "2026-07-22T10:22:55Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
       "available": true,
-      "updatedAt": "2026-07-22T09:52:01Z"
+      "updatedAt": "2026-07-22T10:22:55Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-22T09:52:01Z"
+      "updatedAt": "2026-07-22T10:22:55Z"
     },
     "Sales & Trends": {
       "available": false,
-      "reason": "Apple meldet für den abgefragten Tag noch keine Verkäufe.",
-      "updatedAt": "2026-07-22T09:52:01Z"
+      "reason": "Der Tagesreport ist noch nicht verfügbar; der nächste stündliche Abruf versucht es erneut.",
+      "updatedAt": "2026-07-22T10:22:55Z"
     },
     "CloudKit Public DB": {
       "available": true,
-      "updatedAt": "2026-07-22T09:52:01Z"
+      "updatedAt": "2026-07-22T10:22:55Z"
     },
     "Finance": {
       "available": false,
       "reason": "Der monatliche Finanzreport ist noch nicht verfügbar.",
-      "updatedAt": "2026-07-22T09:52:01Z"
+      "updatedAt": "2026-07-22T10:22:55Z"
     },
     "YouTube": {
       "available": true,
-      "updatedAt": "2026-07-22T09:52:00Z"
+      "updatedAt": "2026-07-22T10:22:53Z"
     },
     "Instagram": {
       "available": true,
       "reason": "Meta Analytics HTTP 400. Berechtigung oder Metrikverfuegbarkeit pruefen.",
-      "updatedAt": "2026-07-22T09:08:13.877Z"
+      "updatedAt": "2026-07-22T10:04:13.858Z"
     },
     "Facebook": {
       "available": true,
       "reason": "Meta Analytics konnte voruebergehend nicht vollstaendig aktualisiert werden.",
-      "updatedAt": "2026-07-22T09:08:14.626Z"
+      "updatedAt": "2026-07-22T10:04:14.422Z"
     },
     "TikTok": {
       "available": false,
       "reason": "TikTok access token or refresh credentials are missing.",
-      "updatedAt": "2026-07-22T09:51:59Z"
+      "updatedAt": "2026-07-22T10:22:52Z"
     }
   },
   "kpis": {
@@ -56,924 +56,345 @@
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
-      "appVersion": "1.0",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "appVersion": "1.0"
     },
     {
       "date": "2026-07-17",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.4",
-      "appVersion": "1.0",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "appVersion": "1.0"
     },
     {
       "date": "2026-07-17",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 63
     },
     {
       "date": "2026-07-17",
       "country": "DE",
       "device": "Desktop",
-      "osVersion": "macOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "macOS 26.5"
     },
     {
       "date": "2026-07-17",
       "country": "DE",
       "device": "iPhone",
-      "osVersion": "iOS 26.4",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "iOS 26.4"
     },
     {
       "date": "2026-07-17",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 15.6",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 6
     },
     {
       "date": "2026-07-17",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 18.3",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 9
     },
     {
       "date": "2026-07-17",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 9
     },
     {
       "date": "2026-07-17",
       "country": "US",
       "device": "iPad",
       "osVersion": "iOS 16.7",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 3
     },
     {
       "date": "2026-07-17",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 15.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 3
     },
     {
       "date": "2026-07-17",
       "country": "TR",
       "device": "Other",
-      "osVersion": "Other",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "Other"
     },
     {
       "date": "2026-07-17",
       "country": "MY",
       "device": "Other",
-      "osVersion": "Other",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "Other"
     },
     {
       "date": "2026-07-17",
       "country": "DK",
       "device": "Other",
-      "osVersion": "Other",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "Other"
     },
     {
       "date": "2026-07-17",
       "country": "SA",
       "device": "Other",
-      "osVersion": "Other",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "Other"
     },
     {
       "date": "2026-07-18",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 33
     },
     {
       "date": "2026-07-18",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 17.1",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 3
     },
     {
       "date": "2026-07-18",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 15.6",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 3
     },
     {
       "date": "2026-07-18",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 9
     },
     {
       "date": "2026-07-18",
       "country": "MX",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 12
     },
     {
       "date": "2026-07-18",
       "country": "FR",
       "device": "iPad",
       "osVersion": "iOS 12.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 3
     },
     {
       "date": "2026-07-18",
       "country": "US",
       "device": "Desktop",
-      "osVersion": "macOS 10.15.7",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "macOS 10.15.7"
     },
     {
       "date": "2026-07-19",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 15.8",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 2
     },
     {
       "date": "2026-07-19",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.4",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 2
     },
     {
       "date": "2026-07-19",
       "country": "MA",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 2
     },
     {
       "date": "2026-07-19",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 26
     },
     {
       "date": "2026-07-19",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 16.7",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 2
     },
     {
       "date": "2026-07-19",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 15.6",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 4
     },
     {
       "date": "2026-07-19",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 18.7",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 2
     },
     {
       "date": "2026-07-19",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 9.3",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 2
     },
     {
       "date": "2026-07-19",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 18.6",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 2
     },
     {
       "date": "2026-07-19",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 10
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
-      "appVersion": "1.0.1",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "appVersion": "1.0.1"
     },
     {
       "date": "2026-07-20",
       "country": "GB",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
-      "appVersion": "1.0.1",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "appVersion": "1.0.1"
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.4",
-      "appVersion": "1.0.1",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "appVersion": "1.0.1"
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 18.7",
-      "appVersion": "1.0.1",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "appVersion": "1.0.1"
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 16
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 16.7",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 2
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 18.7",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 4
     },
     {
       "date": "2026-07-20",
       "country": "GB",
       "device": "iPad",
       "osVersion": "iOS 18.7",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 1
     },
     {
       "date": "2026-07-20",
       "country": "PH",
       "device": "iPhone",
       "osVersion": "iOS 18.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 1
     },
     {
       "date": "2026-07-20",
       "country": "GB",
       "device": "iPhone",
-      "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "iOS 26.5"
     },
     {
       "date": "2026-07-20",
       "country": "FR",
       "device": "iPhone",
-      "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "iOS 26.5"
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 18.6",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 2
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 26.2",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 1
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 15.6",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 1
     },
     {
       "date": "2026-07-20",
       "country": "SE",
       "device": "iPhone",
       "osVersion": "iOS 26.3",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 1
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPad",
       "osVersion": "iOS 26.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 3
     },
     {
       "date": "2026-07-20",
       "country": "DE",
       "device": "iPhone",
       "osVersion": "iOS 17.5",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "impressions": 1
     },
     {
       "date": "2026-07-20",
       "country": "US",
       "device": "Other",
-      "osVersion": "Other",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "Other"
     },
     {
       "date": "2026-07-20",
       "country": "US",
       "device": "Desktop",
-      "osVersion": "macOS 10.15.7",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "macOS 10.15.7"
     },
     {
       "date": "2026-07-20",
       "country": "JP",
       "device": "Desktop",
-      "osVersion": "macOS 10.15.7",
-      "downloads": 0,
-      "firstTimeDownloads": 0,
-      "redownloads": 0,
-      "impressions": 0,
-      "productPageViews": 0,
-      "sessions": 0,
-      "activeDevices": 0,
-      "activeUsers": 0,
-      "installations": 0,
-      "deletions": 0,
-      "crashes": 0,
-      "retention": 0
+      "osVersion": "macOS 10.15.7"
     }
   ],
   "countries": [
@@ -1080,7 +501,7 @@
       {
         "date": "2026-07-09",
         "mode": "daily_flaggenrun",
-        "players": 4,
+        "players": 2,
         "attempts": 4,
         "completed": 2,
         "averageScore": 1930.5,
@@ -1110,7 +531,7 @@
       {
         "date": "2026-07-11",
         "mode": "daily_flaggenrun",
-        "players": 5,
+        "players": 3,
         "attempts": 5,
         "completed": 5,
         "averageScore": 3096.4,
@@ -1120,7 +541,7 @@
       {
         "date": "2026-07-12",
         "mode": "daily_flaggenrun",
-        "players": 2,
+        "players": 1,
         "attempts": 2,
         "completed": 1,
         "averageScore": 1886.5,
@@ -1130,7 +551,7 @@
       {
         "date": "2026-07-13",
         "mode": "daily_flaggenrun",
-        "players": 5,
+        "players": 3,
         "attempts": 5,
         "completed": 4,
         "averageScore": 3376.6,
@@ -1140,7 +561,7 @@
       {
         "date": "2026-07-15",
         "mode": "daily_flaggenrun",
-        "players": 4,
+        "players": 2,
         "attempts": 4,
         "completed": 3,
         "averageScore": 3370.75,
@@ -1150,7 +571,7 @@
       {
         "date": "2026-07-16",
         "mode": "daily_flaggenrun",
-        "players": 2,
+        "players": 1,
         "attempts": 2,
         "completed": 1,
         "averageScore": 2702.5,
@@ -1160,7 +581,7 @@
       {
         "date": "2026-07-17",
         "mode": "daily_flaggenrun",
-        "players": 5,
+        "players": 3,
         "attempts": 5,
         "completed": 4,
         "averageScore": 2378.4,
@@ -1170,7 +591,7 @@
       {
         "date": "2026-07-17",
         "mode": "daily_staedterun",
-        "players": 2,
+        "players": 1,
         "attempts": 2,
         "completed": 1,
         "averageScore": 482,
@@ -1180,7 +601,7 @@
       {
         "date": "2026-07-20",
         "mode": "daily_flaggenrun",
-        "players": 3,
+        "players": 2,
         "attempts": 3,
         "completed": 1,
         "averageScore": 2097.6666666666665,
@@ -1324,19 +745,24 @@
     ],
     "trophies": [],
     "totalAttempts": 36,
-    "averageScore": 2388.6666666666665
+    "completedAttempts": 23,
+    "averageScore": 2388.6666666666665,
+    "averageDuration": 41.02777777777778,
+    "uniqueUsers": 7,
+    "uniqueUsersLatestDay": 2,
+    "identifiedUserCoverage": 1
   },
   "social": {
     "schemaVersion": 1,
-    "syncedAt": "2026-07-22T09:52:00Z",
+    "syncedAt": "2026-07-22T10:22:53Z",
     "platforms": {
       "youtube": {
         "status": "available",
         "accountName": "Flaggenbande",
         "videoCount": 5,
         "uploadCount": 6,
-        "startedAt": "2026-07-22T09:51:59Z",
-        "completedAt": "2026-07-22T09:52:00Z"
+        "startedAt": "2026-07-22T10:22:52Z",
+        "completedAt": "2026-07-22T10:22:53Z"
       },
       "instagram": {
         "status": "partial",
@@ -1344,8 +770,8 @@
         "accountName": "flaggenbande",
         "videoCount": 5,
         "uploadCount": 5,
-        "startedAt": "2026-07-22T09:51:59.487Z",
-        "completedAt": "2026-07-22T09:08:13.877Z"
+        "startedAt": "2026-07-22T10:22:52.169Z",
+        "completedAt": "2026-07-22T10:04:13.858Z"
       },
       "facebook": {
         "status": "partial",
@@ -1353,8 +779,8 @@
         "accountName": "Flaggenbande",
         "videoCount": 5,
         "uploadCount": 5,
-        "startedAt": "2026-07-22T09:51:59.487Z",
-        "completedAt": "2026-07-22T09:08:14.626Z"
+        "startedAt": "2026-07-22T10:22:52.169Z",
+        "completedAt": "2026-07-22T10:04:14.422Z"
       },
       "tiktok": {
         "status": "not_configured",
@@ -1362,8 +788,8 @@
         "accountName": null,
         "videoCount": 0,
         "uploadCount": 0,
-        "startedAt": "2026-07-22T09:51:59Z",
-        "completedAt": "2026-07-22T09:51:59Z"
+        "startedAt": "2026-07-22T10:22:52Z",
+        "completedAt": "2026-07-22T10:22:52Z"
       }
     },
     "totals": {
@@ -4731,6 +4157,261 @@
         "platform": "facebook",
         "platformVideoId": "2303128737184032",
         "capturedAt": "2026-07-22T09:52:00Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "DktvsM8azzA",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 118,
+          "reach": null,
+          "likes": 2,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "mDhSJzJL5ZE",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 384,
+          "reach": null,
+          "likes": 6,
+          "comments": 2,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "xoof2HIiMiA",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 203,
+          "reach": null,
+          "likes": 1,
+          "comments": 1,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "6k737HP6lDg",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 578,
+          "reach": null,
+          "likes": 6,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "1E6mxi4V3IY",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 761,
+          "reach": null,
+          "likes": 2,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "17981979423051498",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 147,
+          "reach": 92,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "18131654047536109",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 131,
+          "reach": 118,
+          "likes": 0,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "18052317206547183",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 134,
+          "reach": 121,
+          "likes": 0,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "17950735707015400",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 208,
+          "reach": 206,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "18084176021208292",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": 169,
+          "reach": 139,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1743115230290254",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1733906214152833",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1594633352224956",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1527700882467308",
+        "capturedAt": "2026-07-22T10:22:53Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 2,
+          "comments": 1,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "2303128737184032",
+        "capturedAt": "2026-07-22T10:22:53Z",
         "metrics": {
           "views": null,
           "reach": null,
