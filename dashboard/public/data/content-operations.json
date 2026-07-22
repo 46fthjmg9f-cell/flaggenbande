@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-22T07:43:56.953Z",
+  "generatedAt": "2026-07-22T09:48:15.862Z",
   "status": "error",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Prüfungen.",
     "Noch ist kein Datensatz für die Produktion freigegeben. Die menschliche Prüfung ist für alle 193 Länder ausstehend.",
     "Der Cloud-Speicher wurde über die lokale Bereitstellung geprüft; der tatsächliche Cloud-Abgleich ist noch nicht bestätigt.",
-    "Nichtöffentlicher Testlauf zum Hochladen: 3 Läufe mit 12 sicheren Plattformzuständen; keine Veröffentlichung autorisiert."
+    "Nichtöffentlicher Testlauf zum Hochladen: 4 Läufe mit 16 sicheren Plattformzuständen; keine Veröffentlichung autorisiert."
   ],
   "system": [
     {
@@ -47,21 +47,21 @@
       "platform": "youtube",
       "label": "YouTube",
       "status": "ready",
-      "uploads": 2,
+      "uploads": 3,
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Privates YouTube-Testvideo wurde hochgeladen; keine Veröffentlichung autorisiert.",
-      "updatedAt": "2026-07-21T19:33:47.174Z"
+      "updatedAt": "2026-07-22T08:50:13.535Z"
     },
     {
       "platform": "instagram",
       "label": "Instagram",
-      "status": "failed",
+      "status": "planned",
       "uploads": 0,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Das nichtöffentliche Hochladen ist fehlgeschlagen.",
-      "updatedAt": "2026-07-21T20:17:14.684Z"
+      "reason": "Das nichtöffentliche Hochladen ist vorbereitet.",
+      "updatedAt": "2026-07-22T08:50:07.985Z"
     },
     {
       "platform": "tiktok",
@@ -71,20 +71,29 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Das nichtöffentliche Hochladen ist vorbereitet.",
-      "updatedAt": "2026-07-21T19:33:40.631Z"
+      "updatedAt": "2026-07-22T08:50:07.985Z"
     },
     {
       "platform": "facebook",
       "label": "Facebook",
-      "status": "ready",
+      "status": "planned",
       "uploads": 2,
       "publications": 0,
       "performanceAvailable": false,
-      "reason": "Facebook-Entwurf bestätigt; keine Veröffentlichung autorisiert.",
-      "updatedAt": "2026-07-21T19:44:17.818Z"
+      "reason": "Das nichtöffentliche Hochladen ist vorbereitet.",
+      "updatedAt": "2026-07-22T08:50:07.985Z"
     }
   ],
   "runs": [
+    {
+      "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
+      "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
+      "title": null,
+      "status": "partial",
+      "qualityStatus": "passed",
+      "startedAt": "2026-07-22T08:46:39.000Z",
+      "completedAt": null
+    },
     {
       "runId": "upload-gameshow-v8-check-das-mal-aus",
       "contentId": "flaggenbande-60b324334e3dfad6864547fcfc6ca6f95fb181dcf2d33b1741308a5cfa41900f",
@@ -114,6 +123,54 @@
     }
   ],
   "publications": [
+    {
+      "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
+      "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
+      "platform": "youtube",
+      "mode": "private",
+      "status": "private",
+      "updatedAt": "2026-07-22T08:50:13.535Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
+      "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
+      "platform": "instagram",
+      "mode": "container_unpublished",
+      "status": "planned",
+      "updatedAt": "2026-07-22T08:50:07.985Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
+      "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
+      "platform": "tiktok",
+      "mode": "manual_uploaded",
+      "status": "planned",
+      "updatedAt": "2026-07-22T08:50:07.985Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
+      "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
+      "platform": "facebook",
+      "mode": "draft",
+      "status": "planned",
+      "updatedAt": "2026-07-22T08:50:07.985Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
     {
       "runId": "upload-gameshow-v8-check-das-mal-aus",
       "contentId": "flaggenbande-60b324334e3dfad6864547fcfc6ca6f95fb181dcf2d33b1741308a5cfa41900f",
