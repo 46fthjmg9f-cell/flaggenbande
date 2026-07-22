@@ -232,6 +232,29 @@ test('ambiguous exact descriptions fail closed for YouTube association', () => {
   assert.ok(reconciled.runs.every(run => run.status !== 'completed'))
 })
 
+test('duplicate production runs for one content ID are never reconciled by guesswork', () => {
+  const operations = staleOperations()
+  const duplicateRunId = 'upload-test-retry-same-content'
+  operations.runs.push({
+    ...operations.runs[0],
+    runId: duplicateRunId,
+    startedAt: '2026-07-22T12:00:00.000Z',
+    completedAt: null,
+  })
+  operations.publications.push(...operations.publications.map(publication => ({
+    ...publication,
+    runId: duplicateRunId,
+    status: 'planned',
+    updatedAt: '2026-07-22T12:00:00.000Z',
+  })))
+  const videos = ['youtube', 'instagram', 'facebook'].map(platform => publicVideo({ platform }))
+
+  const reconciled = reconcilePublishedSocial(operations, videos)
+
+  assert.ok(reconciled.runs.every(run => run.status !== 'completed'))
+  assert.ok(reconciled.publications.every(publication => publication.status !== 'published'))
+})
+
 test('invalid status, timestamp, and cross-platform URLs never count as publication proof', () => {
   const videos = [
     publicVideo({ platform: 'youtube', status: 'private' }),

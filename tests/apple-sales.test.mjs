@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canonicalAnalytics, canonicalSales, summarizeSales } from '../scripts/collect-dashboard-data.mjs'
+import { canonicalAnalytics, canonicalSales, summarizeSales, uniqueCloudKitUserCount } from '../scripts/collect-dashboard-data.mjs'
 
 const sale = (overrides = {}) => ({
   'End Date': '2026-07-20',
@@ -93,4 +93,10 @@ test('Apple Analytics generic Counts are classified by report and never turn mis
   assert.equal('sessions' in rows[1], false)
   assert.equal(rows[2].deletions, 2)
   assert.equal('downloads' in rows[2], false)
+})
+
+test('CloudKit user counts stay unavailable when records contain no stable user ID', () => {
+  const record = userId => ({ fields: userId === undefined ? {} : { userId: { value: userId } } })
+  assert.equal(uniqueCloudKitUserCount([record(), record('')]), null)
+  assert.equal(uniqueCloudKitUserCount([record('device-a'), record('device-a'), record('device-b')]), 2)
 })

@@ -322,6 +322,14 @@ function cloudKitHeaders(path, body) {
   return { 'content-type': 'application/json', 'X-Apple-CloudKit-Request-KeyID': process.env.CLOUDKIT_KEY_ID, 'X-Apple-CloudKit-Request-ISO8601Date': date, 'X-Apple-CloudKit-Request-SignatureV1': signature }
 }
 function field(record, key) { const value = record.fields?.[key]?.value; return typeof value === 'object' && value?.timestamp ? value.timestamp : value }
+
+export function uniqueCloudKitUserCount(records) {
+  const identifiers = new Set(records
+    .map(record => String(field(record, 'userId') ?? '').trim())
+    .filter(Boolean))
+  return identifiers.size > 0 ? identifiers.size : null
+}
+
 async function cloudKitQuery(recordType, desiredKeys, sortField, filterBy) {
   const path = `/database/1/${cloudKitContainer}/production/public/records/query`
   const all = []
@@ -356,7 +364,6 @@ async function collectCloudKit() {
       [{ fieldName: 'dateKey', comparator: 'NOT_EQUALS', fieldValue: { value: '', type: 'STRING' } }],
     )
     const dailyMap = new Map()
-    const uniqueUsers = new Set()
     let identifiedAttempts = 0
     for (const record of attempts) {
       const date = isoDate(field(record, 'dateKey'))
@@ -371,7 +378,6 @@ async function collectCloudKit() {
       const userId = String(field(record, 'userId') ?? '').trim()
       if (userId) {
         state.players.add(userId)
-        uniqueUsers.add(userId)
         identifiedAttempts += 1
       }
       dailyMap.set(key, state)
@@ -384,7 +390,7 @@ async function collectCloudKit() {
     const completedAttempts = attempts.filter(record => Boolean(field(record, 'completed'))).length
     const latestDate = daily.map(row => row.date).sort().at(-1) ?? null
     const uniqueUsersLatestDay = latestDate
-      ? new Set(attempts.filter(record => isoDate(field(record, 'dateKey')) === latestDate).map(record => String(field(record, 'userId') ?? '').trim()).filter(Boolean)).size
+      ? uniqueCloudKitUserCount(attempts.filter(record => isoDate(field(record, 'dateKey')) === latestDate))
       : null
     return {
       cloudKit: {
@@ -396,7 +402,7 @@ async function collectCloudKit() {
         completedAttempts,
         averageScore,
         averageDuration,
-        uniqueUsers: uniqueUsers.size || null,
+        uniqueUsers: uniqueCloudKitUserCount(attempts),
         uniqueUsersLatestDay,
         identifiedUserCoverage: attempts.length ? identifiedAttempts / attempts.length : null,
       },

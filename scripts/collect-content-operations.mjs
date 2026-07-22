@@ -323,19 +323,29 @@ export function reconcilePublishedSocial(contentOperations, socialVideos) {
   if (base.schemaVersion !== 1 || !Array.isArray(socialVideos)) return base
   const runs = requiredArray(base.runs, 'content-operations.runs', 100)
   const publications = requiredArray(base.publications, 'content-operations.publications', 400)
-  const knownContentIds = new Set(runs.map(run => run.contentId))
+  const runIdsByContentId = new Map()
+  for (const run of runs) {
+    const runIds = runIdsByContentId.get(run.contentId) ?? new Set()
+    runIds.add(run.runId)
+    runIdsByContentId.set(run.contentId, runIds)
+  }
+  // A platform proof identifies content, not one specific production attempt.
+  // If several runs share the content ID, applying the proof would be a guess.
+  const unambiguousContentIds = new Set([...runIdsByContentId.entries()]
+    .filter(([, runIds]) => runIds.size === 1)
+    .map(([contentId]) => contentId))
   const proofs = socialVideos.map(publishedSocialProof).filter(Boolean)
 
   const metaIdsByDescription = new Map()
   for (const proof of proofs) {
-    if (!['instagram', 'facebook'].includes(proof.platform) || proof.contentId === null || !knownContentIds.has(proof.contentId) || !proof.description) continue
+    if (!['instagram', 'facebook'].includes(proof.platform) || proof.contentId === null || !unambiguousContentIds.has(proof.contentId) || !proof.description) continue
     const ids = metaIdsByDescription.get(proof.description) ?? new Set()
     ids.add(proof.contentId)
     metaIdsByDescription.set(proof.description, ids)
   }
 
   const associatedProofs = proofs.flatMap(proof => {
-    if (proof.contentId !== null && knownContentIds.has(proof.contentId)) return [{ ...proof, associatedContentId: proof.contentId }]
+    if (proof.contentId !== null && unambiguousContentIds.has(proof.contentId)) return [{ ...proof, associatedContentId: proof.contentId }]
     if (proof.platform !== 'youtube' || !proof.description) return []
     const matchingIds = metaIdsByDescription.get(proof.description)
     if (!matchingIds || matchingIds.size !== 1) return []

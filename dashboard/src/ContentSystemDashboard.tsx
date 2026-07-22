@@ -21,6 +21,7 @@ const runLabels: Record<ProductionRunStatus, string> = {
 }
 
 const platformLabels: Record<PlatformId, string> = { youtube: 'YT', instagram: 'IG', facebook: 'FB', tiktok: 'TT' }
+const corePlatforms: readonly PlatformId[] = ['youtube', 'instagram', 'facebook']
 
 function platformState(status: PublicationStatus): string {
   if (status === 'published') return 'published'
@@ -74,19 +75,22 @@ export default function ContentSystemDashboard() {
     <section className="recent-production">
       <div className="compact-heading"><h2>Letzte Videos</h2><span>{formatTimestamp(data.generatedAt)}</span></div>
       <div className="recent-production-list">
-        {runs.length > 0 ? runs.map(run => <article className="recent-production-row" key={run.runId}>
+        {runs.length > 0 ? runs.map(run => {
+          const fullyPublished = run.status === 'completed' && corePlatforms.every(platform => run.publications.some(publication => publication.platform === platform && publication.status === 'published'))
+          return <article className="recent-production-row" key={run.runId}>
           <div className="recent-production-main">
             <strong>{run.title ?? 'Video'}</strong>
             <span>{formatTimestamp(run.completedAt ?? run.startedAt)}</span>
           </div>
-          <span className={`status-badge ${run.status}`}>{run.publications.some(publication => publication.status === 'published') ? 'Veröffentlicht' : runLabels[run.status]}</span>
+          <span className={`status-badge ${run.status}`}>{fullyPublished ? 'Veröffentlicht' : runLabels[run.status]}</span>
           <div className="recent-platforms" aria-label="Plattformstatus">
             {(['youtube', 'instagram', 'facebook', 'tiktok'] as const).map(platform => {
               const publication = run.publications.find(entry => entry.platform === platform)
               return <span className={`calendar-platform ${publication ? platformState(publication.status) : 'missing'}`} key={platform}>{platformLabels[platform]}</span>
             })}
           </div>
-        </article>) : <p className="compact-empty">Keine Videos</p>}
+        </article>
+        }) : <p className="compact-empty">Keine Videos</p>}
       </div>
     </section>
   </section>
