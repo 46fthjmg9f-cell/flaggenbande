@@ -1287,15 +1287,17 @@ const verifyMetaCredential = async (platform: Platform, env: Env): Promise<void>
     throw new MetaApiError(`${platform === "instagram" ? "Instagram" : "Facebook"}-Konto-ID fehlt.`, "authentication_failed", false);
   }
   const account = await graphForPlatform(platform, env, expectedId, {
-    fields: platform === "instagram" ? "id,username" : "id,name,tasks",
+    // A Page Access Token can validate its Page node directly, but the `tasks`
+    // field belongs to the User-token `/me/accounts` flow and is not available
+    // on this direct Page request.
+    fields: platform === "instagram" ? "id,username" : "id,name",
   }, "GET");
   if (String(account.id ?? "") !== expectedId) {
     throw new MetaApiError("Meta-Token und konfigurierte Konto-ID gehoeren nicht zusammen.", "authentication_failed", false);
   }
   if (platform === "facebook") {
-    const tasks = Array.isArray(account.tasks) ? account.tasks.filter((task): task is string => typeof task === "string") : [];
-    if (!tasks.includes("CREATE_CONTENT") && !tasks.includes("MANAGE")) {
-      throw new MetaApiError("Facebook-Page-Token besitzt keine Aufgabe zum Erstellen von Inhalten.", "permission_denied", false);
+    if (typeof account.name !== "string" || !account.name.trim()) {
+      throw new MetaApiError("Facebook-Page-Token konnte keinen gueltigen Seitennamen lesen.", "authentication_failed", false);
     }
     return;
   }
