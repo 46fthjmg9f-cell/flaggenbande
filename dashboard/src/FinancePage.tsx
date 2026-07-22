@@ -34,22 +34,23 @@ export default function FinancePage({ data, rows, refreshing, onRefresh }: Finan
   const inAppPurchaseUnits = data.sales?.inAppPurchaseUnits ?? (classifiedDailyRowsAvailable ? sumPresent(rows, 'inAppPurchaseUnits') : null)
   const refunds = data.sales?.refunds ?? (data.schemaVersion >= 3 ? sumPresent(rows, 'refunds') : null)
   const proceeds = data.schemaVersion >= 3 ? sumPresent(rows, 'proceeds') : null
-  const revenue = sumPresent(rows, 'revenue')
   const financeAvailable = data.finance !== null && data.finance !== undefined
   const salesAvailable = data.availability['Sales & Trends']?.available === true
+  const salesReason = data.availability['Sales & Trends']?.reason ?? 'Noch kein Tagesreport'
+  const financeReason = data.availability.Finance?.reason ?? 'Noch kein Monatsbericht'
+  const hasFinancialValues = financeAvailable || proceeds !== null || appUnits !== null || inAppPurchaseUnits !== null || refunds !== null
   const classificationStatus = data.sales?.classificationStatus ?? 'unavailable'
   const unknownIdentifiers = data.sales?.unknownProductTypeIdentifiers ?? []
 
   return <section id="finance-view" className="dashboard-view" role="tabpanel" aria-labelledby="finance-tab" tabIndex={0}>
     <header className="compact-page-header">
-      <div><h1>Finanzen</h1><span className={`compact-sync ${financeAvailable ? 'ok' : 'partial'}`}>{data.finance?.period ?? '—'}</span></div>
+      <div><h1>Finanzen</h1><span className={`compact-sync ${hasFinancialValues ? 'ok' : 'partial'}`}>{hasFinancialValues ? 'Daten vorhanden' : 'Noch keine Beträge'}</span></div>
       <button onClick={onRefresh} disabled={refreshing} aria-label="Finanzdaten aktualisieren">↻</button>
     </header>
 
     <section className="kpis finance-kpis" aria-label="Finanzkennzahlen">
       <article className="kpi-card green"><p>Apple-Erlöse · Monatsbericht</p><strong>{formatMoney(data.finance?.proceeds ?? null)}</strong><span>{data.finance?.period ?? 'Noch nicht verfügbar'}</span></article>
       <article className="kpi-card green"><p>Erlöse · verfügbare Historie</p><strong>{formatMoney(proceeds)}</strong><span>App Store Connect · Verkäufe</span></article>
-      <article className="kpi-card blue"><p>Umsatz · verfügbare Historie</p><strong>{formatMoney(revenue)}</strong><span>nur wenn von Apple geliefert</span></article>
       <article className="kpi-card purple"><p>App-Einheiten · Tagesbericht</p><strong>{formatNumber(appUnits)}</strong><span>{appUnits === null ? metricAvailability(appUnits, '') : formatReportDate(data.sales?.reportDate)}</span></article>
       <article className="kpi-card purple"><p>In-App-Käufe · Tagesbericht</p><strong>{formatNumber(inAppPurchaseUnits)}</strong><span>{inAppPurchaseUnits === null ? metricAvailability(inAppPurchaseUnits, '') : formatReportDate(data.sales?.reportDate)}</span></article>
       <article className="kpi-card red"><p>Rückerstattungen</p><strong>{formatNumber(refunds)}</strong><span>{metricAvailability(refunds, 'bestätigte Einheiten')}</span></article>
@@ -59,10 +60,10 @@ export default function FinancePage({ data, rows, refreshing, onRefresh }: Finan
       <article className="panel finance-panel">
         <div className="panel-heading"><div><span>QUELLEN</span><h2>Finanzdaten-Abdeckung</h2></div></div>
         <ul className="finance-source-list">
-          <li><div><strong>App Store Connect · Verkäufe</strong><small>Tägliche App-Einheiten, In-App-Käufe, Erlöse und Rückerstattungen</small></div><span className={`status-badge ${salesAvailable ? 'ready' : 'planned'}`}>{salesAvailable ? 'Verfügbar' : 'Ausstehend'}</span></li>
+          <li><div><strong>App Store Connect · Tagesreport</strong><small>{salesAvailable ? 'App-Einheiten, In-App-Käufe, Erlöse und Rückerstattungen' : salesReason}</small></div><span className={`status-badge ${salesAvailable ? 'ready' : 'planned'}`}>{salesAvailable ? 'Verfügbar' : 'Noch kein Report'}</span></li>
           <li><div><strong>Apple-Produkttypen</strong><small>{classificationStatus === 'complete' ? 'App- und In-App-Einheiten vollständig getrennt' : classificationStatus === 'partial' ? `Unbekannte Kennungen: ${unknownIdentifiers.join(', ') || 'nicht benannt'}` : 'Noch kein klassifizierbarer Tagesreport'}</small></div><span className={`status-badge ${classificationStatus === 'complete' ? 'ready' : 'planned'}`}>{classificationStatus === 'complete' ? 'Klassifiziert' : classificationStatus === 'partial' ? 'Teilweise' : 'Ausstehend'}</span></li>
-          <li><div><strong>Apple-Finanzbericht</strong><small>Monatliche bestätigte Auszahlung</small></div><span className={`status-badge ${financeAvailable ? 'ready' : 'planned'}`}>{financeAvailable ? 'Verfügbar' : 'Ausstehend'}</span></li>
-          <li><div><strong>Umsatz der sozialen Plattformen</strong><small>YouTube, Instagram, Facebook und TikTok</small></div><span className="status-badge planned">Noch nicht verfügbar</span></li>
+          <li><div><strong>Apple-Finanzbericht</strong><small>{financeAvailable ? 'Monatliche bestätigte Auszahlung' : financeReason}</small></div><span className={`status-badge ${financeAvailable ? 'ready' : 'planned'}`}>{financeAvailable ? 'Verfügbar' : 'Noch kein Report'}</span></li>
+          <li><div><strong>Umsatz der sozialen Plattformen</strong><small>YouTube, Instagram, Facebook und TikTok</small></div><span className="status-badge not_configured">Nicht angebunden</span></li>
           <li><div><strong>Produktionskosten</strong><small>Spracherzeugung, Videoerstellung und externe Dienste</small></div><span className="status-badge planned">Noch nicht erfasst</span></li>
         </ul>
       </article>

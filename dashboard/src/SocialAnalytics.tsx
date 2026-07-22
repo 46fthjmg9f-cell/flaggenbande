@@ -10,6 +10,13 @@ const platformLabels: Record<SocialPlatform, string> = {
 
 const platformOrder = Object.keys(platformLabels) as SocialPlatform[]
 
+const platformStateLabels: Record<SocialData['platforms'][SocialPlatform]['status'], string> = {
+  available: 'Aktuell',
+  partial: 'Teilweise',
+  not_configured: 'Nicht verbunden',
+  error: 'Fehler',
+}
+
 const metricLabels: Array<{ key: keyof SocialMetrics; label: string; unit?: string }> = [
   { key: 'views', label: 'Aufrufe' },
   { key: 'reach', label: 'Reichweite' },
@@ -32,11 +39,11 @@ const publicationStatusLabel = (status: string): string => ({
 }[status] ?? status)
 
 const formatNumber = (value: Numeric) => value === null || value === undefined
-  ? 'Nicht verfügbar'
+  ? 'Daten noch nicht verfügbar'
   : new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1, notation: value >= 10000 ? 'compact' : 'standard' }).format(value)
 
 const formatMetric = (value: Numeric, unit = '') => value === null || value === undefined
-  ? 'Nicht verfügbar'
+  ? 'Daten noch nicht verfügbar'
   : `${formatNumber(value)}${unit}`
 
 const formatDate = (value: string | null) => value
@@ -201,6 +208,7 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
     .filter(group => group.videos.length > 0), [allGroups, selectedPlatforms])
   const selectedGroup = groups.find(group => group.key === selectedGroupKey) ?? null
   const allSelected = selectedPlatforms.size === platformOrder.length
+  const orderedSelectedPlatforms = platformOrder.filter(platform => selectedPlatforms.has(platform))
 
   const selectAllPlatforms = () => setSelectedPlatforms(new Set(platformOrder))
   const togglePlatform = (platform: SocialPlatform) => {
@@ -248,6 +256,20 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
       >{platformLabels[platform]}</button>)}
     </div>
 
+    <div className="social-platform-data-status" aria-label="Datenstatus der Plattformen">
+      {platformOrder.map(platform => {
+        const state = data.platforms[platform]
+        const reason = state.reason?.trim()
+        return <div className={`social-platform-data-state ${platform} ${state.status}`} key={platform}>
+          <span className="social-platform-data-state-heading">
+            <strong>{platformLabels[platform]}</strong>
+            <span>{platformStateLabels[state.status]}</span>
+          </span>
+          <small title={reason}>{reason || `${state.videoCount} Videos mit Daten`}</small>
+        </div>
+      })}
+    </div>
+
     <div className="social-kpis social-kpis-focused">
       <article><span>Aufrufe <small>{coverage('views')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'views'))}</strong></article>
       <article><span>Reichweite <small>{coverage('reach')} Videos</small></span><strong>{formatNumber(metricValue(visibleVideos, 'reach'))}</strong></article>
@@ -270,11 +292,18 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
           <span className="video-card-kicker">Veröffentlicht {formatDate(group.publishedAt)}</span>
           <span className="social-video-title">{group.title}</span>
         </button>
-        <div className="video-platform-links" aria-label="Externe Videolinks">{group.videos.map(video => {
+        <div className="video-platform-links" aria-label="Plattformdaten und externe Videolinks">{orderedSelectedPlatforms.map(platform => {
+          const video = group.videos.find(entry => entry.platform === platform)
+          if (!video) return <span className="platform-content-slot missing" key={platform}>
+            <span className={`platform-pill ${platform} unavailable`}>{platformLabels[platform]}</span>
+            <small>Daten noch nicht verfügbar</small>
+          </span>
           const url = trustedPlatformUrl(video)
-          return url
-            ? <a key={`${video.platform}:${video.platformVideoId}`} className={`platform-pill ${video.platform}`} href={url} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>{platformLabels[video.platform]} ↗</a>
-            : <span key={`${video.platform}:${video.platformVideoId}`} className={`platform-pill ${video.platform} unavailable`} title="Kein bestätigter externer Link verfügbar">{platformLabels[video.platform]}</span>
+          return <span className="platform-content-slot" key={platform}>
+            {url
+              ? <a className={`platform-pill ${platform}`} href={url} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}>{platformLabels[platform]} ↗</a>
+              : <span className={`platform-pill ${platform} unavailable`} title="Kein bestätigter externer Link verfügbar">{platformLabels[platform]}</span>}
+          </span>
         })}</div>
       </div>
       <dl className="social-video-metrics">
@@ -291,10 +320,20 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
     }}>
       {selectedGroup ? <div className="social-video-dialog-content">
         <header>
-          <div><span className="eyebrow">VIDEOEINZELHEITEN</span><h2 id="social-video-dialog-title">{selectedGroup.title}</h2><p>{selectedGroup.videos.length} ausgewählte Plattformveröffentlichungen im direkten Vergleich.</p></div>
+          <div><span className="eyebrow">VIDEOEINZELHEITEN</span><h2 id="social-video-dialog-title">{selectedGroup.title}</h2><p>{selectedGroup.videos.length} von {orderedSelectedPlatforms.length} ausgewählten Plattformen mit Daten.</p></div>
           <button type="button" className="dialog-close" onClick={closeDetails} aria-label="Video-Details schließen">×</button>
         </header>
-        <div className="platform-detail-grid">{selectedGroup.videos.map(video => {
+        <div className="platform-detail-grid">{orderedSelectedPlatforms.map(platform => {
+          const video = selectedGroup.videos.find(entry => entry.platform === platform)
+          if (!video) return <article className="platform-detail-card missing" key={platform}>
+            <div className="platform-detail-heading">
+              <span className={`platform-pill ${platform} unavailable`}>{platformLabels[platform]}</span>
+            </div>
+            <div className="platform-detail-missing">
+              <strong>Daten noch nicht verfügbar</strong>
+              <span>{data.platforms[platform].reason?.trim() || 'Für dieses Video liegt auf dieser Plattform noch kein bestätigter Datensatz vor.'}</span>
+            </div>
+          </article>
           const url = trustedPlatformUrl(video)
           const history = snapshotTrend(data, video)
           const retention = retentionPoints(video)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { EChartsOption, EChartsType } from 'echarts'
 import ContentSystemDashboard from './ContentSystemDashboard'
 import FinancePage from './FinancePage'
+import NewProductionPage from './NewProductionPage'
 import PublishingCalendar from './PublishingCalendar'
 import SocialStatsPage from './SocialStatsPage'
 import { DASHBOARD_SECTIONS, dashboardSectionFromHash, type DashboardSectionId } from './dashboardSections'
@@ -11,6 +12,7 @@ import { emptyDashboard } from './types'
 const formatNumber = (value: Numeric) => value === null || value === undefined ? '—' : new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(value)
 const formatPercent = (value: Numeric) => value === null || value === undefined ? '—' : new Intl.NumberFormat('de-DE', { style: 'percent', maximumFractionDigits: 1 }).format(value)
 const numeric = (value: unknown) => typeof value === 'number' ? value : 0
+const optionalNumeric = (value: unknown): number | null => typeof value === 'number' ? value : null
 const unique = (values: Array<string | undefined>) => [...new Set(values.filter((value): value is string => Boolean(value)))].sort()
 const availabilityLabels: Record<string, string> = {
   'App Analytics': 'App-Auswertung',
@@ -77,7 +79,6 @@ export default function Dashboard() {
   const [device, setDevice] = useState('all')
   const [osVersion, setOsVersion] = useState('all')
   const [appVersion, setAppVersion] = useState('all')
-  const [mode, setMode] = useState('all')
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -139,7 +140,6 @@ export default function Dashboard() {
   const devices = useMemo(() => unique(data.daily.map(row => row.device)), [data.daily])
   const osVersions = useMemo(() => unique(data.daily.map(row => row.osVersion)), [data.daily])
   const appVersions = useMemo(() => unique(data.daily.map(row => row.appVersion)), [data.daily])
-  const modes = useMemo(() => unique(data.cloudKit.daily.map(row => row.mode)), [data.cloudKit.daily])
   const filtered = useMemo(() => {
     let visible = data.daily.filter(row => (country === 'all' || row.country === country) && (device === 'all' || row.device === device) && (osVersion === 'all' || row.osVersion === osVersion) && (appVersion === 'all' || row.appVersion === appVersion))
     if (days === 'all') return visible
@@ -149,23 +149,10 @@ export default function Dashboard() {
   const series = useMemo(() => aggregateByDate(filtered), [filtered])
   const latest = series.at(-1)
   const last7 = series.slice(-7)
+  const last7Downloads = last7.some(row => typeof row.downloads === 'number')
+    ? last7.reduce((sum, row) => sum + numeric(row.downloads), 0)
+    : null
   const filteredCountries = useMemo(() => aggregateBreakdown(filtered, 'country'), [filtered])
-  const rawCloudRows = useMemo(() => {
-    let visible = mode === 'all' ? data.cloudKit.daily : data.cloudKit.daily.filter(row => row.mode === mode)
-    if (days === 'all') return visible
-    const dates = [...new Set(visible.map(row => row.date))].sort().slice(-Number(days))
-    return visible.filter(row => dates.includes(row.date))
-  }, [data.cloudKit.daily, days, mode])
-  const cloudSeries = useMemo(() => {
-    const map = new Map<string, { date: string; players: number; attempts: number; completed: number; scoreTotal: number; durationTotal: number }>()
-    for (const row of rawCloudRows) {
-      const state = map.get(row.date) ?? { date: row.date, players: 0, attempts: 0, completed: 0, scoreTotal: 0, durationTotal: 0 }
-      state.players += row.players; state.attempts += row.attempts; state.completed += row.completed
-      state.scoreTotal += numeric(row.averageScore) * row.attempts; state.durationTotal += numeric(row.averageDuration) * row.attempts
-      map.set(row.date, state)
-    }
-    return [...map.values()].sort((a, b) => a.date.localeCompare(b.date)).map(row => ({ ...row, averageScore: row.attempts ? row.scoreTotal / row.attempts : null, averageDuration: row.attempts ? row.durationTotal / row.attempts : null, completionRate: row.attempts ? row.completed / row.attempts : null }))
-  }, [rawCloudRows])
   const hasTrend = series.some(row => Object.values(row).some(value => typeof value === 'number' && value > 0))
   const labels = series.map(row => String(row.date).slice(5))
 
@@ -198,19 +185,6 @@ export default function Dashboard() {
       { name: 'Nutzerbindung', type: 'line', yAxisIndex: 1, smooth: true, showSymbol: false, data: series.map(row => numeric(row.retention)), lineStyle: { color: '#41d6a2', width: 2 } },
     ],
   }), [labels, series])
-  const cloudOption = useMemo<EChartsOption>(() => ({
-    backgroundColor: 'transparent', tooltip: { trigger: 'axis' }, legend: { textStyle: { color: '#b7c7d9' } }, grid: baseGrid,
-    xAxis: { type: 'category', data: cloudSeries.map(row => row.date.slice(5)), axisLabel: lineStyle }, yAxis: { type: 'value', axisLabel: lineStyle, splitLine },
-    series: [
-      { name: 'Teilnahmen', type: 'bar', data: cloudSeries.map(row => row.players), itemStyle: { color: '#f7b955', borderRadius: [4, 4, 0, 0] } },
-      { name: 'Versuche', type: 'line', smooth: true, showSymbol: false, data: cloudSeries.map(row => row.attempts), lineStyle: { color: '#ff7e8a', width: 2 } },
-    ],
-  }), [cloudSeries])
-  const scoreOption = useMemo<EChartsOption>(() => ({
-    backgroundColor: 'transparent', tooltip: { trigger: 'axis' }, grid: { left: 44, right: 18, top: 24, bottom: 34 },
-    xAxis: { type: 'category', data: data.cloudKit.scoreDistribution.map(row => `${row.key}–${Number(row.key) + 9}`), axisLabel: lineStyle }, yAxis: { type: 'value', axisLabel: lineStyle, splitLine },
-    series: [{ type: 'bar', data: data.cloudKit.scoreDistribution.map(row => row.value), itemStyle: { color: '#a78bfa', borderRadius: [4, 4, 0, 0] } }],
-  }), [data.cloudKit.scoreDistribution])
   const countryOption = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent', tooltip: { trigger: 'axis' }, grid: { left: 80, right: 18, top: 18, bottom: 20 },
     xAxis: { type: 'value', axisLabel: lineStyle, splitLine }, yAxis: { type: 'category', data: filteredCountries.slice(0, 8).map(row => row.key).reverse(), axisLabel: { color: '#b7c7d9' } },
@@ -246,6 +220,7 @@ export default function Dashboard() {
         onKeyDown={event => moveSectionFocus(event, index)}
       >{section.label}</button>)}
     </nav>
+    {activeView === 'new-production' && <NewProductionPage />}
     {activeView === 'production' && <ContentSystemDashboard />}
     {activeView === 'calendar' && <PublishingCalendar socialVideos={data.social.videos} />}
     {activeView === 'social-stats' && <SocialStatsPage data={data.social} generatedAt={data.generatedAt} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
@@ -257,21 +232,21 @@ export default function Dashboard() {
     </header>
     <section className="filters" aria-label="Filter der Übersicht">
       <label>Zeitraum<select aria-label="Zeitraum" value={days} onChange={event => setDays(event.target.value)}><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="90">90 Tage</option><option value="all">Gesamt</option></select></label>
-      {select('Land', country, setCountry, countries, 'Alle Länder')}{select('Gerät', device, setDevice, devices, 'Alle Geräte')}{select('iOS', osVersion, setOsVersion, osVersions, 'Alle iOS-Versionen')}{select('App-Version', appVersion, setAppVersion, appVersions, 'Alle App-Versionen')}{select('Spielmodus', mode, setMode, modes, 'Alle Modi')}
+      {select('Land', country, setCountry, countries, 'Alle Länder')}{select('Gerät', device, setDevice, devices, 'Alle Geräte')}{select('iOS', osVersion, setOsVersion, osVersions, 'Alle iOS-Versionen')}{select('App-Version', appVersion, setAppVersion, appVersions, 'Alle App-Versionen')}
       <button className="export" onClick={exportCsv} disabled={!series.length}>CSV exportieren</button>
     </section>
     {(error || data.messages.length > 0) && <section className="notices">{error && <p className="error">{error}</p>}{data.messages.map(message => <p key={message}>{message}</p>)}</section>}
     <section className="kpis" aria-label="Kernkennzahlen">
-      <KpiCard label="Downloads heute" value={formatNumber(numeric(latest?.downloads) || null)} detail="App Store Connect" />
-      <KpiCard label="Downloads · 7 Tage" value={formatNumber(last7.reduce((sum, row) => sum + numeric(row.downloads), 0) || null)} detail="rollierend" />
-      <KpiCard label="Produktseiten-Aufrufe" value={formatNumber(numeric(latest?.productPageViews) || null)} detail="heute" accent="purple" />
+      <KpiCard label="Downloads heute" value={formatNumber(optionalNumeric(latest?.downloads))} detail="App Store Connect" />
+      <KpiCard label="Downloads · 7 Tage" value={formatNumber(last7Downloads)} detail="rollierend" />
+      <KpiCard label="Produktseiten-Aufrufe" value={formatNumber(optionalNumeric(latest?.productPageViews))} detail="heute" accent="purple" />
       <KpiCard label="Umwandlungsrate" value={formatPercent(numeric(latest?.impressions) > 0 ? numeric(latest?.downloads) / numeric(latest?.impressions) : null)} detail="Downloads / Einblendungen" accent="green" />
-      <KpiCard label="Aktive Geräte" value={formatNumber(numeric(latest?.activeDevices) || null)} detail="App-Auswertung" accent="gold" />
-      <KpiCard label="Abstürze" value={formatNumber(numeric(latest?.crashes) || null)} detail="heute" accent="red" />
+      <KpiCard label="Aktive Geräte" value={formatNumber(optionalNumeric(latest?.activeDevices))} detail="Apple · Geräte mit mindestens einer Sitzung" accent="gold" />
+      <KpiCard label="Abstürze" value={formatNumber(optionalNumeric(latest?.crashes))} detail="heute" accent="red" />
       <KpiCard label="App-Store-Bewertung" value={data.kpis.reviewAverage ? `${formatNumber(data.kpis.reviewAverage)} / 5` : '—'} detail={`${formatNumber(data.kpis.reviewCount)} Bewertungen`} accent="purple" />
-      <KpiCard label="CloudKit-Profile" value={formatNumber(data.cloudKit.players ?? null)} detail="nur öffentliche Aggregate" accent="purple" />
-      <KpiCard label="Tägliche Teilnahmen" value={formatNumber(cloudSeries.at(-1)?.players ?? null)} detail={mode === 'all' ? 'alle Spielmodi' : mode} accent="gold" />
-      <KpiCard label="Ø Flaggenrun-Punktzahl" value={formatNumber(data.cloudKit.averageScore ?? null)} detail="Tägliche Runden" />
+      <KpiCard label="Eindeutige CloudKit-Nutzer" value={formatNumber(data.cloudKit.uniqueUsers ?? null)} detail={typeof data.cloudKit.identifiedUserCoverage === 'number' ? `${formatPercent(data.cloudKit.identifiedUserCoverage)} der Versuche zuordenbar` : 'pseudonyme Geräte oder Game-Center-Konten'} accent="purple" />
+      <KpiCard label="CloudKit-Nutzer · letzter Tag" value={formatNumber(data.cloudKit.uniqueUsersLatestDay ?? null)} detail="eindeutige DailyAttempt-Nutzer" accent="gold" />
+      <KpiCard label="CloudKit-Abschlussquote" value={formatPercent(typeof data.cloudKit.totalAttempts === 'number' && data.cloudKit.totalAttempts > 0 ? numeric(data.cloudKit.completedAttempts) / data.cloudKit.totalAttempts : null)} detail={`${formatNumber(data.cloudKit.completedAttempts ?? null)} von ${formatNumber(data.cloudKit.totalAttempts ?? null)} Versuchen`} />
       <KpiCard label="Aktuelle Version" value={data.release?.build ?? '—'} detail={data.release?.buildProcessingState ?? data.release?.appStoreState ?? 'App Store Connect'} accent="green" />
     </section>
     <section className="chart-grid">
@@ -279,8 +254,6 @@ export default function Dashboard() {
       <Panel eyebrow="SICHTBARKEIT" title="Sichtbarkeit und Produktseite" detail="Einblendungen · Produktseiten-Aufrufe" wide><Chart option={discoveryOption} label="App-Store-Sichtbarkeit" /></Panel>
       <Panel eyebrow="NUTZUNG" title="Sitzungen und aktive Geräte" detail="App-Auswertung" wide><Chart option={engagementOption} label="Nutzung im Zeitverlauf" /></Panel>
       <Panel eyebrow="QUALITÄT" title="Abstürze und Nutzerbindung" detail="nur bei Apple-Schwelle" wide><Chart option={qualityOption} label="Abstürze und Nutzerbindung" /></Panel>
-      <Panel eyebrow="CLOUDKIT" title="Täglicher Flaggenrun" detail="Teilnahmen · Versuche" wide><Chart option={cloudOption} label="Entwicklung des täglichen Flaggenruns" /></Panel>
-      <Panel eyebrow="PUNKTZAHLEN" title="Punkteverteilung" detail="anonym zusammengefasst"><Chart option={scoreOption} label="Punkteverteilung" /></Panel>
       <Panel eyebrow="LÄNDER" title="Downloads nach Land" detail="aktiver Filter berücksichtigt"><Chart option={countryOption} label="Downloads nach Land" /></Panel>
       <Panel eyebrow="SPIELMODI" title="Versuche nach Modus" detail="CloudKit DailyAttempt"><Chart option={modeOption} label="Versuche nach Spielmodus" /></Panel>
       <Panel eyebrow="DATENABDECKUNG" title="Verfügbare Quellen" detail="Sicherer, stündlicher Abruf">

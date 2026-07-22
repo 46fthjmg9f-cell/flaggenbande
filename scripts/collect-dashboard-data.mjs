@@ -85,31 +85,74 @@ function parseTsv(bytes) {
 }
 function column(row, aliases) { return Object.entries(row).find(([header]) => aliases.includes(normalize(header)))?.[1] }
 function metricFromRow(row, aliases) { return asNumber(column(row, aliases)) }
+function optionalMetricFromRow(row, aliases) { return asOptionalNumber(column(row, aliases)) }
 
-function canonicalAnalytics(rows) {
-  return rows.map(row => ({
-    date: isoDate(column(row, ['date', 'eventdate', 'appdownloaddate'])),
-    country: column(row, ['territory', 'countryorregion', 'country']) || undefined,
-    device: column(row, ['device', 'platform']) || undefined,
-    osVersion: column(row, ['platformversion', 'osversion']) || undefined,
-    appVersion: column(row, ['appversion']) || undefined,
-    downloads: metricFromRow(row, ['totaldownloads', 'downloads']),
-    firstTimeDownloads: metricFromRow(row, ['firsttimedownloads']),
-    redownloads: metricFromRow(row, ['redownloads']),
-    impressions: metricFromRow(row, ['impressions']),
-    productPageViews: metricFromRow(row, ['productpageviews']),
-    sessions: metricFromRow(row, ['sessions']),
-    activeDevices: metricFromRow(row, ['activedevices']),
-    activeUsers: metricFromRow(row, ['activeusers']),
-    installations: metricFromRow(row, ['installations']),
-    deletions: metricFromRow(row, ['deletions']),
-    crashes: metricFromRow(row, ['crashes']),
-    retention: metricFromRow(row, ['retention', 'averageretention']),
-  })).filter(row => row.date)
+const metricProperty = (value, name) => value === null ? {} : { [name]: value }
+
+export function canonicalAnalytics(rows) {
+  return rows.map(row => {
+    const report = normalize(row.__reportName)
+    const event = normalize(column(row, ['event', 'eventtype']))
+    const downloadType = normalize(column(row, ['downloadtype']))
+    const genericCount = optionalMetricFromRow(row, ['counts', 'count'])
+    const uniqueDevices = optionalMetricFromRow(row, ['uniquedevices'])
+
+    let downloads = optionalMetricFromRow(row, ['totaldownloads', 'downloads'])
+    let firstTimeDownloads = optionalMetricFromRow(row, ['firsttimedownloads'])
+    let redownloads = optionalMetricFromRow(row, ['redownloads'])
+    let impressions = optionalMetricFromRow(row, ['impressions'])
+    let productPageViews = optionalMetricFromRow(row, ['productpageviews'])
+    let sessions = optionalMetricFromRow(row, ['sessions'])
+    let activeDevices = optionalMetricFromRow(row, ['activedevices'])
+    let installations = optionalMetricFromRow(row, ['installations'])
+    let deletions = optionalMetricFromRow(row, ['deletions'])
+    let crashes = optionalMetricFromRow(row, ['crashes'])
+
+    // Analytics Reports are mostly event tables with generic Counts/Unique Devices
+    // columns. Their report name and event dimension define the actual metric.
+    if (report.includes('appstoredownload') && genericCount !== null) {
+      downloads ??= genericCount
+      if (downloadType.includes('firsttime')) firstTimeDownloads ??= genericCount
+      if (downloadType.includes('redownload')) redownloads ??= genericCount
+    }
+    if (report.includes('appsessions')) {
+      sessions ??= genericCount
+      activeDevices ??= uniqueDevices
+    }
+    if (report.includes('installationsanddeletions') && genericCount !== null) {
+      if (event.includes('install')) installations ??= genericCount
+      if (event.includes('delete')) deletions ??= genericCount
+    }
+    if (report.includes('appcrashes')) crashes ??= genericCount
+    if (report.includes('discoveryandengagement') && genericCount !== null) {
+      if (event.includes('impression')) impressions ??= genericCount
+      if (event.includes('productpageview')) productPageViews ??= genericCount
+    }
+
+    return {
+      date: isoDate(column(row, ['date', 'eventdate', 'appdownloaddate'])),
+      country: column(row, ['territory', 'countryorregion', 'country']) || undefined,
+      device: column(row, ['device', 'platform']) || undefined,
+      osVersion: column(row, ['platformversion', 'osversion']) || undefined,
+      appVersion: column(row, ['appversion', 'shortversion']) || undefined,
+      ...metricProperty(downloads, 'downloads'),
+      ...metricProperty(firstTimeDownloads, 'firstTimeDownloads'),
+      ...metricProperty(redownloads, 'redownloads'),
+      ...metricProperty(impressions, 'impressions'),
+      ...metricProperty(productPageViews, 'productPageViews'),
+      ...metricProperty(sessions, 'sessions'),
+      ...metricProperty(activeDevices, 'activeDevices'),
+      ...metricProperty(optionalMetricFromRow(row, ['activeusers']), 'activeUsers'),
+      ...metricProperty(installations, 'installations'),
+      ...metricProperty(deletions, 'deletions'),
+      ...metricProperty(crashes, 'crashes'),
+      ...metricProperty(optionalMetricFromRow(row, ['retention', 'averageretention']), 'retention'),
+    }
+  }).filter(row => row.date)
 }
 
 async function collectAnalytics() {
-  if (!isConfigured('ASC_ISSUER_ID', 'ASC_KEY_ID', 'ASC_PRIVATE_KEY', 'ASC_ANALYTICS_REPORT_REQUEST_ID')) return { rows: [], available: false, reason: 'App-Store-Analytics-Secrets fehlen.' }
+  if (!isConfigured('ASC_ISSUER_ID', 'ASC_KEY_ID', 'ASC_PRIVATE_KEY', 'ASC_ANALYTICS_REPORT_REQUEST_ID')) return { rows: [], metricNames: [], available: false, reason: 'App-Store-Analytics-Secrets fehlen.' }
   const reports = await ascPages(`/analyticsReportRequests/${process.env.ASC_ANALYTICS_REPORT_REQUEST_ID}/reports`)
   const candidates = reports.filter(report => /standard/i.test(report.attributes?.name ?? ''))
   const selected = candidates.length ? candidates : reports
@@ -122,11 +165,24 @@ async function collectAnalytics() {
         const signedUrl = segment.attributes?.url
         if (!signedUrl) continue
         const response = await fetchWithRetry(signedUrl)
-        collected.push(...parseTsv(await response.arrayBuffer()))
+        const reportName = String(report.attributes?.name ?? '')
+        collected.push(...parseTsv(await response.arrayBuffer()).map(row => ({ ...row, __reportName: reportName })))
       }
     }
   }
-  return { rows: canonicalAnalytics(collected), available: true }
+  const rows = canonicalAnalytics(collected)
+  const metricNames = [
+    'downloads', 'firstTimeDownloads', 'redownloads', 'impressions', 'productPageViews',
+    'sessions', 'activeDevices', 'activeUsers', 'installations', 'deletions', 'crashes', 'retention',
+  ].filter(name => rows.some(row => typeof row[name] === 'number'))
+  return {
+    rows,
+    metricNames,
+    available: true,
+    reason: metricNames.length > 0
+      ? undefined
+      : 'Apple hat Reportzeilen geliefert, aber noch keine unterstützten Kennzahlen oberhalb der Datenschutzschwelle.',
+  }
 }
 
 async function collectReviewsAndRelease() {
@@ -295,11 +351,13 @@ async function collectCloudKit() {
   try {
     const attempts = await cloudKitQuery(
       'DailyAttempt',
-      ['dateKey', 'mode', 'score', 'duration', 'completed'],
+      ['dateKey', 'mode', 'score', 'duration', 'completed', 'userId'],
       'dateKey',
       [{ fieldName: 'dateKey', comparator: 'NOT_EQUALS', fieldValue: { value: '', type: 'STRING' } }],
     )
     const dailyMap = new Map()
+    const uniqueUsers = new Set()
+    let identifiedAttempts = 0
     for (const record of attempts) {
       const date = isoDate(field(record, 'dateKey'))
       if (!date) continue
@@ -310,14 +368,40 @@ async function collectCloudKit() {
       state.completed += field(record, 'completed') ? 1 : 0
       state.scoreTotal += asNumber(field(record, 'score'))
       state.durationTotal += asNumber(field(record, 'duration'))
-      state.players.add(record.recordName ?? crypto.createHash('sha256').update(JSON.stringify(record)).digest('hex'))
+      const userId = String(field(record, 'userId') ?? '').trim()
+      if (userId) {
+        state.players.add(userId)
+        uniqueUsers.add(userId)
+        identifiedAttempts += 1
+      }
       dailyMap.set(key, state)
     }
     const daily = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date) || a.mode.localeCompare(b.mode)).map(state => ({ date: state.date, mode: state.mode, players: state.players.size, attempts: state.attempts, completed: state.completed, averageScore: state.attempts ? state.scoreTotal / state.attempts : null, averageDuration: state.attempts ? state.durationTotal / state.attempts : null, abortRate: state.attempts ? 1 - state.completed / state.attempts : null }))
     const scores = aggregateBy(attempts, record => ({ key: String(Math.floor(asNumber(field(record, 'score')) / 10) * 10), value: 1 }))
     const modes = aggregateBy(attempts, record => ({ key: String(field(record, 'mode') ?? 'Unbekannt'), value: 1 }))
     const averageScore = attempts.length ? attempts.reduce((sum, record) => sum + asNumber(field(record, 'score')), 0) / attempts.length : null
-    return { cloudKit: { daily, scoreDistribution: scores, modes, trophies: [], totalAttempts: attempts.length, averageScore }, available: true }
+    const averageDuration = attempts.length ? attempts.reduce((sum, record) => sum + asNumber(field(record, 'duration')), 0) / attempts.length : null
+    const completedAttempts = attempts.filter(record => Boolean(field(record, 'completed'))).length
+    const latestDate = daily.map(row => row.date).sort().at(-1) ?? null
+    const uniqueUsersLatestDay = latestDate
+      ? new Set(attempts.filter(record => isoDate(field(record, 'dateKey')) === latestDate).map(record => String(field(record, 'userId') ?? '').trim()).filter(Boolean)).size
+      : null
+    return {
+      cloudKit: {
+        daily,
+        scoreDistribution: scores,
+        modes,
+        trophies: [],
+        totalAttempts: attempts.length,
+        completedAttempts,
+        averageScore,
+        averageDuration,
+        uniqueUsers: uniqueUsers.size || null,
+        uniqueUsersLatestDay,
+        identifiedUserCoverage: attempts.length ? identifiedAttempts / attempts.length : null,
+      },
+      available: true,
+    }
   } catch (error) { return { cloudKit: {}, available: false, reason: `CloudKit-Query fehlgeschlagen: ${error.message}` } }
 }
 
@@ -356,7 +440,7 @@ export async function collectDashboardData() {
     const allRows = [...analytics.rows, ...sales.rows]
     const daily = mergeDaily(allRows)
     const availability = {
-      'App Analytics': { available: analytics.available && analytics.rows.length > 0, reason: analytics.reason ?? (analytics.rows.length ? undefined : 'Apple hat noch keine Analytics-Instanzen bereitgestellt.'), updatedAt: now() },
+      'App Analytics': { available: analytics.available && analytics.rows.length > 0 && analytics.metricNames.length > 0, reason: analytics.reason ?? (analytics.rows.length ? undefined : 'Apple hat noch keine Analytics-Instanzen bereitgestellt.'), updatedAt: now() },
       'App Store Feedback & Release': { available: reviewsAndRelease.available, reason: reviewsAndRelease.reason, updatedAt: now() },
       'Sales & Trends': { available: sales.available && sales.rows.length > 0, reason: sales.reason ?? (sales.rows.length ? undefined : 'Der erste Tagesreport ist noch nicht verfügbar.'), updatedAt: now() },
       'CloudKit Public DB': { available: cloud.available, reason: cloud.reason, updatedAt: now() },

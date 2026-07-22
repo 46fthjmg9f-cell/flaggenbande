@@ -1,5 +1,6 @@
 export const DASHBOARD_SECTIONS = [
-  { id: 'production', label: 'Produktion' },
+  { id: 'new-production', label: 'Neue Produktion' },
+  { id: 'production', label: 'Videos' },
   { id: 'calendar', label: 'Kalender' },
   { id: 'social-stats', label: 'Stats' },
   { id: 'app-development', label: 'App' },
@@ -13,5 +14,5 @@ export function dashboardSectionFromHash(hash: string): DashboardSectionId {
   if (requested === 'videos') return 'production'
   return DASHBOARD_SECTIONS.some(section => section.id === requested)
     ? requested as DashboardSectionId
-    : 'production'
+    : 'new-production'
 }

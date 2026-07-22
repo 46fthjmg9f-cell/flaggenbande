@@ -25,7 +25,7 @@ function inspectPublicValue(value, path = 'root') {
   if (typeof value === 'string') assert.equal(forbiddenValue.test(value), false, `lokaler Pfad in ${path}`)
 }
 
-test('public content contract reports the current run state with all four platforms without claiming publication', async () => {
+test('public content contract reports all four platforms and only evidence-backed publications', async () => {
   const fixture = await loadFixture()
   assert.equal(fixture.schemaVersion, 1)
   const expectedStatus = fixture.runs.some(run => ['failed', 'qa_failed', 'reconcile_required'].includes(run.status))
@@ -36,9 +36,24 @@ test('public content contract reports the current run state with all four platfo
   assert.equal(fixture.status, expectedStatus)
   assert.deepEqual(fixture.system.map(entry => entry.id).sort(), ['database', 'engine', 'quality', 'release'])
   assert.deepEqual(fixture.platforms.map(entry => entry.platform).sort(), ['facebook', 'instagram', 'tiktok', 'youtube'])
-  assert.ok(fixture.platforms.every(entry => ['not_configured', 'planned', 'ready', 'uploading', 'failed'].includes(entry.status)))
-  assert.ok(fixture.platforms.every(entry => entry.publications === 0))
-  assert.ok(fixture.publications.every(entry => !['scheduled', 'published'].includes(entry.status)))
+  assert.ok(fixture.platforms.every(entry => ['not_configured', 'planned', 'ready', 'uploading', 'published', 'failed'].includes(entry.status)))
+  for (const publication of fixture.publications) {
+    if (publication.status !== 'published') continue
+    assert.ok(Number.isFinite(new Date(publication.publishedAt).valueOf()))
+    const url = new URL(publication.publicUrl)
+    assert.equal(url.protocol, 'https:')
+    const host = url.hostname.toLowerCase()
+    assert.equal({
+      youtube: ['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(host),
+      instagram: ['instagram.com', 'www.instagram.com'].includes(host),
+      facebook: host === 'facebook.com' || host.endsWith('.facebook.com'),
+      tiktok: host === 'tiktok.com' || host.endsWith('.tiktok.com'),
+    }[publication.platform], true)
+  }
+  for (const platform of fixture.platforms) {
+    const confirmed = fixture.publications.filter(entry => entry.platform === platform.platform && entry.status === 'published').length
+    assert.equal(platform.publications, confirmed)
+  }
   assert.deepEqual(fixture.performance, [])
 })
 

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import VideoProductionControl from './VideoProductionControl'
 import {
   emptyContentOperations,
   parseContentOperations,
@@ -68,11 +67,10 @@ export default function ContentSystemDashboard() {
 
   return <section id="production-view" className="dashboard-view" role="tabpanel" aria-labelledby="production-tab" tabIndex={0}>
     <header className="compact-page-header">
-      <h1>Produktion</h1>
+      <h1>Videos</h1>
       <button type="button" onClick={() => void refresh()} disabled={refreshing} aria-label="Produktionsdaten aktualisieren">↻</button>
     </header>
     {error && <p className="operator-error">{error}</p>}
-    <VideoProductionControl />
     <section className="recent-production">
       <div className="compact-heading"><h2>Letzte Videos</h2><span>{formatTimestamp(data.generatedAt)}</span></div>
       <div className="recent-production-list">
@@ -81,7 +79,7 @@ export default function ContentSystemDashboard() {
             <strong>{run.title ?? 'Video'}</strong>
             <span>{formatTimestamp(run.completedAt ?? run.startedAt)}</span>
           </div>
-          <span className={`status-badge ${run.status}`}>{runLabels[run.status]}</span>
+          <span className={`status-badge ${run.status}`}>{run.publications.some(publication => publication.status === 'published') ? 'Veröffentlicht' : runLabels[run.status]}</span>
           <div className="recent-platforms" aria-label="Plattformstatus">
             {(['youtube', 'instagram', 'facebook', 'tiktok'] as const).map(platform => {
               const publication = run.publications.find(entry => entry.platform === platform)
