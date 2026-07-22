@@ -247,7 +247,7 @@ export default function Dashboard() {
       >{section.label}</button>)}
     </nav>
     {activeView === 'production' && <ContentSystemDashboard />}
-    {activeView === 'calendar' && <PublishingCalendar />}
+    {activeView === 'calendar' && <PublishingCalendar socialVideos={data.social.videos} />}
     {activeView === 'social-stats' && <SocialStatsPage data={data.social} generatedAt={data.generatedAt} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
     {activeView === 'finance' && <FinancePage data={data} rows={data.daily} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
     {activeView === 'app-development' && <section id="app-development-view" className="dashboard-view" role="tabpanel" aria-labelledby="app-development-tab" tabIndex={0}>
