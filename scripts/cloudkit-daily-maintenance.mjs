@@ -538,7 +538,8 @@ export class CloudKitClient {
 
   async callerRecordName() {
     const response = await this.request('users/caller', null, 'GET')
-    const name = response?.users?.[0]?.userRecordName
+    const identity = response?.users?.[0]
+    const name = identity?.userRecordName ?? identity?.lookupInfo?.userRecordName
     if (typeof name !== 'string' || !name) throw new Error('CloudKit server caller identity is unavailable')
     return name
   }
