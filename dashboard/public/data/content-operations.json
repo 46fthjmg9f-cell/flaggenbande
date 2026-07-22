@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-22T14:30:39.798Z",
+  "generatedAt": "2026-07-22T14:32:26.059Z",
   "status": "partial",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Prüfungen.",
@@ -9,6 +9,7 @@
     "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
+    "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "Produktions-Queue: 6 eindeutige Meta-Statusse übernommen; 0 fehlgeschlagen.",
     "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt."
