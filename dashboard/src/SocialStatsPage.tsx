@@ -21,19 +21,10 @@ export default function SocialStatsPage({ data, generatedAt, refreshing, onRefre
       : 'partial'
 
   return <section id="social-stats-view" className="dashboard-view" role="tabpanel" aria-labelledby="social-stats-tab" tabIndex={0}>
-    <header className="hero section-hero">
-      <div>
-        <span className="eyebrow">FLAGGENBANDE · SOZIALE MEDIEN</span>
-        <h1>Reichweite und Wirkung.</h1>
-        <p>Nur veröffentlichte Inhalte und tatsächlich verfügbare Plattformwerte. Produktion, App-Entwicklung und Finanzen bleiben bewusst außerhalb dieser Ansicht.</p>
-      </div>
-      <div className="sync-controls">
-        <div className={`sync-state ${syncStatus}`}><span className="pulse" />{formatTimestamp(data.syncedAt ?? generatedAt)}</div>
-        <button className="refresh" onClick={onRefresh} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Plattformdaten aktualisieren'}</button>
-        <small>Automatischer Datenabruf stündlich zur Minute 17.</small>
-      </div>
+    <header className="compact-page-header">
+      <div><h1>Stats</h1><span className={`compact-sync ${syncStatus}`}>{formatTimestamp(data.syncedAt ?? generatedAt)}</span></div>
+      <button onClick={onRefresh} disabled={refreshing} aria-label="Plattformdaten aktualisieren">↻</button>
     </header>
     <SocialAnalytics data={data} />
-    <footer>Flaggenbande Plattformauswertung · Nicht verfügbare Kennzahlen werden nicht als Nullwerte ausgegeben.</footer>
   </section>
 }

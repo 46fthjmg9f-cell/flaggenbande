@@ -41,17 +41,9 @@ export default function FinancePage({ data, rows, refreshing, onRefresh }: Finan
   const unknownIdentifiers = data.sales?.unknownProductTypeIdentifiers ?? []
 
   return <section id="finance-view" className="dashboard-view" role="tabpanel" aria-labelledby="finance-tab" tabIndex={0}>
-    <header className="hero section-hero">
-      <div>
-        <span className="eyebrow">FLAGGENBANDE · FINANZEN</span>
-        <h1>Einnahmen und Kosten.</h1>
-        <p>App-Store-Umsätze, Verkäufe und Rückerstattungen sind von Produkt- und Plattformkennzahlen getrennt. Fehlende Finanzquellen bleiben ausdrücklich als nicht verfügbar markiert.</p>
-      </div>
-      <div className="sync-controls">
-        <div className={`sync-state ${financeAvailable ? 'ok' : 'partial'}`}><span className="pulse" />{financeAvailable ? `Apple-Finanzreport · ${data.finance?.period}` : 'Monatlicher Finanzreport noch nicht verfügbar'}</div>
-        <button className="refresh" onClick={onRefresh} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Finanzdaten aktualisieren'}</button>
-        <small>Keine Schätzwerte; ausschließlich bestätigte Quellen.</small>
-      </div>
+    <header className="compact-page-header">
+      <div><h1>Finanzen</h1><span className={`compact-sync ${financeAvailable ? 'ok' : 'partial'}`}>{data.finance?.period ?? '—'}</span></div>
+      <button onClick={onRefresh} disabled={refreshing} aria-label="Finanzdaten aktualisieren">↻</button>
     </header>
 
     <section className="kpis finance-kpis" aria-label="Finanzkennzahlen">
@@ -74,15 +66,6 @@ export default function FinancePage({ data, rows, refreshing, onRefresh }: Finan
           <li><div><strong>Produktionskosten</strong><small>Spracherzeugung, Videoerstellung und externe Dienste</small></div><span className="status-badge planned">Noch nicht erfasst</span></li>
         </ul>
       </article>
-      <article className="panel finance-panel">
-        <div className="panel-heading"><div><span>GRUNDSATZ</span><h2>Keine irreführenden Nullwerte</h2></div></div>
-        <div className="finance-explanation">
-          <strong>„—“ bedeutet: Quelle liefert noch keinen belastbaren Wert.</strong>
-          <p>Eine echte Null wird erst angezeigt, wenn der Datenanbieter für den gewählten Zeitraum tatsächlich den Wert 0 geliefert hat.</p>
-          <p>App-Einheiten und In-App-Käufe werden anhand von Apples „Product Type Identifier“ getrennt. Updates, erneute Downloads und wiederhergestellte Käufe zählen nicht als neue Käufe.</p>
-        </div>
-      </article>
     </section>
-    <footer>Flaggenbande Finanzen · Öffentliche Ansicht ohne Kontodaten, Belegdokumente oder Zugangsschlüssel.</footer>
   </section>
 }

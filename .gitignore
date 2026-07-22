@@ -13,6 +13,7 @@ tmp/
 dashboard/node_modules/
 dashboard/dist/
 .env.platforms
+.env.operator
 .wrangler/
 .state/
 data/upload-staging/private/

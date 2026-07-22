@@ -1,0 +1,13 @@
+name = "flaggenbande-operator-api"
+main = "src/index.ts"
+compatibility_date = "2026-07-21"
+
+[vars]
+# Comma-separated, exact origins. Production must contain only the deployed
+# dashboard origin; localhost entries are for explicit local development.
+DASHBOARD_ORIGINS = "https://46fthjmg9f-cell.github.io"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "flaggenbande-operator"
+database_id = "232b4aa9-ce77-4e4e-a885-df0028a15d35"
