@@ -42,6 +42,17 @@ describe('CloudKit server identity', () => {
     client.request = async () => ({ users: [{ lookupInfo: { userRecordName: '_developer' } }] })
     assert.equal(await client.callerRecordName(), '_developer')
   })
+
+  test('falls back to users/current when a server key has no caller identity', async () => {
+    const client = new CloudKitClient({ keyId: 'test', privateKey: 'unused' })
+    const operations = []
+    client.request = async operation => {
+      operations.push(operation)
+      return operation === 'users/caller' ? { users: [{}] } : { userRecordName: '_developer' }
+    }
+    assert.equal(await client.callerRecordName(), '_developer')
+    assert.deepEqual(operations, ['users/caller', 'users/current'])
+  })
 })
 
 function serverRecord(record, owner, createdAt, modifiedAt = createdAt) {
