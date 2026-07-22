@@ -76,6 +76,7 @@ jobs:
         env:
           UPLOAD_STAGING_FEED_URL: ${{ vars.UPLOAD_STAGING_FEED_URL }}
           UPLOAD_STAGING_API_URL: ${{ vars.UPLOAD_STAGING_API_URL }}
+          META_PUBLICATION_FEED_URL: ${{ vars.META_PUBLICATION_FEED_URL }}
         run: node scripts/collect-content-operations.mjs
       - name: Commit only safe aggregates
         run: |

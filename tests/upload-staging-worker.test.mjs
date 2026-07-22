@@ -39,13 +39,29 @@ test('staging schema is separate and cannot authorize publication', async () => 
 test('public staging feed omits remote IDs and private metadata', async () => {
   const source = await readFile(workerUrl, 'utf8')
   const start = source.indexOf('const stagingFeed =')
-  const end = source.indexOf('const analyticsMetricNames', start)
+  const end = source.indexOf('const publicationFailureCode =', start)
   assert.ok(start >= 0 && end > start)
   const feed = source.slice(start, end)
   assert.doesNotMatch(feed, /remoteObjectId|remote_object_id|metadata_json|last_error|accountFingerprint/)
   assert.match(feed, /publicationAuthorized:\s*false/)
   assert.match(feed, /publishedAt:\s*null/)
   assert.match(feed, /publicUrl:\s*null/)
+})
+
+test('public production feed exposes only safe queue state and categorized failures', async () => {
+  const source = await readFile(workerUrl, 'utf8')
+  assert.match(source, /url\.pathname === "\/publication\/feed"/)
+  const start = source.indexOf('const publicationFeed =')
+  const end = source.indexOf('const analyticsMetricNames', start)
+  assert.ok(start >= 0 && end > start)
+  const feed = source.slice(start, end)
+  assert.match(feed, /lane:\s*"production-publication"/)
+  assert.match(feed, /failureCode:/)
+  assert.match(feed, /contentId:/)
+  assert.match(feed, /scheduledAt:/)
+  assert.doesNotMatch(feed, /metadata_json|media_url|media_project|media_branch|container_id|platform_video_id|publication_url/)
+  assert.doesNotMatch(feed, /lastError\s*:/)
+  assert.doesNotMatch(feed, /jobId\s*:/)
 })
 
 test('protected staging receipts expose an authoritative confirmation timestamp', async () => {

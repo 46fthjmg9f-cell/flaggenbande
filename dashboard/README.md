@@ -38,6 +38,8 @@ Optional kann `META_GRAPH_API_VERSION` als GitHub-Variable gesetzt werden; ohne 
 
 Für den nichtöffentlichen Testlauf zum Hochladen kann zusätzlich die GitHub-Variable `UPLOAD_STAGING_FEED_URL` auf den öffentlichen HTTPS-Endpunkt `/staging/feed` zeigen. Alternativ reicht `UPLOAD_STAGING_API_URL` als Basisadresse; die Datensammlung ergänzt den Pfad selbst. Der Abruf sendet bewusst keine Zugangsdaten und übernimmt ausschließlich freigegebene Lauf- und Plattformstatus in `content-operations.json`. Private Objekt-IDs, Container-IDs, Medienadressen, Metadaten und Fehler externer Dienste werden nicht veröffentlicht.
 
+Der Produktionsstatus wird danach über den ebenfalls öffentlichen, minimalen Endpunkt `/publication/feed` überlagert. `META_PUBLICATION_FEED_URL` kann diesen Endpunkt explizit festlegen; ohne die Variable wird er aus `UPLOAD_STAGING_API_URL` beziehungsweise `UPLOAD_STAGING_FEED_URL` abgeleitet. Der Feed enthält nur Content-ID, Plattform, Zeitpunkte, Status und einen begrenzten Fehlercode. Rohfehler, Metadaten, Medienpfade, Container-, Token- und Plattform-IDs bleiben serverseitig. Bestätigte öffentliche Plattformdaten werden zuletzt abgeglichen und haben Vorrang vor Queue- und Staging-Status.
+
 CloudKit muss dafür im CloudKit Dashboard unter **API Access → Server-to-Server Keys** einen P-256-Schlüssel erhalten. Der private Schlüssel gehört nur in `CLOUDKIT_PRIVATE_KEY`; niemals in App, Pages-Build oder Repository.
 
 ## Datenschutz

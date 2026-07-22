@@ -38,6 +38,15 @@ export interface Env {
 type Platform = "instagram" | "facebook";
 type SocialPlatform = Platform | "youtube" | "tiktok";
 type JobStatus = "scheduled" | "processing" | "waiting_for_meta" | "published" | "failed";
+type PublicationFailureCode =
+  | "api_access_blocked"
+  | "authentication_failed"
+  | "permission_denied"
+  | "rate_limited"
+  | "media_unavailable"
+  | "processing_timeout"
+  | "platform_rejected"
+  | "unknown";
 type StagingPlatform = "youtube" | "instagram" | "facebook" | "tiktok";
 type StagingMode = "private" | "container_unpublished" | "draft" | "manual_uploaded";
 type StagingTransport = "planned" | "uploading" | "processing" | "ready" | "failed" | "expired" | "reconcile_required";
@@ -99,6 +108,16 @@ interface Job {
   readonly publication_url: string | null;
   readonly container_id: string | null;
   readonly last_error: string | null;
+}
+
+interface PublicationFeedJobRow {
+  readonly source_video_id: string;
+  readonly platform: Platform;
+  readonly publish_at: string;
+  readonly status: JobStatus;
+  readonly last_error: string | null;
+  readonly updated_at: string;
+  readonly published_at: string | null;
 }
 
 interface EnqueuePayload {
@@ -1467,6 +1486,54 @@ const stagingFeed = async (env: Env): Promise<Response> => {
   });
 };
 
+const publicationFailureCode = (error: string | null): PublicationFailureCode => {
+  const value = (error ?? "").normalize("NFKC").toLowerCase();
+  if (value.includes("api access blocked")) return "api_access_blocked";
+  if (/page-token|access[_ -]?token|oauth|token.*(invalid|expired)|invalid.*token/.test(value)) return "authentication_failed";
+  if (/permission|berechtigung|not authorized|not authorised|code[\"': ]+200/.test(value)) return "permission_denied";
+  if (/rate.?limit|quota|too many requests|code[\"': ]+(4|17|32|613)\b/.test(value)) return "rate_limited";
+  if (/media|video.*(download|fetch|unavailable)|source url|mp4/.test(value)) return "media_unavailable";
+  if (/timeout|timed out|processing.*(expired|timeout)/.test(value)) return "processing_timeout";
+  if (/rejected|unsupported|invalid parameter|code[\"': ]+(100|36000)\b/.test(value)) return "platform_rejected";
+  return "unknown";
+};
+
+/**
+ * Public, read-only production queue projection. Raw provider errors and every
+ * remote/media identifier stay inside D1; the dashboard receives only the
+ * minimum state needed to distinguish planned, active, failed and completed
+ * publication attempts.
+ */
+const publicationFeed = async (env: Env): Promise<Response> => {
+  const jobs = await env.DB.prepare(`SELECT source_video_id, platform, publish_at, status,
+      last_error, updated_at, published_at
+    FROM meta_publication_jobs
+    ORDER BY updated_at DESC LIMIT 400`).all<PublicationFeedJobRow>();
+  const publications = (jobs.results ?? [])
+    .filter((job) => /^[a-z0-9][a-z0-9._-]{2,199}$/i.test(job.source_video_id) && validPlatform(job.platform))
+    .map((job) => ({
+      contentId: job.source_video_id,
+      platform: job.platform,
+      status: job.status,
+      scheduledAt: job.publish_at,
+      updatedAt: job.updated_at,
+      publishedAt: job.status === "published" ? job.published_at : null,
+      failureCode: job.status === "failed" ? publicationFailureCode(job.last_error) : null,
+    }));
+  return new Response(JSON.stringify({
+    schemaVersion: 1,
+    lane: "production-publication",
+    generatedAt: now(),
+    publications,
+  }), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=15, s-maxage=15",
+      "access-control-allow-origin": "*",
+    },
+  });
+};
+
 const analyticsMetricNames: ReadonlyArray<keyof SocialMetrics> = [
   "views", "reach", "likes", "comments", "shares", "saves", "watchTimeMinutes",
   "averageViewDurationSeconds", "averageViewPercentage", "followersGained",
@@ -1888,6 +1955,7 @@ export default {
     if (request.method === "GET" && url.pathname === "/analytics/feed") return analyticsFeed(env);
     if (request.method === "POST" && url.pathname === "/analytics/ingest") return ingestAnalytics(request, env);
     if (request.method === "GET" && url.pathname === "/staging/feed") return stagingFeed(env);
+    if (request.method === "GET" && url.pathname === "/publication/feed") return publicationFeed(env);
     if (request.method === "POST" && url.pathname === "/staging/runs") return createStagingRun(request, env);
     if (request.method === "POST" && url.pathname === "/staging/claims") return claimExternalStagingUpload(request, env);
     if (request.method === "POST" && url.pathname === "/staging/receipts") return saveStagingReceipt(request, env);
