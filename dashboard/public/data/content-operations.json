@@ -1,12 +1,14 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-22T13:12:46.781Z",
-  "status": "partial",
+  "generatedAt": "2026-07-22T13:49:49.453Z",
+  "status": "error",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Prüfungen.",
     "Noch ist kein Datensatz für die Produktion freigegeben. Die menschliche Prüfung ist für alle 193 Länder ausstehend.",
     "Der Cloud-Speicher wurde über die lokale Bereitstellung geprüft; der tatsächliche Cloud-Abgleich ist noch nicht bestätigt.",
     "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
+    "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
+    "Produktions-Queue: 7 eindeutige Meta-Statusse übernommen; 2 fehlgeschlagen.",
     "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt."
   ],
   "system": [
@@ -90,7 +92,7 @@
       "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
       "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
       "title": null,
-      "status": "partial",
+      "status": "failed",
       "qualityStatus": "passed",
       "startedAt": "2026-07-22T08:46:39.000Z",
       "completedAt": null
@@ -141,12 +143,13 @@
       "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
       "platform": "instagram",
       "mode": "container_unpublished",
-      "status": "planned",
-      "updatedAt": "2026-07-22T08:50:07.985Z",
+      "status": "failed",
+      "updatedAt": "2026-07-22T12:34:12.666Z",
       "title": null,
-      "scheduledAt": null,
+      "scheduledAt": "2026-07-22T12:30:00.000Z",
       "publishedAt": null,
-      "publicUrl": null
+      "publicUrl": null,
+      "failureCode": "api_access_blocked"
     },
     {
       "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
@@ -165,12 +168,13 @@
       "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
       "platform": "facebook",
       "mode": "draft",
-      "status": "planned",
-      "updatedAt": "2026-07-22T08:50:07.985Z",
+      "status": "failed",
+      "updatedAt": "2026-07-22T13:39:12.840Z",
       "title": null,
-      "scheduledAt": null,
+      "scheduledAt": "2026-07-22T13:39:05.530Z",
       "publishedAt": null,
-      "publicUrl": null
+      "publicUrl": null,
+      "failureCode": "api_access_blocked"
     },
     {
       "runId": "upload-gameshow-v8-check-das-mal-aus",
@@ -182,7 +186,8 @@
       "title": "Die dritte Flagge kickt dich raus 👀 #Flaggenquiz #Flaggen #Geografie #Quiz #Shorts",
       "scheduledAt": null,
       "publishedAt": "2026-07-21T20:10:47.000Z",
-      "publicUrl": "https://www.youtube.com/watch?v=DktvsM8azzA"
+      "publicUrl": "https://www.youtube.com/watch?v=DktvsM8azzA",
+      "failureCode": null
     },
     {
       "runId": "upload-gameshow-v8-check-das-mal-aus",
@@ -194,7 +199,8 @@
       "title": "Schnelle Flaggenrunde: erst locker, dann wird’s böse. Wie viele von drei hast du wirklich erkannt? Schreib nur deinen Score – keine Spoiler. 👀",
       "scheduledAt": null,
       "publishedAt": "2026-07-21T20:06:15.000Z",
-      "publicUrl": "https://www.instagram.com/reel/DbES7NnnKKn/"
+      "publicUrl": "https://www.instagram.com/reel/DbES7NnnKKn/",
+      "failureCode": null
     },
     {
       "runId": "upload-gameshow-v8-check-das-mal-aus",
@@ -218,7 +224,8 @@
       "title": "Die dritte Flagge kickt dich raus 👀",
       "scheduledAt": null,
       "publishedAt": "2026-07-21T20:09:12.000Z",
-      "publicUrl": "https://www.facebook.com/reel/1743115230290254"
+      "publicUrl": "https://www.facebook.com/reel/1743115230290254",
+      "failureCode": null
     },
     {
       "runId": "upload-gameshow-v7-professional-cold-open-experiment",
@@ -230,7 +237,8 @@
       "title": "Nur echte Gangster schaffen 3/3 😤 #Flaggenquiz #Flaggen #Geografie #Quiz #Shorts",
       "scheduledAt": null,
       "publishedAt": "2026-07-21T17:08:45.000Z",
-      "publicUrl": "https://www.youtube.com/watch?v=mDhSJzJL5ZE"
+      "publicUrl": "https://www.youtube.com/watch?v=mDhSJzJL5ZE",
+      "failureCode": null
     },
     {
       "runId": "upload-gameshow-v7-professional-cold-open-experiment",
@@ -242,7 +250,8 @@
       "title": "Drei Flaggen, drei Schwierigkeitsstufen – und am Ende wartet der Big Baba Boss Mode. Wie viele hast du erkannt? Schreib nur deinen Score, keine Spoiler. 👀",
       "scheduledAt": null,
       "publishedAt": "2026-07-21T16:55:13.000Z",
-      "publicUrl": "https://www.instagram.com/reel/DbD_bCkkh6o/"
+      "publicUrl": "https://www.instagram.com/reel/DbD_bCkkh6o/",
+      "failureCode": null
     },
     {
       "runId": "upload-gameshow-v7-professional-cold-open-experiment",
@@ -266,7 +275,8 @@
       "title": "Nur echte Gangster schaffen 3/3 😤",
       "scheduledAt": null,
       "publishedAt": "2026-07-21T16:54:14.000Z",
-      "publicUrl": "https://www.facebook.com/reel/1733906214152833"
+      "publicUrl": "https://www.facebook.com/reel/1733906214152833",
+      "failureCode": null
     },
     {
       "runId": "upload-test-gameshow-five-flag-elevenlabs-v6",
@@ -278,7 +288,8 @@
       "title": "Only 0.14% Can Name All 5 Flags! #FlagQuiz #Flags #Geography #Quiz #Shorts",
       "scheduledAt": null,
       "publishedAt": "2026-07-21T13:09:57.000Z",
-      "publicUrl": "https://www.youtube.com/watch?v=xoof2HIiMiA"
+      "publicUrl": "https://www.youtube.com/watch?v=xoof2HIiMiA",
+      "failureCode": null
     },
     {
       "runId": "upload-test-gameshow-five-flag-elevenlabs-v6",
@@ -290,7 +301,8 @@
       "title": "Five flags. Each one harder than the last. Keep your score and tell us how far you made it—no spoilers.",
       "scheduledAt": null,
       "publishedAt": "2026-07-21T13:18:14.000Z",
-      "publicUrl": "https://www.instagram.com/reel/DbDKzQMCIGL/"
+      "publicUrl": "https://www.instagram.com/reel/DbDKzQMCIGL/",
+      "failureCode": null
     },
     {
       "runId": "upload-test-gameshow-five-flag-elevenlabs-v6",
@@ -314,7 +326,8 @@
       "title": "Only 0.14% Can Name All 5 Flags!",
       "scheduledAt": null,
       "publishedAt": "2026-07-21T13:17:13.000Z",
-      "publicUrl": "https://www.facebook.com/reel/1594633352224956"
+      "publicUrl": "https://www.facebook.com/reel/1594633352224956",
+      "failureCode": null
     }
   ],
   "performance": []
