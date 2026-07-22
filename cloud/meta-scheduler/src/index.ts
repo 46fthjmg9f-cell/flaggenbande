@@ -660,10 +660,15 @@ const metaApiError = (body: Record<string, unknown>, httpStatus: number): MetaAp
 };
 
 const graphForPlatform = async (platform: Platform, env: Env, path: string, values: Record<string, string>, method: "GET" | "POST" = "POST"): Promise<Record<string, unknown>> => {
-  const params = new URLSearchParams({ ...values, access_token: tokenFor(platform, env) });
+  const params = new URLSearchParams(values);
+  const headers = { Authorization: `Bearer ${tokenFor(platform, env)}` };
   const response = method === "GET"
-    ? await fetch(`${graphUrl(platform, env, path)}?${params.toString()}`)
-    : await fetch(graphUrl(platform, env, path), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: params });
+    ? await fetch(`${graphUrl(platform, env, path)}?${params.toString()}`, { headers })
+    : await fetch(graphUrl(platform, env, path), {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/x-www-form-urlencoded" },
+      body: params,
+    });
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) throw metaApiError(body, response.status);
   return body;
@@ -684,6 +689,9 @@ const setState = async (env: Env, job: Job, state: JobStatus, changes: Partial<J
       changed("publication_url", job.publication_url), changed("container_id", job.container_id),
       changed("last_error", job.last_error), now(), changes.publishedAt ?? (state === "published" ? now() : null), job.job_id).run();
 };
+
+const currentJob = async (env: Env, jobId: string): Promise<Job | null> =>
+  env.DB.prepare("SELECT * FROM meta_publication_jobs WHERE job_id = ?").bind(jobId).first<Job>();
 
 const facebookReelUrl = (id: string): string => `https://www.facebook.com/reel/${encodeURIComponent(id)}`;
 
@@ -741,7 +749,39 @@ const publishInstagram = async (job: Job, env: Env): Promise<void> => {
   }
   const status = await graph(job, env, job.container_id, { fields: "status_code,status" }, "GET");
   const code = typeof status.status_code === "string" ? status.status_code.toUpperCase() : "";
-  if (code === "IN_PROGRESS" || code === "" || code === "PUBLISHED") return;
+  if (code === "IN_PROGRESS" || code === "") {
+    await setState(env, job, "waiting_for_meta", { last_error: null });
+    return;
+  }
+  if (code === "PUBLISHED") {
+    const media = await graph(job, env, `${accountFor("instagram", env)}/media`, {
+      fields: "id,caption,permalink,timestamp",
+      limit: "50",
+    }, "GET");
+    const candidates = Array.isArray(media.data) ? media.data.filter((item): item is Record<string, unknown> =>
+      typeof item === "object" && item !== null) : [];
+    const expectedCaption = details.description.trim();
+    const earliest = Date.parse(job.publish_at) - 6 * 60 * 60 * 1000;
+    const match = candidates
+      .filter((item) => typeof item.id === "string" && typeof item.caption === "string" && item.caption.trim() === expectedCaption)
+      .filter((item) => typeof item.timestamp !== "string" || !Number.isFinite(Date.parse(item.timestamp)) || Date.parse(item.timestamp) >= earliest)
+      .sort((left, right) => Date.parse(String(right.timestamp ?? 0)) - Date.parse(String(left.timestamp ?? 0)))[0];
+    const id = typeof match?.id === "string" ? match.id : null;
+    if (!id) {
+      throw new MetaApiError(
+        "Instagram meldet den Container als veroeffentlicht, die Reel-ID konnte noch nicht eindeutig zugeordnet werden.",
+        "processing_timeout",
+        true,
+      );
+    }
+    const permalink = typeof match.permalink === "string" && match.permalink.startsWith("https://www.instagram.com/")
+      ? match.permalink
+      : publicUrl("instagram", id);
+    await setState(env, job, "published", { platform_video_id: id, publication_url: permalink, last_error: null });
+    await event(env, job.job_id, "info", "Instagram-Reel nach unterbrochener Bestaetigung abgeglichen.");
+    await removeTemporaryPagesDeployment(job, env);
+    return;
+  }
   if (code !== "FINISHED") throw new Error(`Instagram-Verarbeitung fehlgeschlagen: ${typeof status.status === "string" ? status.status : code}`);
   const result = await graph(job, env, `${accountFor("instagram", env)}/media_publish`, { creation_id: job.container_id });
   const id = typeof result.id === "string" ? result.id : null;
@@ -754,21 +794,74 @@ const publishInstagram = async (job: Job, env: Env): Promise<void> => {
 const publishFacebook = async (job: Job, env: Env): Promise<void> => {
   const details = metadata(job);
   const edge = `${accountFor("facebook", env)}/video_reels`;
-  const session = await graph(job, env, edge, { upload_phase: "start" });
-  const videoId = typeof session.video_id === "string" ? session.video_id : null;
-  const uploadUrl = typeof session.upload_url === "string" ? session.upload_url : null;
-  if (!videoId || !uploadUrl) throw new Error("Facebook lieferte keine Reels-Upload-Session.");
+  let videoId = job.platform_video_id;
+  let uploadUrl = job.container_id;
+  if (videoId) {
+    try {
+      const remote = await graph(job, env, videoId, { fields: "published,status,permalink_url" }, "GET");
+      if (remote.published === true) {
+        const permalink = verifiedFacebookPermalink(videoId, remote.permalink_url);
+        await setState(env, job, "published", {
+          platform_video_id: videoId,
+          publication_url: permalink,
+          container_id: null,
+          last_error: null,
+        });
+        await event(env, job.job_id, "info", "Facebook-Reel nach unterbrochener Bestaetigung abgeglichen.");
+        await removeTemporaryPagesDeployment(job, env);
+        return;
+      }
+    } catch (error) {
+      if (error instanceof MetaApiError && ["authentication_failed", "permission_denied", "api_access_blocked", "rate_limited"].includes(error.failureCode)) {
+        throw error;
+      }
+      // A freshly created unpublished Reel may not yet be readable. The saved
+      // upload URL still lets this exact session resume without creating a duplicate.
+    }
+  }
+  if (!videoId || !uploadUrl) {
+    if (videoId || uploadUrl) {
+      throw new MetaApiError("Facebook-Upload-Session ist unvollstaendig; neuer Remote-Upload wird sicherheitshalber nicht erzeugt.", "platform_rejected", false);
+    }
+    const session = await graph(job, env, edge, { upload_phase: "start" });
+    videoId = typeof session.video_id === "string" ? session.video_id : null;
+    uploadUrl = typeof session.upload_url === "string" ? session.upload_url : null;
+    if (!videoId || !uploadUrl) throw new Error("Facebook lieferte keine Reels-Upload-Session.");
+    await setState(env, job, "processing", {
+      platform_video_id: videoId,
+      container_id: uploadUrl,
+      last_error: null,
+    });
+  }
   const media = await fetch(job.media_url);
-  if (!media.ok || !media.body) throw new Error("Die vorbereitete Cloud-MP4 ist nicht mehr erreichbar.");
+  if (!media.ok || !media.body) {
+    throw new MetaApiError(
+      media.status >= 500 ? "Die vorbereitete Cloud-MP4 ist voruebergehend nicht erreichbar." : "Die vorbereitete Cloud-MP4 ist nicht mehr erreichbar.",
+      "media_unavailable",
+      media.status >= 500,
+    );
+  }
   const size = media.headers.get("content-length");
   const uploaded = await fetch(uploadUrl, {
     method: "POST",
+    // Meta's rupload endpoint is the exception to Graph's Bearer convention.
     headers: { Authorization: `OAuth ${tokenFor("facebook", env)}`, offset: "0", file_size: size || "0", "content-type": "application/octet-stream" },
     body: media.body,
   });
-  if (!uploaded.ok) throw new Error(`Facebook-Medienupload fehlgeschlagen (HTTP ${uploaded.status}).`);
+  if (!uploaded.ok) {
+    const body = await uploaded.json().catch(() => ({})) as Record<string, unknown>;
+    if (uploaded.status === 401) throw new MetaApiError("Facebook-Zugangstoken wurde beim Medienupload abgelehnt.", "authentication_failed", false);
+    if (uploaded.status === 403) throw new MetaApiError("Facebook-Berechtigung fuer den Medienupload fehlt.", "permission_denied", false);
+    throw metaApiError(body, uploaded.status);
+  }
   await graph(job, env, edge, { video_id: videoId, upload_phase: "finish", video_state: "PUBLISHED", description: details.description, title: details.title });
-  await setState(env, job, "published", { platform_video_id: videoId, publication_url: publicUrl("facebook", videoId), attempt_count: job.attempt_count + 1, last_error: null });
+  await setState(env, job, "published", {
+    platform_video_id: videoId,
+    publication_url: publicUrl("facebook", videoId),
+    container_id: null,
+    attempt_count: job.attempt_count + 1,
+    last_error: null,
+  });
   await event(env, job.job_id, "info", "Facebook-Reel veröffentlicht.");
   await removeTemporaryPagesDeployment(job, env);
 };
@@ -1119,19 +1212,65 @@ const processJob = async (job: Job, env: Env): Promise<void> => {
     const message = error instanceof Error ? error.message : "Unbekannter Cloud-Veröffentlichungsfehler.";
     const canRetry = !(error instanceof MetaApiError) || error.retryable;
     const retryable = canRetry && job.attempt_count < 4;
-    await setState(env, job, retryable ? "scheduled" : "failed", {
-      attempt_count: job.attempt_count + 1,
+    // A publisher may already have persisted a remote container/session. Read
+    // that authoritative row before changing status so a retry never erases it.
+    const persisted = await currentJob(env, job.job_id) ?? job;
+    await setState(env, persisted, retryable ? "scheduled" : "failed", {
+      attempt_count: persisted.attempt_count + 1,
       last_error: message,
     });
     await event(env, job.job_id, "error", retryable ? `Wird erneut versucht: ${message}` : message);
   }
 };
 
+const publicationClaimTimeoutMs = 20 * 60 * 1000;
+
+const recoverStalePublicationClaims = async (env: Env): Promise<void> => {
+  const cutoff = new Date(Date.now() - publicationClaimTimeoutMs).toISOString();
+  const stale = await env.DB.prepare(`SELECT job_id, platform_video_id, container_id FROM meta_publication_jobs
+    WHERE status = 'processing' AND updated_at <= ?`).bind(cutoff)
+    .all<{ job_id: string; platform_video_id: string | null; container_id: string | null }>();
+  for (const job of stale.results ?? []) {
+    const resumable = Boolean(job.platform_video_id || job.container_id);
+    const recovered = await env.DB.prepare(`UPDATE meta_publication_jobs SET status = ?, last_error = ?, updated_at = ?
+      WHERE job_id = ? AND status = 'processing' AND updated_at <= ? RETURNING job_id`)
+      .bind(
+        resumable ? "scheduled" : "failed",
+        resumable
+          ? "Unterbrochener Meta-Upload wird anhand der gespeicherten Remote-Session fortgesetzt."
+          : "Unterbrochener Meta-Create-Aufruf kann ohne Remote-ID nicht duplikatsicher wiederholt werden.",
+        now(),
+        job.job_id,
+        cutoff,
+      ).first<{ job_id: string }>();
+    if (!recovered) continue;
+    await event(
+      env,
+      job.job_id,
+      resumable ? "warning" : "error",
+      resumable
+        ? "Veralteter Job-Claim freigegeben; vorhandene Remote-Session bleibt erhalten."
+        : "Veralteter Job-Claim fail-closed beendet; kein unkontrollierter zweiter Upload.",
+    );
+  }
+};
+
+const claimPublicationJob = async (env: Env, jobId: string): Promise<Job | null> => {
+  const claimedAt = now();
+  return env.DB.prepare(`UPDATE meta_publication_jobs SET status = 'processing', updated_at = ?
+    WHERE job_id = ? AND status IN ('scheduled', 'waiting_for_meta') AND publish_at <= ?
+    RETURNING *`).bind(claimedAt, jobId, claimedAt).first<Job>();
+};
+
 const processDue = async (env: Env): Promise<void> => {
-  const rows = await env.DB.prepare(`SELECT * FROM meta_publication_jobs
+  await recoverStalePublicationClaims(env);
+  const rows = await env.DB.prepare(`SELECT job_id FROM meta_publication_jobs
     WHERE status IN ('scheduled', 'waiting_for_meta') AND publish_at <= ?
-    ORDER BY publish_at ASC LIMIT 10`).bind(now()).all<Job>();
-  for (const job of rows.results ?? []) await processJob(job, env);
+    ORDER BY publish_at ASC LIMIT 10`).bind(now()).all<{ job_id: string }>();
+  for (const candidate of rows.results ?? []) {
+    const claimed = await claimPublicationJob(env, candidate.job_id);
+    if (claimed) await processJob(claimed, env);
+  }
 };
 
 const authorized = (request: Request, env: Env): boolean => request.headers.get("authorization") === `Bearer ${env.META_QUEUE_TOKEN}`;
@@ -1148,11 +1287,23 @@ const verifyMetaCredential = async (platform: Platform, env: Env): Promise<void>
     throw new MetaApiError(`${platform === "instagram" ? "Instagram" : "Facebook"}-Konto-ID fehlt.`, "authentication_failed", false);
   }
   const account = await graphForPlatform(platform, env, expectedId, {
-    fields: platform === "instagram" ? "id,username" : "id,name",
+    fields: platform === "instagram" ? "id,username" : "id,name,tasks",
   }, "GET");
   if (String(account.id ?? "") !== expectedId) {
     throw new MetaApiError("Meta-Token und konfigurierte Konto-ID gehoeren nicht zusammen.", "authentication_failed", false);
   }
+  if (platform === "facebook") {
+    const tasks = Array.isArray(account.tasks) ? account.tasks.filter((task): task is string => typeof task === "string") : [];
+    if (!tasks.includes("CREATE_CONTENT") && !tasks.includes("MANAGE")) {
+      throw new MetaApiError("Facebook-Page-Token besitzt keine Aufgabe zum Erstellen von Inhalten.", "permission_denied", false);
+    }
+    return;
+  }
+  // A successful publishing-limit read proves the Instagram token has access
+  // to the Content Publishing surface, not merely read access to the account.
+  await graphForPlatform("instagram", env, `${expectedId}/content_publishing_limit`, {
+    fields: "quota_usage,config",
+  }, "GET");
 };
 
 const metaCredentialStatus = async (platform: Platform, env: Env): Promise<MetaCredentialStatus> => {
@@ -1804,10 +1955,13 @@ const analyticsGraph = async (
   path: string,
   parameters: Record<string, string>,
 ): Promise<Record<string, unknown>> => {
-  const query = new URLSearchParams({ ...parameters, access_token: tokenFor(platform, env) });
-  const response = await fetch(`${graphUrl(platform, env, path)}?${query.toString()}`);
-  if (!response.ok) throw new Error(`${platform} Analytics HTTP ${response.status}`);
-  return response.json() as Promise<Record<string, unknown>>;
+  const query = new URLSearchParams(parameters);
+  const response = await fetch(`${graphUrl(platform, env, path)}?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${tokenFor(platform, env)}` },
+  });
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) throw metaApiError(body, response.status);
+  return body;
 };
 
 const facebookReelMetrics = [
