@@ -28,6 +28,19 @@ const legacyStagingMessagePrefix = 'Nichtöffentlicher Upload-Testlauf:'
 const identifierPattern = /^[a-z0-9][a-z0-9._-]{2,199}$/i
 const publishedSocialStatuses = new Set(['public', 'published'])
 const corePlatforms = ['youtube', 'instagram', 'facebook']
+const productionPlatforms = new Set(['instagram', 'facebook'])
+const productionPublicationStatuses = new Set(['scheduled', 'processing', 'waiting_for_meta', 'published', 'failed'])
+const publicationFailureCodes = new Set([
+  'api_access_blocked',
+  'authentication_failed',
+  'permission_denied',
+  'rate_limited',
+  'media_unavailable',
+  'processing_timeout',
+  'platform_rejected',
+  'unknown',
+])
+const productionMessagePrefix = 'Produktions-Queue:'
 
 const isRecord = value => typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -222,6 +235,45 @@ export function normalizeStagingFeed(value) {
   }
 }
 
+const normalizeProductionPublication = (value, index) => {
+  const path = `production-publications[${index}]`
+  const record = requiredRecord(value, path)
+  const platform = requiredString(record.platform, `${path}.platform`, 20).toLowerCase()
+  if (!productionPlatforms.has(platform)) throw new Error(`${path}.platform ist unbekannt.`)
+  const status = requiredString(record.status, `${path}.status`, 40).toLowerCase()
+  if (!productionPublicationStatuses.has(status)) throw new Error(`${path}.status ist unbekannt.`)
+  const failureCode = record.failureCode === null
+    ? null
+    : requiredString(record.failureCode, `${path}.failureCode`, 60).toLowerCase()
+  if (failureCode !== null && !publicationFailureCodes.has(failureCode)) {
+    throw new Error(`${path}.failureCode ist unbekannt.`)
+  }
+  if (status === 'failed' && failureCode === null) throw new Error(`${path}.failureCode fehlt.`)
+  if (status !== 'failed' && failureCode !== null) throw new Error(`${path}.failureCode ist nur bei Fehlern zulässig.`)
+  const publishedAt = nullableIso(record.publishedAt, `${path}.publishedAt`)
+  if (status === 'published' && publishedAt === null) throw new Error(`${path}.publishedAt fehlt.`)
+  if (status !== 'published' && publishedAt !== null) throw new Error(`${path}.publishedAt ist nur nach Veröffentlichung zulässig.`)
+  return {
+    contentId: requiredIdentifier(record.contentId, `${path}.contentId`),
+    platform,
+    status,
+    scheduledAt: requiredIso(record.scheduledAt, `${path}.scheduledAt`),
+    updatedAt: requiredIso(record.updatedAt, `${path}.updatedAt`),
+    publishedAt,
+    failureCode,
+  }
+}
+
+export function normalizePublicationFeed(value) {
+  const root = requiredRecord(value, 'publication-feed')
+  if (root.schemaVersion !== 1) throw new Error('Unbekannte Publication-Feed-Schemaversion.')
+  if (root.lane !== 'production-publication') throw new Error('Der Feed gehört nicht zur Produktions-Veröffentlichung.')
+  const generatedAt = requiredIso(root.generatedAt, 'publication-feed.generatedAt')
+  const publications = requiredArray(root.publications, 'publication-feed.publications', 400)
+    .map(normalizeProductionPublication)
+  return { generatedAt, publications }
+}
+
 const platformReason = status => ({
   private: 'Privates YouTube-Testvideo wurde hochgeladen; keine Veröffentlichung autorisiert.',
   draft: 'Facebook-Entwurf bestätigt; keine Veröffentlichung autorisiert.',
@@ -373,6 +425,7 @@ export function reconcilePublishedSocial(contentOperations, socialVideos) {
       scheduledAt: null,
       publishedAt: proof.publishedAt,
       publicUrl: proof.publicUrl,
+      failureCode: null,
     }
   })
 
@@ -495,6 +548,141 @@ export function mergeStagingFeed(previous, staging) {
   }
 }
 
+const productionPublicStatus = status => ({
+  scheduled: 'planned',
+  processing: 'processing',
+  waiting_for_meta: 'processing',
+  published: 'published',
+  failed: 'failed',
+}[status])
+
+const productionPlatformStatus = status => ({
+  scheduled: 'scheduled',
+  processing: 'uploading',
+  waiting_for_meta: 'uploading',
+  published: 'published',
+  failed: 'failed',
+}[status])
+
+const productionReason = publication => {
+  if (publication.status === 'scheduled') return 'Cloud-Veröffentlichung ist eingeplant.'
+  if (publication.status === 'processing') return 'Cloud-Veröffentlichung wird verarbeitet.'
+  if (publication.status === 'waiting_for_meta') return 'Meta verarbeitet das Video.'
+  if (publication.status === 'published') return 'Cloud-Veröffentlichung wurde bestätigt.'
+  return `Cloud-Veröffentlichung ist fehlgeschlagen (${publication.failureCode}).`
+}
+
+/**
+ * Overlays the non-publishing staging view with the live production queue.
+ * Associations are deliberately fail-closed: exactly one run, one dashboard
+ * target and one queue row must exist for a content/platform pair.
+ */
+export function mergePublicationFeed(contentOperations, production) {
+  const base = requiredRecord(contentOperations, 'content-operations')
+  if (base.schemaVersion !== 1) throw new Error('Unbekannte Content-Operations-Schemaversion.')
+  const runs = requiredArray(base.runs, 'content-operations.runs', 100)
+  const publications = requiredArray(base.publications, 'content-operations.publications', 400)
+
+  const runsByContentId = new Map()
+  for (const run of runs) {
+    const entries = runsByContentId.get(run.contentId) ?? []
+    entries.push(run)
+    runsByContentId.set(run.contentId, entries)
+  }
+  const queueByContentAndPlatform = new Map()
+  for (const publication of production.publications) {
+    const key = `${publication.contentId}:${publication.platform}`
+    const entries = queueByContentAndPlatform.get(key) ?? []
+    entries.push(publication)
+    queueByContentAndPlatform.set(key, entries)
+  }
+  const targetsByRunAndPlatform = new Map()
+  for (const publication of publications) {
+    const key = `${publication.runId}:${publication.platform}`
+    const entries = targetsByRunAndPlatform.get(key) ?? []
+    entries.push(publication)
+    targetsByRunAndPlatform.set(key, entries)
+  }
+
+  const acceptedByRunAndPlatform = new Map()
+  for (const [key, queueEntries] of queueByContentAndPlatform) {
+    if (queueEntries.length !== 1) continue
+    const queue = queueEntries[0]
+    const matchingRuns = runsByContentId.get(queue.contentId) ?? []
+    if (matchingRuns.length !== 1) continue
+    const run = matchingRuns[0]
+    const targetKey = `${run.runId}:${queue.platform}`
+    if ((targetsByRunAndPlatform.get(targetKey) ?? []).length !== 1) continue
+    acceptedByRunAndPlatform.set(targetKey, queue)
+  }
+
+  const overlaidPublications = publications.map(publication => {
+    const queue = acceptedByRunAndPlatform.get(`${publication.runId}:${publication.platform}`)
+    if (!queue) return publication
+    const publicProof = publication.status === 'published'
+      && publication.publishedAt
+      && validPublicUrl(publication.publicUrl, publication.platform)
+    if (publicProof) return publication
+    return {
+      ...publication,
+      status: productionPublicStatus(queue.status),
+      updatedAt: queue.updatedAt,
+      scheduledAt: queue.scheduledAt,
+      publishedAt: queue.publishedAt,
+      publicUrl: null,
+      failureCode: queue.failureCode,
+    }
+  })
+
+  const acceptedByRun = new Map()
+  for (const [key, queue] of acceptedByRunAndPlatform) {
+    const runId = key.slice(0, key.lastIndexOf(':'))
+    const entries = acceptedByRun.get(runId) ?? []
+    entries.push(queue)
+    acceptedByRun.set(runId, entries)
+  }
+  const overlaidRuns = runs.map(run => {
+    const entries = acceptedByRun.get(run.runId) ?? []
+    if (entries.length === 0 || run.status === 'completed') return run
+    if (entries.some(entry => entry.status === 'failed')) return { ...run, status: 'failed', completedAt: null }
+    return { ...run, status: 'partial', completedAt: null }
+  })
+
+  const priorPlatforms = requiredArray(base.platforms, 'content-operations.platforms', 4)
+  const platformSummaries = priorPlatforms.map(prior => {
+    if (!productionPlatforms.has(prior.platform)) return prior
+    const accepted = [...acceptedByRunAndPlatform.values()].filter(entry => entry.platform === prior.platform)
+    if (accepted.length === 0) return prior
+    const latest = [...accepted].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
+    const matching = overlaidPublications.filter(entry => entry.platform === prior.platform)
+    return {
+      ...prior,
+      status: productionPlatformStatus(latest.status),
+      uploads: matching.filter(entry => entry.status === 'published').length,
+      publications: matching.filter(entry => entry.status === 'published').length,
+      reason: productionReason(latest),
+      updatedAt: latest.updatedAt,
+    }
+  })
+
+  const messages = requiredArray(base.messages, 'content-operations.messages', 100)
+    .filter(message => typeof message === 'string' && !message.startsWith(productionMessagePrefix))
+  if (acceptedByRunAndPlatform.size > 0) {
+    const failed = [...acceptedByRunAndPlatform.values()].filter(entry => entry.status === 'failed').length
+    messages.push(`${productionMessagePrefix} ${acceptedByRunAndPlatform.size} eindeutige Meta-Status${acceptedByRunAndPlatform.size === 1 ? '' : 'se'} übernommen; ${failed} fehlgeschlagen.`)
+  }
+
+  return {
+    ...base,
+    generatedAt: [base.generatedAt, production.generatedAt].filter(Boolean).sort().at(-1) ?? base.generatedAt,
+    status: contentDataStatus(overlaidRuns),
+    messages,
+    platforms: platformSummaries,
+    runs: overlaidRuns,
+    publications: overlaidPublications,
+  }
+}
+
 export function stagingFeedUrl(env = process.env) {
   const direct = env.UPLOAD_STAGING_FEED_URL?.trim()
   const base = env.UPLOAD_STAGING_API_URL?.trim()
@@ -524,6 +712,44 @@ export async function fetchStagingFeed(url, fetchImpl = fetch) {
   return normalizeStagingFeed(payload)
 }
 
+export function publicationFeedUrl(env = process.env) {
+  const direct = env.META_PUBLICATION_FEED_URL?.trim()
+  const base = env.UPLOAD_STAGING_API_URL?.trim()
+  const staging = env.UPLOAD_STAGING_FEED_URL?.trim()
+  if (!direct && !base && !staging) return null
+  let url
+  if (direct) {
+    url = new URL(direct)
+  } else if (base) {
+    url = new URL('/publication/feed', base)
+  } else {
+    url = new URL(staging)
+    url.pathname = url.pathname.replace(/\/staging\/feed$/, '/publication/feed')
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || !url.pathname.endsWith('/publication/feed')) {
+    throw new Error('META_PUBLICATION_FEED_URL muss auf einen öffentlichen HTTPS-/publication/feed-Endpunkt zeigen.')
+  }
+  url.hash = ''
+  return url.toString()
+}
+
+export async function fetchPublicationFeed(url, fetchImpl = fetch) {
+  const response = await fetchImpl(url, {
+    headers: { accept: 'application/json' },
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) throw new Error(`Publication-Feed antwortet mit HTTP ${response.status}.`)
+  const text = await response.text()
+  if (text.length > 1_000_000) throw new Error('Publication-Feed ist unerwartet groß.')
+  let payload
+  try {
+    payload = JSON.parse(text)
+  } catch {
+    throw new Error('Publication-Feed enthält kein gültiges JSON.')
+  }
+  return normalizePublicationFeed(payload)
+}
+
 const loadPrevious = async () => JSON.parse(await readFile(outputUrl, 'utf8'))
 
 const loadSocialVideos = async () => {
@@ -550,8 +776,13 @@ export async function collectContentOperations({ env = process.env, fetchImpl = 
   if (url === null) return { updated: false, reason: 'not_configured' }
   const previous = await loadPrevious()
   const staging = await fetchStagingFeed(url, fetchImpl)
-  const merged = mergeStagingFeed(previous, staging)
-  const payload = reconcilePublishedSocial(merged, await loadSocialVideos())
+  const productionUrl = publicationFeedUrl(env)
+  const production = productionUrl === null
+    ? { generatedAt: staging.generatedAt, publications: [] }
+    : await fetchPublicationFeed(productionUrl, fetchImpl)
+  const staged = mergeStagingFeed(previous, staging)
+  const queued = mergePublicationFeed(staged, production)
+  const payload = reconcilePublishedSocial(queued, await loadSocialVideos())
   await writeAtomically(payload)
   return { updated: true, payload }
 }

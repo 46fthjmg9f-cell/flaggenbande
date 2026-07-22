@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  fetchPublicationFeed,
   fetchStagingFeed,
+  mergePublicationFeed,
   mergeStagingFeed,
+  normalizePublicationFeed,
   normalizeStagingFeed,
+  publicationFeedUrl,
   reconcilePublishedSocial,
   stagingFeedUrl,
 } from '../scripts/collect-content-operations.mjs'
@@ -51,6 +55,32 @@ const previous = () => ({
   runs: [],
   publications: [],
   performance: [],
+})
+
+const publicationFeed = (publications = [
+  {
+    contentId,
+    platform: 'instagram',
+    status: 'failed',
+    scheduledAt: '2026-07-21T13:00:00Z',
+    updatedAt: '2026-07-21T13:05:00Z',
+    publishedAt: null,
+    failureCode: 'api_access_blocked',
+  },
+  {
+    contentId,
+    platform: 'facebook',
+    status: 'failed',
+    scheduledAt: '2026-07-21T13:00:00Z',
+    updatedAt: '2026-07-21T13:05:01Z',
+    publishedAt: null,
+    failureCode: 'authentication_failed',
+  },
+]) => ({
+  schemaVersion: 1,
+  lane: 'production-publication',
+  generatedAt: '2026-07-21T13:06:00Z',
+  publications,
 })
 
 test('staging feed is reduced to safe content-operation fields and confirmed non-public states', () => {
@@ -128,6 +158,71 @@ test('planned targets are not counted as completed uploads', () => {
   assert.equal(merged.platforms.find(entry => entry.platform === 'instagram').uploads, 1)
 })
 
+test('production publication feed accepts only the safe status contract', () => {
+  const payload = publicationFeed()
+  payload.publications[0].lastError = 'raw provider error must not survive normalization'
+  payload.publications[0].platformVideoId = 'private-platform-id'
+  payload.publications[0].mediaUrl = 'https://media.example.test/private.mp4'
+  payload.publications[0].metadata = { title: 'private title' }
+  const normalized = normalizePublicationFeed(payload)
+  assert.equal(normalized.publications.length, 2)
+  assert.deepEqual(normalized.publications[0], {
+    contentId,
+    platform: 'instagram',
+    status: 'failed',
+    scheduledAt: '2026-07-21T13:00:00.000Z',
+    updatedAt: '2026-07-21T13:05:00.000Z',
+    publishedAt: null,
+    failureCode: 'api_access_blocked',
+  })
+  assert.doesNotMatch(JSON.stringify(normalized), /raw provider|platform-id|media\.example|private title/)
+
+  const rawFailure = publicationFeed()
+  rawFailure.publications[0].failureCode = 'OAuthException raw text'
+  assert.throws(() => normalizePublicationFeed(rawFailure), /failureCode ist unbekannt/)
+
+  const missingPublishedAt = publicationFeed([{
+    ...publicationFeed().publications[0],
+    status: 'published',
+    failureCode: null,
+  }])
+  assert.throws(() => normalizePublicationFeed(missingPublishedAt), /publishedAt fehlt/)
+})
+
+test('production queue failures override planned staging targets with safe failure codes', () => {
+  const payload = feed()
+  payload.runs[0].status = 'partial'
+  payload.runs[0].completedAt = null
+  payload.publications.find(entry => entry.platform === 'instagram').status = 'planned'
+  payload.publications.find(entry => entry.platform === 'facebook').status = 'planned'
+  const staged = mergeStagingFeed(previous(), normalizeStagingFeed(payload))
+  const overlaid = mergePublicationFeed(staged, normalizePublicationFeed(publicationFeed()))
+
+  assert.equal(overlaid.runs[0].status, 'failed')
+  assert.equal(overlaid.publications.find(entry => entry.platform === 'instagram').status, 'failed')
+  assert.equal(overlaid.publications.find(entry => entry.platform === 'instagram').failureCode, 'api_access_blocked')
+  assert.equal(overlaid.publications.find(entry => entry.platform === 'facebook').status, 'failed')
+  assert.equal(overlaid.platforms.find(entry => entry.platform === 'facebook').status, 'failed')
+  assert.doesNotMatch(JSON.stringify(overlaid), /OAuthException|Page-Token|access[_ -]?token/i)
+})
+
+test('production queue association fails closed for duplicate runs or duplicate queue rows', () => {
+  const staged = staleOperations()
+  const duplicateRunId = 'upload-test-duplicate-content'
+  staged.runs.push({ ...staged.runs[0], runId: duplicateRunId })
+  staged.publications.push(...staged.publications.map(publication => ({ ...publication, runId: duplicateRunId })))
+  const ambiguousRun = mergePublicationFeed(staged, normalizePublicationFeed(publicationFeed()))
+  assert.equal(ambiguousRun.publications.find(entry => entry.runId === runId && entry.platform === 'facebook').status, 'planned')
+
+  const oneRun = staleOperations()
+  const duplicateQueue = publicationFeed([
+    publicationFeed().publications[1],
+    { ...publicationFeed().publications[1], updatedAt: '2026-07-21T13:05:02Z' },
+  ])
+  const ambiguousQueue = mergePublicationFeed(oneRun, normalizePublicationFeed(duplicateQueue))
+  assert.equal(ambiguousQueue.publications.find(entry => entry.platform === 'facebook').status, 'planned')
+})
+
 const publicVideo = ({
   platform,
   contentId: videoContentId = contentId,
@@ -161,6 +256,20 @@ const staleOperations = () => {
   payload.publications[3].status = 'planned'
   return mergeStagingFeed(previous(), normalizeStagingFeed(payload))
 }
+
+test('authoritative public analytics proof wins over a failed production queue status', () => {
+  const queued = mergePublicationFeed(staleOperations(), normalizePublicationFeed(publicationFeed()))
+  assert.equal(queued.publications.find(entry => entry.platform === 'instagram').status, 'failed')
+  const reconciled = reconcilePublishedSocial(queued, [
+    publicVideo({ platform: 'youtube' }),
+    publicVideo({ platform: 'instagram' }),
+    publicVideo({ platform: 'facebook' }),
+  ])
+  assert.equal(reconciled.runs[0].status, 'completed')
+  assert.equal(reconciled.publications.find(entry => entry.platform === 'instagram').status, 'published')
+  assert.equal(reconciled.publications.find(entry => entry.platform === 'instagram').failureCode, null)
+  assert.equal(reconciled.publications.find(entry => entry.platform === 'facebook').status, 'published')
+})
 
 test('direct content IDs reconcile only valid public proofs and refresh counts, titles, and times', () => {
   const videos = [
@@ -292,4 +401,22 @@ test('collector uses a public HTTPS feed without authorization headers', async (
   assert.deepEqual(request.options.headers, { accept: 'application/json' })
   assert.equal('authorization' in request.options.headers, false)
   assert.equal(normalized.publications.length, 4)
+})
+
+test('collector derives and fetches the public production feed without authorization headers', async () => {
+  const expectedUrl = 'https://staging.example.test/publication/feed'
+  assert.equal(publicationFeedUrl({ UPLOAD_STAGING_API_URL: 'https://staging.example.test/private/path' }), expectedUrl)
+  assert.equal(publicationFeedUrl({ UPLOAD_STAGING_FEED_URL: 'https://staging.example.test/staging/feed' }), expectedUrl)
+  assert.equal(publicationFeedUrl({ META_PUBLICATION_FEED_URL: expectedUrl }), expectedUrl)
+  assert.throws(() => publicationFeedUrl({ META_PUBLICATION_FEED_URL: 'http://staging.example.test/publication/feed' }), /HTTPS/)
+
+  let request
+  const normalized = await fetchPublicationFeed(expectedUrl, async (url, options) => {
+    request = { url, options }
+    return new Response(JSON.stringify(publicationFeed()), { status: 200, headers: { 'content-type': 'application/json' } })
+  })
+  assert.equal(request.url, expectedUrl)
+  assert.deepEqual(request.options.headers, { accept: 'application/json' })
+  assert.equal('authorization' in request.options.headers, false)
+  assert.equal(normalized.publications.length, 2)
 })

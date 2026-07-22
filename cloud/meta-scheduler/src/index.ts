@@ -25,7 +25,12 @@ export interface Env {
   /** Only this temporary Cloudflare Pages project may serve staging media. */
   UPLOAD_STAGING_MEDIA_PROJECT?: string;
   ANALYTICS_INGEST_TOKEN?: string;
-  META_ACCESS_TOKEN: string;
+  /** Preferred Instagram Login token. Never reuse a Facebook Page token here. */
+  META_INSTAGRAM_USER_ACCESS_TOKEN?: string;
+  /** Transitional alias used by older deployments. */
+  META_INSTAGRAM_ACCESS_TOKEN?: string;
+  /** Deprecated transitional alias; retained only for zero-downtime migration. */
+  META_ACCESS_TOKEN?: string;
   META_INSTAGRAM_ACCOUNT_ID: string;
   META_FACEBOOK_PAGE_ACCESS_TOKEN: string;
   META_FACEBOOK_PAGE_ID: string;
@@ -38,6 +43,27 @@ export interface Env {
 type Platform = "instagram" | "facebook";
 type SocialPlatform = Platform | "youtube" | "tiktok";
 type JobStatus = "scheduled" | "processing" | "waiting_for_meta" | "published" | "failed";
+type PublicationFailureCode =
+  | "api_access_blocked"
+  | "authentication_failed"
+  | "permission_denied"
+  | "rate_limited"
+  | "media_unavailable"
+  | "processing_timeout"
+  | "platform_rejected"
+  | "unknown";
+
+class MetaApiError extends Error {
+  readonly failureCode: PublicationFailureCode;
+  readonly retryable: boolean;
+
+  constructor(message: string, failureCode: PublicationFailureCode, retryable: boolean) {
+    super(message);
+    this.name = "MetaApiError";
+    this.failureCode = failureCode;
+    this.retryable = retryable;
+  }
+}
 type StagingPlatform = "youtube" | "instagram" | "facebook" | "tiktok";
 type StagingMode = "private" | "container_unpublished" | "draft" | "manual_uploaded";
 type StagingTransport = "planned" | "uploading" | "processing" | "ready" | "failed" | "expired" | "reconcile_required";
@@ -99,6 +125,16 @@ interface Job {
   readonly publication_url: string | null;
   readonly container_id: string | null;
   readonly last_error: string | null;
+}
+
+interface PublicationFeedJobRow {
+  readonly source_video_id: string;
+  readonly platform: Platform;
+  readonly publish_at: string;
+  readonly status: JobStatus;
+  readonly last_error: string | null;
+  readonly updated_at: string;
+  readonly published_at: string | null;
 }
 
 interface EnqueuePayload {
@@ -576,32 +612,65 @@ const graphBase = (platform: Platform): string => platform === "instagram" ? "ht
 const accountFor = (platform: Platform, env: Env): string => platform === "instagram" ? env.META_INSTAGRAM_ACCOUNT_ID : env.META_FACEBOOK_PAGE_ID;
 const graphUrl = (platform: Platform, env: Env, path: string): string => `${graphBase(platform)}/${graphVersion(env)}/${path.replace(/^\//, "")}`;
 
-/** Meta accepts a user token locally, but the Page Reels edge requires the
- * short-lived Page token derived from it. Resolve it per Worker invocation and
- * never persist or expose it. */
-const pageTokenFor = async (env: Env): Promise<string> => {
-  const parameters = new URLSearchParams({ fields: "access_token", access_token: env.META_FACEBOOK_PAGE_ACCESS_TOKEN });
-  const response = await fetch(`${graphUrl("facebook", env, accountFor("facebook", env))}?${parameters.toString()}`);
-  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok || typeof body.access_token !== "string" || !body.access_token) {
-    throw new Error("Facebook konnte keinen berechtigten Page-Token ableiten.");
+const instagramTokenFor = (env: Env): string | null =>
+  env.META_INSTAGRAM_USER_ACCESS_TOKEN?.trim()
+  || env.META_INSTAGRAM_ACCESS_TOKEN?.trim()
+  || env.META_ACCESS_TOKEN?.trim()
+  || null;
+
+/** The Facebook secret is already a Page Access Token. Passing it back through
+ * the user-token exchange endpoint invalidates an otherwise usable credential. */
+const tokenFor = (platform: Platform, env: Env): string => {
+  const token = platform === "instagram" ? instagramTokenFor(env) : env.META_FACEBOOK_PAGE_ACCESS_TOKEN?.trim();
+  if (!token) {
+    throw new MetaApiError(
+      `${platform === "instagram" ? "Instagram" : "Facebook"}-Zugangstoken fehlt.`,
+      "authentication_failed",
+      false,
+    );
   }
-  return body.access_token;
+  return token;
 };
 
-const tokenFor = async (platform: Platform, env: Env): Promise<string> =>
-  platform === "instagram" ? env.META_ACCESS_TOKEN : pageTokenFor(env);
+const metaApiError = (body: Record<string, unknown>, httpStatus: number): MetaApiError => {
+  const provider = typeof body.error === "object" && body.error !== null
+    ? body.error as Record<string, unknown>
+    : {};
+  const code = typeof provider.code === "number" ? provider.code : null;
+  const rawMessage = typeof provider.message === "string" ? provider.message.toLowerCase() : "";
+  const retryable = provider.is_transient === true || httpStatus === 429 || httpStatus >= 500
+    || (code !== null && [4, 17, 32, 613].includes(code));
+  if (rawMessage.includes("api access blocked")) {
+    return new MetaApiError("Meta hat den API-Zugriff fuer dieses Entwicklerkonto blockiert.", "api_access_blocked", false);
+  }
+  if (code === 190) {
+    return new MetaApiError("Meta-Zugangstoken ist ungueltig oder abgelaufen (Code 190).", "authentication_failed", false);
+  }
+  if (code !== null && code >= 200 && code <= 299) {
+    return new MetaApiError(`Meta-Berechtigung fehlt oder wurde entzogen (Code ${code}).`, "permission_denied", false);
+  }
+  if (retryable) {
+    return new MetaApiError("Meta ist voruebergehend nicht erreichbar oder hat das Ratenlimit erreicht.", "rate_limited", true);
+  }
+  return new MetaApiError(
+    `Meta hat die Anfrage abgelehnt${code === null ? ` (HTTP ${httpStatus})` : ` (Code ${code})`}.`,
+    "platform_rejected",
+    false,
+  );
+};
 
 const graphForPlatform = async (platform: Platform, env: Env, path: string, values: Record<string, string>, method: "GET" | "POST" = "POST"): Promise<Record<string, unknown>> => {
-  const params = new URLSearchParams({ ...values, access_token: await tokenFor(platform, env) });
+  const params = new URLSearchParams(values);
+  const headers = { Authorization: `Bearer ${tokenFor(platform, env)}` };
   const response = method === "GET"
-    ? await fetch(`${graphUrl(platform, env, path)}?${params.toString()}`)
-    : await fetch(graphUrl(platform, env, path), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: params });
+    ? await fetch(`${graphUrl(platform, env, path)}?${params.toString()}`, { headers })
+    : await fetch(graphUrl(platform, env, path), {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/x-www-form-urlencoded" },
+      body: params,
+    });
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) {
-    const error = typeof body.error === "object" && body.error ? JSON.stringify(body.error) : `HTTP ${response.status}`;
-    throw new Error(`Meta API: ${error}`);
-  }
+  if (!response.ok) throw metaApiError(body, response.status);
   return body;
 };
 
@@ -611,13 +680,18 @@ const graph = async (job: Job, env: Env, path: string, values: Record<string, st
 const metadata = (job: Job): Metadata => JSON.parse(job.metadata_json) as Metadata;
 
 const setState = async (env: Env, job: Job, state: JobStatus, changes: Partial<Job> & { readonly publishedAt?: string } = {}): Promise<void> => {
+  const changed = <K extends keyof Job>(key: K, fallback: Job[K]): Job[K] =>
+    Object.prototype.hasOwnProperty.call(changes, key) ? changes[key] as Job[K] : fallback;
   await env.DB.prepare(`UPDATE meta_publication_jobs
       SET status = ?, attempt_count = ?, platform_video_id = ?, publication_url = ?, container_id = ?, last_error = ?, updated_at = ?, published_at = ?
       WHERE job_id = ?`)
-    .bind(state, changes.attempt_count ?? job.attempt_count, changes.platform_video_id ?? job.platform_video_id,
-      changes.publication_url ?? job.publication_url, changes.container_id ?? job.container_id,
-      changes.last_error ?? job.last_error, now(), changes.publishedAt ?? (state === "published" ? now() : null), job.job_id).run();
+    .bind(state, changed("attempt_count", job.attempt_count), changed("platform_video_id", job.platform_video_id),
+      changed("publication_url", job.publication_url), changed("container_id", job.container_id),
+      changed("last_error", job.last_error), now(), changes.publishedAt ?? (state === "published" ? now() : null), job.job_id).run();
 };
+
+const currentJob = async (env: Env, jobId: string): Promise<Job | null> =>
+  env.DB.prepare("SELECT * FROM meta_publication_jobs WHERE job_id = ?").bind(jobId).first<Job>();
 
 const facebookReelUrl = (id: string): string => `https://www.facebook.com/reel/${encodeURIComponent(id)}`;
 
@@ -675,7 +749,39 @@ const publishInstagram = async (job: Job, env: Env): Promise<void> => {
   }
   const status = await graph(job, env, job.container_id, { fields: "status_code,status" }, "GET");
   const code = typeof status.status_code === "string" ? status.status_code.toUpperCase() : "";
-  if (code === "IN_PROGRESS" || code === "" || code === "PUBLISHED") return;
+  if (code === "IN_PROGRESS" || code === "") {
+    await setState(env, job, "waiting_for_meta", { last_error: null });
+    return;
+  }
+  if (code === "PUBLISHED") {
+    const media = await graph(job, env, `${accountFor("instagram", env)}/media`, {
+      fields: "id,caption,permalink,timestamp",
+      limit: "50",
+    }, "GET");
+    const candidates = Array.isArray(media.data) ? media.data.filter((item): item is Record<string, unknown> =>
+      typeof item === "object" && item !== null) : [];
+    const expectedCaption = details.description.trim();
+    const earliest = Date.parse(job.publish_at) - 6 * 60 * 60 * 1000;
+    const match = candidates
+      .filter((item) => typeof item.id === "string" && typeof item.caption === "string" && item.caption.trim() === expectedCaption)
+      .filter((item) => typeof item.timestamp !== "string" || !Number.isFinite(Date.parse(item.timestamp)) || Date.parse(item.timestamp) >= earliest)
+      .sort((left, right) => Date.parse(String(right.timestamp ?? 0)) - Date.parse(String(left.timestamp ?? 0)))[0];
+    const id = typeof match?.id === "string" ? match.id : null;
+    if (!id) {
+      throw new MetaApiError(
+        "Instagram meldet den Container als veroeffentlicht, die Reel-ID konnte noch nicht eindeutig zugeordnet werden.",
+        "processing_timeout",
+        true,
+      );
+    }
+    const permalink = typeof match.permalink === "string" && match.permalink.startsWith("https://www.instagram.com/")
+      ? match.permalink
+      : publicUrl("instagram", id);
+    await setState(env, job, "published", { platform_video_id: id, publication_url: permalink, last_error: null });
+    await event(env, job.job_id, "info", "Instagram-Reel nach unterbrochener Bestaetigung abgeglichen.");
+    await removeTemporaryPagesDeployment(job, env);
+    return;
+  }
   if (code !== "FINISHED") throw new Error(`Instagram-Verarbeitung fehlgeschlagen: ${typeof status.status === "string" ? status.status : code}`);
   const result = await graph(job, env, `${accountFor("instagram", env)}/media_publish`, { creation_id: job.container_id });
   const id = typeof result.id === "string" ? result.id : null;
@@ -688,21 +794,74 @@ const publishInstagram = async (job: Job, env: Env): Promise<void> => {
 const publishFacebook = async (job: Job, env: Env): Promise<void> => {
   const details = metadata(job);
   const edge = `${accountFor("facebook", env)}/video_reels`;
-  const session = await graph(job, env, edge, { upload_phase: "start" });
-  const videoId = typeof session.video_id === "string" ? session.video_id : null;
-  const uploadUrl = typeof session.upload_url === "string" ? session.upload_url : null;
-  if (!videoId || !uploadUrl) throw new Error("Facebook lieferte keine Reels-Upload-Session.");
+  let videoId = job.platform_video_id;
+  let uploadUrl = job.container_id;
+  if (videoId) {
+    try {
+      const remote = await graph(job, env, videoId, { fields: "published,status,permalink_url" }, "GET");
+      if (remote.published === true) {
+        const permalink = verifiedFacebookPermalink(videoId, remote.permalink_url);
+        await setState(env, job, "published", {
+          platform_video_id: videoId,
+          publication_url: permalink,
+          container_id: null,
+          last_error: null,
+        });
+        await event(env, job.job_id, "info", "Facebook-Reel nach unterbrochener Bestaetigung abgeglichen.");
+        await removeTemporaryPagesDeployment(job, env);
+        return;
+      }
+    } catch (error) {
+      if (error instanceof MetaApiError && ["authentication_failed", "permission_denied", "api_access_blocked", "rate_limited"].includes(error.failureCode)) {
+        throw error;
+      }
+      // A freshly created unpublished Reel may not yet be readable. The saved
+      // upload URL still lets this exact session resume without creating a duplicate.
+    }
+  }
+  if (!videoId || !uploadUrl) {
+    if (videoId || uploadUrl) {
+      throw new MetaApiError("Facebook-Upload-Session ist unvollstaendig; neuer Remote-Upload wird sicherheitshalber nicht erzeugt.", "platform_rejected", false);
+    }
+    const session = await graph(job, env, edge, { upload_phase: "start" });
+    videoId = typeof session.video_id === "string" ? session.video_id : null;
+    uploadUrl = typeof session.upload_url === "string" ? session.upload_url : null;
+    if (!videoId || !uploadUrl) throw new Error("Facebook lieferte keine Reels-Upload-Session.");
+    await setState(env, job, "processing", {
+      platform_video_id: videoId,
+      container_id: uploadUrl,
+      last_error: null,
+    });
+  }
   const media = await fetch(job.media_url);
-  if (!media.ok || !media.body) throw new Error("Die vorbereitete Cloud-MP4 ist nicht mehr erreichbar.");
+  if (!media.ok || !media.body) {
+    throw new MetaApiError(
+      media.status >= 500 ? "Die vorbereitete Cloud-MP4 ist voruebergehend nicht erreichbar." : "Die vorbereitete Cloud-MP4 ist nicht mehr erreichbar.",
+      "media_unavailable",
+      media.status >= 500,
+    );
+  }
   const size = media.headers.get("content-length");
   const uploaded = await fetch(uploadUrl, {
     method: "POST",
-    headers: { Authorization: `OAuth ${await tokenFor("facebook", env)}`, offset: "0", file_size: size || "0", "content-type": "application/octet-stream" },
+    // Meta's rupload endpoint is the exception to Graph's Bearer convention.
+    headers: { Authorization: `OAuth ${tokenFor("facebook", env)}`, offset: "0", file_size: size || "0", "content-type": "application/octet-stream" },
     body: media.body,
   });
-  if (!uploaded.ok) throw new Error(`Facebook-Medienupload fehlgeschlagen (HTTP ${uploaded.status}).`);
+  if (!uploaded.ok) {
+    const body = await uploaded.json().catch(() => ({})) as Record<string, unknown>;
+    if (uploaded.status === 401) throw new MetaApiError("Facebook-Zugangstoken wurde beim Medienupload abgelehnt.", "authentication_failed", false);
+    if (uploaded.status === 403) throw new MetaApiError("Facebook-Berechtigung fuer den Medienupload fehlt.", "permission_denied", false);
+    throw metaApiError(body, uploaded.status);
+  }
   await graph(job, env, edge, { video_id: videoId, upload_phase: "finish", video_state: "PUBLISHED", description: details.description, title: details.title });
-  await setState(env, job, "published", { platform_video_id: videoId, publication_url: publicUrl("facebook", videoId), attempt_count: job.attempt_count + 1, last_error: null });
+  await setState(env, job, "published", {
+    platform_video_id: videoId,
+    publication_url: publicUrl("facebook", videoId),
+    container_id: null,
+    attempt_count: job.attempt_count + 1,
+    last_error: null,
+  });
   await event(env, job.job_id, "info", "Facebook-Reel veröffentlicht.");
   await removeTemporaryPagesDeployment(job, env);
 };
@@ -907,7 +1066,7 @@ const stageFacebookDraft = async (env: Env, run: StagingRunPayload): Promise<voi
     const uploaded = await fetch(uploadUrl, {
       method: "POST",
       headers: {
-        Authorization: `OAuth ${await tokenFor("facebook", env)}`,
+        Authorization: `OAuth ${tokenFor("facebook", env)}`,
         offset: "0",
         file_size: media.headers.get("content-length") || "0",
         "content-type": "application/octet-stream",
@@ -1051,20 +1210,113 @@ const processJob = async (job: Job, env: Env): Promise<void> => {
     else await publishFacebook(job, env);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unbekannter Cloud-Veröffentlichungsfehler.";
-    const retryable = job.attempt_count < 4;
-    await setState(env, job, retryable ? "scheduled" : "failed", { attempt_count: job.attempt_count + 1, last_error: message });
+    const canRetry = !(error instanceof MetaApiError) || error.retryable;
+    const retryable = canRetry && job.attempt_count < 4;
+    // A publisher may already have persisted a remote container/session. Read
+    // that authoritative row before changing status so a retry never erases it.
+    const persisted = await currentJob(env, job.job_id) ?? job;
+    await setState(env, persisted, retryable ? "scheduled" : "failed", {
+      attempt_count: persisted.attempt_count + 1,
+      last_error: message,
+    });
     await event(env, job.job_id, "error", retryable ? `Wird erneut versucht: ${message}` : message);
   }
 };
 
+const publicationClaimTimeoutMs = 20 * 60 * 1000;
+
+const recoverStalePublicationClaims = async (env: Env): Promise<void> => {
+  const cutoff = new Date(Date.now() - publicationClaimTimeoutMs).toISOString();
+  const stale = await env.DB.prepare(`SELECT job_id, platform_video_id, container_id FROM meta_publication_jobs
+    WHERE status = 'processing' AND updated_at <= ?`).bind(cutoff)
+    .all<{ job_id: string; platform_video_id: string | null; container_id: string | null }>();
+  for (const job of stale.results ?? []) {
+    const resumable = Boolean(job.platform_video_id || job.container_id);
+    const recovered = await env.DB.prepare(`UPDATE meta_publication_jobs SET status = ?, last_error = ?, updated_at = ?
+      WHERE job_id = ? AND status = 'processing' AND updated_at <= ? RETURNING job_id`)
+      .bind(
+        resumable ? "scheduled" : "failed",
+        resumable
+          ? "Unterbrochener Meta-Upload wird anhand der gespeicherten Remote-Session fortgesetzt."
+          : "Unterbrochener Meta-Create-Aufruf kann ohne Remote-ID nicht duplikatsicher wiederholt werden.",
+        now(),
+        job.job_id,
+        cutoff,
+      ).first<{ job_id: string }>();
+    if (!recovered) continue;
+    await event(
+      env,
+      job.job_id,
+      resumable ? "warning" : "error",
+      resumable
+        ? "Veralteter Job-Claim freigegeben; vorhandene Remote-Session bleibt erhalten."
+        : "Veralteter Job-Claim fail-closed beendet; kein unkontrollierter zweiter Upload.",
+    );
+  }
+};
+
+const claimPublicationJob = async (env: Env, jobId: string): Promise<Job | null> => {
+  const claimedAt = now();
+  return env.DB.prepare(`UPDATE meta_publication_jobs SET status = 'processing', updated_at = ?
+    WHERE job_id = ? AND status IN ('scheduled', 'waiting_for_meta') AND publish_at <= ?
+    RETURNING *`).bind(claimedAt, jobId, claimedAt).first<Job>();
+};
+
 const processDue = async (env: Env): Promise<void> => {
-  const rows = await env.DB.prepare(`SELECT * FROM meta_publication_jobs
+  await recoverStalePublicationClaims(env);
+  const rows = await env.DB.prepare(`SELECT job_id FROM meta_publication_jobs
     WHERE status IN ('scheduled', 'waiting_for_meta') AND publish_at <= ?
-    ORDER BY publish_at ASC LIMIT 10`).bind(now()).all<Job>();
-  for (const job of rows.results ?? []) await processJob(job, env);
+    ORDER BY publish_at ASC LIMIT 10`).bind(now()).all<{ job_id: string }>();
+  for (const candidate of rows.results ?? []) {
+    const claimed = await claimPublicationJob(env, candidate.job_id);
+    if (claimed) await processJob(claimed, env);
+  }
 };
 
 const authorized = (request: Request, env: Env): boolean => request.headers.get("authorization") === `Bearer ${env.META_QUEUE_TOKEN}`;
+
+interface MetaCredentialStatus {
+  readonly status: "ready" | "invalid";
+  readonly failureCode: PublicationFailureCode | null;
+  readonly reason: string | null;
+}
+
+const verifyMetaCredential = async (platform: Platform, env: Env): Promise<void> => {
+  const expectedId = accountFor(platform, env);
+  if (!expectedId) {
+    throw new MetaApiError(`${platform === "instagram" ? "Instagram" : "Facebook"}-Konto-ID fehlt.`, "authentication_failed", false);
+  }
+  const account = await graphForPlatform(platform, env, expectedId, {
+    fields: platform === "instagram" ? "id,username" : "id,name,tasks",
+  }, "GET");
+  if (String(account.id ?? "") !== expectedId) {
+    throw new MetaApiError("Meta-Token und konfigurierte Konto-ID gehoeren nicht zusammen.", "authentication_failed", false);
+  }
+  if (platform === "facebook") {
+    const tasks = Array.isArray(account.tasks) ? account.tasks.filter((task): task is string => typeof task === "string") : [];
+    if (!tasks.includes("CREATE_CONTENT") && !tasks.includes("MANAGE")) {
+      throw new MetaApiError("Facebook-Page-Token besitzt keine Aufgabe zum Erstellen von Inhalten.", "permission_denied", false);
+    }
+    return;
+  }
+  // A successful publishing-limit read proves the Instagram token has access
+  // to the Content Publishing surface, not merely read access to the account.
+  await graphForPlatform("instagram", env, `${expectedId}/content_publishing_limit`, {
+    fields: "quota_usage,config",
+  }, "GET");
+};
+
+const metaCredentialStatus = async (platform: Platform, env: Env): Promise<MetaCredentialStatus> => {
+  try {
+    await verifyMetaCredential(platform, env);
+    return { status: "ready", failureCode: null, reason: null };
+  } catch (error) {
+    if (error instanceof MetaApiError) {
+      return { status: "invalid", failureCode: error.failureCode, reason: error.message };
+    }
+    return { status: "invalid", failureCode: "unknown", reason: "Meta-Zugang konnte nicht verifiziert werden." };
+  }
+};
 
 const enqueue = async (request: Request, env: Env): Promise<Response> => {
   // Do not accept media unless the Worker can delete the temporary Pages
@@ -1075,6 +1327,15 @@ const enqueue = async (request: Request, env: Env): Promise<Response> => {
   }
   const payload = await request.json().catch(() => null);
   if (!validPayload(payload)) return json({ error: "Ungültiger Queue-Auftrag." }, 400);
+  const credential = await metaCredentialStatus(payload.platform, env);
+  if (credential.status !== "ready") {
+    return json({
+      error: "Meta-Zugang ist nicht veröffentlichungsbereit.",
+      platform: payload.platform,
+      failureCode: credential.failureCode,
+      reason: credential.reason,
+    }, 503);
+  }
   const createdAt = now();
   await env.DB.prepare(`INSERT INTO meta_publication_jobs (
     job_id, source_video_id, platform, publish_at, status, metadata_json, media_url, media_project, media_branch,
@@ -1218,7 +1479,7 @@ const insertStagingRun = async (
 };
 
 const metaStagingConfiguration = (env: Env): string[] => [
-  ["META_ACCESS_TOKEN", env.META_ACCESS_TOKEN],
+  ["META_INSTAGRAM_USER_ACCESS_TOKEN", instagramTokenFor(env)],
   ["META_INSTAGRAM_ACCOUNT_ID", env.META_INSTAGRAM_ACCOUNT_ID],
   ["META_FACEBOOK_PAGE_ACCESS_TOKEN", env.META_FACEBOOK_PAGE_ACCESS_TOKEN],
   ["META_FACEBOOK_PAGE_ID", env.META_FACEBOOK_PAGE_ID],
@@ -1467,6 +1728,54 @@ const stagingFeed = async (env: Env): Promise<Response> => {
   });
 };
 
+const publicationFailureCode = (error: string | null): PublicationFailureCode => {
+  const value = (error ?? "").normalize("NFKC").toLowerCase();
+  if (value.includes("api access blocked") || (value.includes("api-zugriff") && value.includes("blockiert"))) return "api_access_blocked";
+  if (/page-token|access[_ -]?token|oauth|token.*(invalid|expired|ungueltig|abgelaufen)|invalid.*token/.test(value)) return "authentication_failed";
+  if (/permission|berechtigung|not authorized|not authorised|code[\"': ]+200/.test(value)) return "permission_denied";
+  if (/rate.?limit|quota|too many requests|code[\"': ]+(4|17|32|613)\b/.test(value)) return "rate_limited";
+  if (/media|video.*(download|fetch|unavailable)|source url|mp4/.test(value)) return "media_unavailable";
+  if (/timeout|timed out|processing.*(expired|timeout)/.test(value)) return "processing_timeout";
+  if (/rejected|unsupported|invalid parameter|code[\"': ]+(100|36000)\b/.test(value)) return "platform_rejected";
+  return "unknown";
+};
+
+/**
+ * Public, read-only production queue projection. Raw provider errors and every
+ * remote/media identifier stay inside D1; the dashboard receives only the
+ * minimum state needed to distinguish planned, active, failed and completed
+ * publication attempts.
+ */
+const publicationFeed = async (env: Env): Promise<Response> => {
+  const jobs = await env.DB.prepare(`SELECT source_video_id, platform, publish_at, status,
+      last_error, updated_at, published_at
+    FROM meta_publication_jobs
+    ORDER BY updated_at DESC LIMIT 400`).all<PublicationFeedJobRow>();
+  const publications = (jobs.results ?? [])
+    .filter((job) => /^[a-z0-9][a-z0-9._-]{2,199}$/i.test(job.source_video_id) && validPlatform(job.platform))
+    .map((job) => ({
+      contentId: job.source_video_id,
+      platform: job.platform,
+      status: job.status,
+      scheduledAt: job.publish_at,
+      updatedAt: job.updated_at,
+      publishedAt: job.status === "published" ? job.published_at : null,
+      failureCode: job.status === "failed" ? publicationFailureCode(job.last_error) : null,
+    }));
+  return new Response(JSON.stringify({
+    schemaVersion: 1,
+    lane: "production-publication",
+    generatedAt: now(),
+    publications,
+  }), {
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "public, max-age=15, s-maxage=15",
+      "access-control-allow-origin": "*",
+    },
+  });
+};
+
 const analyticsMetricNames: ReadonlyArray<keyof SocialMetrics> = [
   "views", "reach", "likes", "comments", "shares", "saves", "watchTimeMinutes",
   "averageViewDurationSeconds", "averageViewPercentage", "followersGained",
@@ -1646,10 +1955,13 @@ const analyticsGraph = async (
   path: string,
   parameters: Record<string, string>,
 ): Promise<Record<string, unknown>> => {
-  const query = new URLSearchParams({ ...parameters, access_token: await tokenFor(platform, env) });
-  const response = await fetch(`${graphUrl(platform, env, path)}?${query.toString()}`);
-  if (!response.ok) throw new Error(`${platform} Analytics HTTP ${response.status}`);
-  return response.json() as Promise<Record<string, unknown>>;
+  const query = new URLSearchParams(parameters);
+  const response = await fetch(`${graphUrl(platform, env, path)}?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${tokenFor(platform, env)}` },
+  });
+  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) throw metaApiError(body, response.status);
+  return body;
 };
 
 const facebookReelMetrics = [
@@ -1888,6 +2200,7 @@ export default {
     if (request.method === "GET" && url.pathname === "/analytics/feed") return analyticsFeed(env);
     if (request.method === "POST" && url.pathname === "/analytics/ingest") return ingestAnalytics(request, env);
     if (request.method === "GET" && url.pathname === "/staging/feed") return stagingFeed(env);
+    if (request.method === "GET" && url.pathname === "/publication/feed") return publicationFeed(env);
     if (request.method === "POST" && url.pathname === "/staging/runs") return createStagingRun(request, env);
     if (request.method === "POST" && url.pathname === "/staging/claims") return claimExternalStagingUpload(request, env);
     if (request.method === "POST" && url.pathname === "/staging/receipts") return saveStagingReceipt(request, env);
@@ -1898,14 +2211,23 @@ export default {
     if (!authorized(request, env)) return json({ error: "Nicht autorisiert." }, 401);
     if (request.method === "GET" && url.pathname === "/ready") {
       const missing = [
-        ["META_ACCESS_TOKEN", env.META_ACCESS_TOKEN],
+        ["META_INSTAGRAM_USER_ACCESS_TOKEN", instagramTokenFor(env)],
         ["META_INSTAGRAM_ACCOUNT_ID", env.META_INSTAGRAM_ACCOUNT_ID],
         ["META_FACEBOOK_PAGE_ACCESS_TOKEN", env.META_FACEBOOK_PAGE_ACCESS_TOKEN],
         ["META_FACEBOOK_PAGE_ID", env.META_FACEBOOK_PAGE_ID],
         ["CLOUDFLARE_API_TOKEN", env.CLOUDFLARE_API_TOKEN],
         ["CLOUDFLARE_ACCOUNT_ID", env.CLOUDFLARE_ACCOUNT_ID],
       ].filter(([, value]) => !value).map(([name]) => name);
-      return json({ status: missing.length === 0 ? "ready" : "configuration_incomplete", missing });
+      if (missing.length > 0) return json({ status: "configuration_incomplete", missing });
+      const [instagram, facebook] = await Promise.all([
+        metaCredentialStatus("instagram", env),
+        metaCredentialStatus("facebook", env),
+      ]);
+      return json({
+        status: instagram.status === "ready" && facebook.status === "ready" ? "ready" : "credentials_invalid",
+        missing: [],
+        credentials: { instagram, facebook },
+      });
     }
     if (request.method === "POST" && url.pathname === "/analytics/refresh-meta") {
       await refreshMetaAnalyticsIfDue(env, true);

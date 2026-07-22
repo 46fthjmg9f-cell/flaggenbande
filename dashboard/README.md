@@ -31,12 +31,14 @@ npm run build
 | `CLOUDKIT_KEY_ID`, `CLOUDKIT_PRIVATE_KEY` | CloudKit Server-to-Server Key nur für die öffentliche Datenbank |
 | `CLOUDKIT_CONTAINER` | optional; Standard ist `iCloud.de.phil.SpassmitFlaggen` |
 | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REFRESH_TOKEN` | YouTube Data und Analytics API für veröffentlichte Videos |
-| `META_ACCESS_TOKEN`, `INSTAGRAM_ACCOUNT_ID`, `FACEBOOK_PAGE_ID` | Instagram- und Facebook-Medien sowie verfügbare Insights |
+| `META_INSTAGRAM_USER_ACCESS_TOKEN`, `META_INSTAGRAM_ACCOUNT_ID`, `META_FACEBOOK_PAGE_ACCESS_TOKEN`, `META_FACEBOOK_PAGE_ID` | Getrennte Instagram- und Facebook-Zugänge für Medien und verfügbare Insights |
 | `TIKTOK_ACCESS_TOKEN` | TikTok-Videoliste und verfügbare Basiskennzahlen |
 
 Optional kann `META_GRAPH_API_VERSION` als GitHub-Variable gesetzt werden; ohne Angabe verwendet der Collector `v24.0`.
 
 Für den nichtöffentlichen Testlauf zum Hochladen kann zusätzlich die GitHub-Variable `UPLOAD_STAGING_FEED_URL` auf den öffentlichen HTTPS-Endpunkt `/staging/feed` zeigen. Alternativ reicht `UPLOAD_STAGING_API_URL` als Basisadresse; die Datensammlung ergänzt den Pfad selbst. Der Abruf sendet bewusst keine Zugangsdaten und übernimmt ausschließlich freigegebene Lauf- und Plattformstatus in `content-operations.json`. Private Objekt-IDs, Container-IDs, Medienadressen, Metadaten und Fehler externer Dienste werden nicht veröffentlicht.
+
+Der Produktionsstatus wird danach über den ebenfalls öffentlichen, minimalen Endpunkt `/publication/feed` überlagert. `META_PUBLICATION_FEED_URL` kann diesen Endpunkt explizit festlegen; ohne die Variable wird er aus `UPLOAD_STAGING_API_URL` beziehungsweise `UPLOAD_STAGING_FEED_URL` abgeleitet. Der Feed enthält nur Content-ID, Plattform, Zeitpunkte, Status und einen begrenzten Fehlercode. Rohfehler, Metadaten, Medienpfade, Container-, Token- und Plattform-IDs bleiben serverseitig. Bestätigte öffentliche Plattformdaten werden zuletzt abgeglichen und haben Vorrang vor Queue- und Staging-Status.
 
 CloudKit muss dafür im CloudKit Dashboard unter **API Access → Server-to-Server Keys** einen P-256-Schlüssel erhalten. Der private Schlüssel gehört nur in `CLOUDKIT_PRIVATE_KEY`; niemals in App, Pages-Build oder Repository.
 
