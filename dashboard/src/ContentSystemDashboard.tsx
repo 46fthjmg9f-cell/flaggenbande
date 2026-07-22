@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import VideoProductionControl from './VideoProductionControl'
 import {
   emptyContentOperations,
   parseContentOperations,
@@ -22,6 +21,7 @@ const runLabels: Record<ProductionRunStatus, string> = {
 }
 
 const platformLabels: Record<PlatformId, string> = { youtube: 'YT', instagram: 'IG', facebook: 'FB', tiktok: 'TT' }
+const corePlatforms: readonly PlatformId[] = ['youtube', 'instagram', 'facebook']
 
 function platformState(status: PublicationStatus): string {
   if (status === 'published') return 'published'
@@ -68,27 +68,29 @@ export default function ContentSystemDashboard() {
 
   return <section id="production-view" className="dashboard-view" role="tabpanel" aria-labelledby="production-tab" tabIndex={0}>
     <header className="compact-page-header">
-      <h1>Produktion</h1>
+      <h1>Videos</h1>
       <button type="button" onClick={() => void refresh()} disabled={refreshing} aria-label="Produktionsdaten aktualisieren">↻</button>
     </header>
     {error && <p className="operator-error">{error}</p>}
-    <VideoProductionControl />
     <section className="recent-production">
       <div className="compact-heading"><h2>Letzte Videos</h2><span>{formatTimestamp(data.generatedAt)}</span></div>
       <div className="recent-production-list">
-        {runs.length > 0 ? runs.map(run => <article className="recent-production-row" key={run.runId}>
+        {runs.length > 0 ? runs.map(run => {
+          const fullyPublished = run.status === 'completed' && corePlatforms.every(platform => run.publications.some(publication => publication.platform === platform && publication.status === 'published'))
+          return <article className="recent-production-row" key={run.runId}>
           <div className="recent-production-main">
             <strong>{run.title ?? 'Video'}</strong>
             <span>{formatTimestamp(run.completedAt ?? run.startedAt)}</span>
           </div>
-          <span className={`status-badge ${run.status}`}>{runLabels[run.status]}</span>
+          <span className={`status-badge ${run.status}`}>{fullyPublished ? 'Veröffentlicht' : runLabels[run.status]}</span>
           <div className="recent-platforms" aria-label="Plattformstatus">
             {(['youtube', 'instagram', 'facebook', 'tiktok'] as const).map(platform => {
               const publication = run.publications.find(entry => entry.platform === platform)
               return <span className={`calendar-platform ${publication ? platformState(publication.status) : 'missing'}`} key={platform}>{platformLabels[platform]}</span>
             })}
           </div>
-        </article>) : <p className="compact-empty">Keine Videos</p>}
+        </article>
+        }) : <p className="compact-empty">Keine Videos</p>}
       </div>
     </section>
   </section>

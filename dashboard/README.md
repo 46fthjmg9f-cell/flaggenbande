@@ -1,15 +1,15 @@
 # Flaggenbande Auswertungsübersicht
 
-Die Übersicht ist ein statisches Vite/React-Frontend für GitHub Pages. Sie trennt die öffentlichen Daten in vier unabhängig benannte Hauptbereiche: **App & Entwicklung**, **Videos**, **Soziale Medien** und **Finanzen**. Die sichtbaren Namen und ihre Reihenfolge liegen zentral in `src/dashboardSections.ts` und können ohne Änderung der Seitenlogik angepasst werden.
+Die Übersicht ist ein statisches Vite/React-Frontend für GitHub Pages. Die Navigation trennt **Neue Produktion**, **Videos**, **Kalender**, **Stats**, **App** und **Finanzen**. Die sichtbaren Namen und ihre Reihenfolge liegen zentral in `src/dashboardSections.ts`.
 
 Die App-, Plattform- und Finanzauswertung liest `public/data/dashboard.json`. Diese Datei enthält nur zusammengefasste Kennzahlen und wird durch GitHub Actions erzeugt; weder API-Schlüssel noch CloudKit-Rohdaten noch Spieleridentitäten werden veröffentlicht.
 
-Der Bereich **Videos** liest zusätzlich den versionierten öffentlichen Vertrag `public/data/content-operations.json`. Er zeigt pro Video den freigegebenen Produktions-, Qualitäts- und Plattformstatus. Die Plattformleistung wird ausschließlich in **Soziale Medien**, Finanzwerte ausschließlich in **Finanzen** dargestellt. Unveröffentlichte Titel, lokale Pfade, Rohdaten und Zugangsdaten dürfen nicht in die öffentlichen Dateien geschrieben werden. Die serverseitige Datensammlung erkennt veröffentlichte Plattformvideos über die autorisierten Konten automatisch; manuelle Videolinks sind nicht erforderlich.
+**Neue Produktion** enthält ausschließlich die sichere Produktionssteuerung. Der Bereich **Videos** liest zusätzlich den versionierten öffentlichen Vertrag `public/data/content-operations.json` und zeigt pro Video den Produktions-, Qualitäts- und Plattformstatus. Die Plattformleistung wird ausschließlich in **Stats**, Finanzwerte ausschließlich in **Finanzen** dargestellt. Unveröffentlichte Titel, lokale Pfade, Rohdaten und Zugangsdaten dürfen nicht in die öffentlichen Dateien geschrieben werden. Die serverseitige Datensammlung gleicht bestätigte öffentliche Plattformvideos mit alten Upload-Testläufen ab; unbestätigte Plattformen bleiben sichtbar und werden ausdrücklich als nicht verfügbar markiert.
 
 ## Lokale Prüfung
 
 ```bash
-cd /Users/praemer/Projects/flaggenbande-content-r010/dashboard
+cd /Users/praemer/Desktop/SpassmitFlaggenapp/dashboard
 npm ci
 npm run check
 npm run build
@@ -42,6 +42,6 @@ CloudKit muss dafür im CloudKit Dashboard unter **API Access → Server-to-Serv
 
 ## Datenschutz
 
-Die Datensammlung fragt aus CloudKit und den Plattform-APIs nur die für Zusammenfassungen notwendigen Felder ab. Sie veröffentlicht weder Namen, Game-Center-IDs, Datensatznamen, Profil-Zwischenstände, Antwortverläufe noch Zugangsdaten. Nicht verfügbare Plattformkennzahlen bleiben `null`, statt als Nullleistung interpretiert zu werden. Die App-Auswertung kann aufgrund Apples Datenschutzschwellen und Berichtsverzögerungen zunächst leer sein; die Übersicht kennzeichnet das, statt Nullwerte zu erfinden.
+Die Datensammlung fragt aus CloudKit und den Plattform-APIs nur die für Zusammenfassungen notwendigen Felder ab. Sie veröffentlicht weder Namen, Game-Center-IDs, Datensatznamen, Profil-Zwischenstände, Antwortverläufe noch Zugangsdaten. Eindeutige CloudKit-Nutzer werden ausschließlich gezählt; ihre Kennungen verlassen den Collector nicht. Nicht verfügbare Plattform- und App-Kennzahlen bleiben `null`, statt als Nullleistung interpretiert zu werden. Die App-Auswertung kann aufgrund Apples Datenschutzschwellen und Berichtsverzögerungen zunächst leer sein; die Übersicht kennzeichnet das ausdrücklich.
 
 Der Abruf läuft stündlich zur Minute 17, folgt den paginierten Analytics-Instanzen und CloudKit-Continuation-Markern, nutzt exponentielle Wiederholungsversuche bei temporären API-Fehlern und schreibt die JSON-Datei atomar. Schlägt ein Abruf fehl, bleibt die letzte sichere Aggregation sichtbar. Bei Bedarf kann er in GitHub Actions manuell gestartet werden.

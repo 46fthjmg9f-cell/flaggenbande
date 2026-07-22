@@ -4,6 +4,7 @@ import {
   fetchStagingFeed,
   mergeStagingFeed,
   normalizeStagingFeed,
+  reconcilePublishedSocial,
   stagingFeedUrl,
 } from '../scripts/collect-content-operations.mjs'
 
@@ -125,6 +126,155 @@ test('planned targets are not counted as completed uploads', () => {
   assert.equal(merged.status, 'partial')
   assert.equal(merged.platforms.find(entry => entry.platform === 'youtube').uploads, 0)
   assert.equal(merged.platforms.find(entry => entry.platform === 'instagram').uploads, 1)
+})
+
+const publicVideo = ({
+  platform,
+  contentId: videoContentId = contentId,
+  description = 'Three flags. Keep your score.\n\n#FlagQuiz',
+  publishedAt = '2026-07-21T13:00:00Z',
+  status = platform === 'youtube' ? 'public' : 'published',
+  title = `${platform} title`,
+  url = {
+    youtube: 'https://www.youtube.com/watch?v=abcdefghijk',
+    instagram: 'https://www.instagram.com/reel/ABC123/',
+    facebook: 'https://www.facebook.com/reel/123456789',
+    tiktok: 'https://www.tiktok.com/@flaggenbande/video/123456789',
+  }[platform],
+} = {}) => ({
+  platform,
+  contentId: videoContentId,
+  description,
+  publishedAt,
+  status,
+  title,
+  url,
+})
+
+const staleOperations = () => {
+  const payload = feed()
+  payload.runs[0].status = 'failed'
+  payload.runs[0].completedAt = null
+  payload.publications[0].status = 'planned'
+  payload.publications[1].status = 'failed'
+  payload.publications[2].status = 'planned'
+  payload.publications[3].status = 'planned'
+  return mergeStagingFeed(previous(), normalizeStagingFeed(payload))
+}
+
+test('direct content IDs reconcile only valid public proofs and refresh counts, titles, and times', () => {
+  const videos = [
+    publicVideo({ platform: 'youtube', title: 'Public YouTube title', publishedAt: '2026-07-21T13:01:00Z' }),
+    publicVideo({ platform: 'instagram', publishedAt: '2026-07-21T13:02:00Z' }),
+    publicVideo({ platform: 'facebook', publishedAt: '2026-07-21T13:03:00Z' }),
+  ]
+  const reconciled = reconcilePublishedSocial(staleOperations(), videos)
+
+  assert.equal(reconciled.runs[0].status, 'completed')
+  assert.equal(reconciled.runs[0].title, 'Public YouTube title')
+  assert.equal(reconciled.runs[0].completedAt, '2026-07-21T13:03:00.000Z')
+  assert.deepEqual(Object.fromEntries(reconciled.publications.map(entry => [entry.platform, entry.status])), {
+    youtube: 'published',
+    instagram: 'published',
+    tiktok: 'not_configured',
+    facebook: 'published',
+  })
+  const youtube = reconciled.publications.find(entry => entry.platform === 'youtube')
+  assert.equal(youtube.title, 'Public YouTube title')
+  assert.equal(youtube.publishedAt, '2026-07-21T13:01:00.000Z')
+  assert.equal(youtube.publicUrl, 'https://www.youtube.com/watch?v=abcdefghijk')
+  assert.equal(reconciled.platforms.find(entry => entry.platform === 'youtube').publications, 1)
+  assert.equal(reconciled.platforms.find(entry => entry.platform === 'youtube').status, 'published')
+  assert.equal(reconciled.platforms.find(entry => entry.platform === 'tiktok').status, 'not_configured')
+})
+
+test('YouTube without a content ID reconciles through one exact normalized Meta description', () => {
+  const videos = [
+    publicVideo({ platform: 'instagram', description: 'Three flags.\nKeep your score. #FlagQuiz' }),
+    publicVideo({ platform: 'facebook', description: 'Three flags. Keep your score. #FlagQuiz' }),
+    publicVideo({ platform: 'youtube', contentId: null, description: '  Three flags.   Keep your score. #FlagQuiz  ' }),
+  ]
+  const reconciled = reconcilePublishedSocial(staleOperations(), videos)
+  assert.equal(reconciled.publications.find(entry => entry.platform === 'youtube').status, 'published')
+  assert.equal(reconciled.runs[0].status, 'completed')
+})
+
+test('ambiguous exact descriptions fail closed for YouTube association', () => {
+  const secondContentId = `flaggenbande-${'b'.repeat(64)}`
+  const secondRunId = 'upload-test-second-video'
+  const payload = feed()
+  payload.runs[0].status = 'partial'
+  payload.runs[0].completedAt = null
+  payload.runs.push({
+    ...payload.runs[0],
+    runId: secondRunId,
+    contentId: secondContentId,
+    startedAt: '2026-07-21T10:00:00Z',
+    completedAt: null,
+    status: 'partial',
+  })
+  payload.publications.push(...payload.publications.map(entry => ({
+    ...entry,
+    runId: secondRunId,
+    contentId: secondContentId,
+  })))
+  const operations = mergeStagingFeed(previous(), normalizeStagingFeed(payload))
+  const description = 'Same exact upload copy'
+  const videos = [
+    publicVideo({ platform: 'instagram', description }),
+    publicVideo({ platform: 'facebook', description }),
+    publicVideo({ platform: 'instagram', contentId: secondContentId, description, url: 'https://www.instagram.com/reel/SECOND/' }),
+    publicVideo({ platform: 'facebook', contentId: secondContentId, description, url: 'https://www.facebook.com/reel/987654321' }),
+    publicVideo({ platform: 'youtube', contentId: null, description }),
+  ]
+  const reconciled = reconcilePublishedSocial(operations, videos)
+  assert.ok(reconciled.publications.filter(entry => entry.platform === 'youtube').every(entry => entry.status !== 'published'))
+  assert.ok(reconciled.runs.every(run => run.status !== 'completed'))
+})
+
+test('duplicate production runs for one content ID are never reconciled by guesswork', () => {
+  const operations = staleOperations()
+  const duplicateRunId = 'upload-test-retry-same-content'
+  operations.runs.push({
+    ...operations.runs[0],
+    runId: duplicateRunId,
+    startedAt: '2026-07-22T12:00:00.000Z',
+    completedAt: null,
+  })
+  operations.publications.push(...operations.publications.map(publication => ({
+    ...publication,
+    runId: duplicateRunId,
+    status: 'planned',
+    updatedAt: '2026-07-22T12:00:00.000Z',
+  })))
+  const videos = ['youtube', 'instagram', 'facebook'].map(platform => publicVideo({ platform }))
+
+  const reconciled = reconcilePublishedSocial(operations, videos)
+
+  assert.ok(reconciled.runs.every(run => run.status !== 'completed'))
+  assert.ok(reconciled.publications.every(publication => publication.status !== 'published'))
+})
+
+test('invalid status, timestamp, and cross-platform URLs never count as publication proof', () => {
+  const videos = [
+    publicVideo({ platform: 'youtube', status: 'private' }),
+    publicVideo({ platform: 'instagram', publishedAt: 'not-a-date' }),
+    publicVideo({ platform: 'facebook', url: 'https://www.instagram.com/reel/WRONG/' }),
+  ]
+  const reconciled = reconcilePublishedSocial(staleOperations(), videos)
+  assert.equal(reconciled.runs[0].status, 'failed')
+  assert.ok(reconciled.publications.every(entry => entry.status !== 'published'))
+  assert.equal(reconciled.publications.find(entry => entry.platform === 'tiktok').status, 'planned')
+})
+
+test('quality approval remains mandatory even when all core platforms are public', () => {
+  const operations = staleOperations()
+  operations.runs[0].qualityStatus = 'failed'
+  const videos = ['youtube', 'instagram', 'facebook'].map(platform => publicVideo({ platform }))
+  const reconciled = reconcilePublishedSocial(operations, videos)
+  assert.equal(reconciled.runs[0].status, 'failed')
+  assert.ok(reconciled.publications.filter(entry => entry.platform !== 'tiktok').every(entry => entry.status === 'published'))
+  assert.equal(reconciled.publications.find(entry => entry.platform === 'tiktok').status, 'planned')
 })
 
 test('collector uses a public HTTPS feed without authorization headers', async () => {

@@ -139,12 +139,24 @@
 .platform-comparison-filter .platform-filter-chip.facebook.active { border-color: #75c7ff; background: rgba(117, 199, 255, .14); }
 .platform-comparison-filter .platform-filter-chip.tiktok.active { border-color: #62e6cf; background: rgba(98, 230, 207, .13); }
 .platform-comparison-filter small { margin-left: auto; color: #607b99; font-size: .68rem; }
+.social-platform-data-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin-top: 8px; }
+.social-platform-data-state { min-width: 0; padding: 8px 10px; border: 1px solid #253c58; border-radius: 9px; background: rgba(7, 17, 31, .62); }
+.social-platform-data-state-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .65rem; }
+.social-platform-data-state-heading strong { color: #d8e5f2; }
+.social-platform-data-state-heading > span { color: #829ab5; font-weight: 750; }
+.social-platform-data-state.available .social-platform-data-state-heading > span { color: #62e6a6; }
+.social-platform-data-state.partial .social-platform-data-state-heading > span { color: #f2c94c; }
+.social-platform-data-state.error .social-platform-data-state-heading > span { color: #ff7181; }
+.social-platform-data-state small { display: block; margin-top: 4px; overflow: hidden; color: #607b99; font-size: .58rem; text-overflow: ellipsis; white-space: nowrap; }
 .social-video-card { cursor: pointer; transition: border-color .15s ease, background .15s ease; }
 .social-video-card:hover { border-color: #3f6082; background: #0d2035; }
 .social-video-title-button { display: grid; gap: 4px; min-width: 0; max-width: 760px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .social-video-title { color: #edf5ff; font-size: 1rem; font-weight: 800; letter-spacing: -.015em; }
 .social-video-open-label { margin-top: 3px; color: #75c7ff; font-size: .67rem; font-weight: 700; }
 .platform-pill.unavailable { opacity: .46; cursor: default; filter: saturate(.5); }
+.video-platform-links { display: flex; align-items: flex-start; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.platform-content-slot { display: grid; justify-items: center; gap: 3px; }
+.platform-content-slot small { max-width: 92px; color: #607b99; font-size: .52rem; line-height: 1.15; text-align: center; }
 
 .social-video-dialog { width: min(1180px, calc(100vw - 32px)); max-height: calc(100vh - 40px); margin: auto; padding: 0; overflow: auto; border: 1px solid #34516f; border-radius: 17px; background: #091728; color: #edf5ff; box-shadow: 0 24px 90px rgba(0, 0, 0, .55); }
 .social-video-dialog::backdrop { background: rgba(2, 8, 15, .82); backdrop-filter: blur(5px); }
@@ -156,6 +168,10 @@
 .dialog-close:hover { border-color: #75c7ff; }
 .platform-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(310px, 100%), 1fr)); gap: 12px; margin-top: 18px; }
 .platform-detail-card { min-width: 0; padding: 16px; border: 1px solid #263d58; border-radius: 13px; background: #0b1c30; }
+.platform-detail-card.missing { display: grid; align-content: start; min-height: 170px; border-style: dashed; background: rgba(11, 28, 48, .52); }
+.platform-detail-missing { display: grid; align-content: center; gap: 6px; min-height: 105px; color: #829ab5; text-align: center; }
+.platform-detail-missing strong { color: #b9cce0; font-size: .8rem; }
+.platform-detail-missing span { font-size: .66rem; line-height: 1.45; }
 .platform-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .platform-detail-heading a { color: #75c7ff; font-size: .7rem; font-weight: 750; text-decoration: none; }
 .external-link-unavailable { color: #607b99; font-size: .68rem; }
@@ -183,6 +199,7 @@
 
 @media (max-width: 1050px) {
   .social-kpis-focused { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .social-platform-data-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
@@ -194,6 +211,7 @@
   .social-heading { align-items: flex-start; }
   .social-export { width: 100%; margin-top: 14px; }
   .platform-comparison-filter small { width: 100%; margin: 4px 0 0; }
+  .social-platform-data-status { grid-template-columns: 1fr; }
   .social-video-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); border-radius: 12px; }
   .social-video-dialog-content { padding: 15px; }
   .platform-detail-grid, .platform-detail-meta, .platform-metric-grid { grid-template-columns: 1fr; }

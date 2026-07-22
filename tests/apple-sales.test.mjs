@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canonicalSales, summarizeSales } from '../scripts/collect-dashboard-data.mjs'
+import { canonicalAnalytics, canonicalSales, summarizeSales, uniqueCloudKitUserCount } from '../scripts/collect-dashboard-data.mjs'
 
 const sale = (overrides = {}) => ({
   'End Date': '2026-07-20',
@@ -78,4 +78,25 @@ test('completed-bundle credits are not mislabeled as refunds', () => {
   ])
 
   assert.equal(credit.refunds, 0)
+})
+
+test('Apple Analytics generic Counts are classified by report and never turn missing metrics into zero', () => {
+  const rows = canonicalAnalytics([
+    { __reportName: 'App Sessions Standard', Date: '2026-07-20', Sessions: '8', 'Unique Devices': '5', Territory: 'DE' },
+    { __reportName: 'App Store Downloads Standard', Date: '2026-07-20', Counts: '3', 'Download Type': 'First-time Download', Territory: 'DE' },
+    { __reportName: 'App Store Installations and Deletions Standard', Date: '2026-07-20', Counts: '2', Event: 'Delete', Territory: 'DE' },
+  ])
+
+  assert.deepEqual(rows[0], { date: '2026-07-20', country: 'DE', device: undefined, osVersion: undefined, appVersion: undefined, sessions: 8, activeDevices: 5 })
+  assert.equal(rows[1].downloads, 3)
+  assert.equal(rows[1].firstTimeDownloads, 3)
+  assert.equal('sessions' in rows[1], false)
+  assert.equal(rows[2].deletions, 2)
+  assert.equal('downloads' in rows[2], false)
+})
+
+test('CloudKit user counts stay unavailable when records contain no stable user ID', () => {
+  const record = userId => ({ fields: userId === undefined ? {} : { userId: { value: userId } } })
+  assert.equal(uniqueCloudKitUserCount([record(), record('')]), null)
+  assert.equal(uniqueCloudKitUserCount([record('device-a'), record('device-a'), record('device-b')]), 2)
 })

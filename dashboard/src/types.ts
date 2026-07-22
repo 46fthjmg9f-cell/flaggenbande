@@ -149,7 +149,12 @@ export interface DashboardData {
     players?: number
     profilesUpdatedToday?: number
     totalAttempts?: number
+    completedAttempts?: number
     averageScore?: Numeric
+    averageDuration?: Numeric
+    uniqueUsers?: number | null
+    uniqueUsersLatestDay?: number | null
+    identifiedUserCoverage?: Numeric
   }
   social: SocialData
 }

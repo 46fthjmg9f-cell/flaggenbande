@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const outputUrl = new URL('../dashboard/public/data/content-operations.json', import.meta.url)
+const dashboardDataUrl = new URL('../dashboard/public/data/dashboard.json', import.meta.url)
 const platforms = ['youtube', 'instagram', 'tiktok', 'facebook']
 const platformSet = new Set(platforms)
 const qualityStatuses = new Set(['not_run', 'passed', 'failed'])
@@ -25,6 +26,8 @@ const platformForFinalStatus = {
 const stagingMessagePrefix = 'Nichtöffentlicher Testlauf zum Hochladen:'
 const legacyStagingMessagePrefix = 'Nichtöffentlicher Upload-Testlauf:'
 const identifierPattern = /^[a-z0-9][a-z0-9._-]{2,199}$/i
+const publishedSocialStatuses = new Set(['public', 'published'])
+const corePlatforms = ['youtube', 'instagram', 'facebook']
 
 const isRecord = value => typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -248,6 +251,213 @@ const contentDataStatus = runs => {
   return runs.length > 0 && runs.every(run => run.status === 'completed') ? 'ok' : 'partial'
 }
 
+const normalizeDescription = value => typeof value === 'string'
+  ? value.normalize('NFKC').replace(/\s+/gu, ' ').trim()
+  : ''
+
+const validPublicUrl = (value, platform) => {
+  if (typeof value !== 'string' || !value.trim()) return null
+  let url
+  try {
+    url = new URL(value)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) return null
+  const hostname = url.hostname.toLowerCase()
+  const pathname = url.pathname.toLowerCase()
+  const valid = platform === 'youtube'
+    ? ['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(hostname)
+      && (pathname === '/watch' || pathname.startsWith('/shorts/'))
+    : platform === 'instagram'
+      ? ['instagram.com', 'www.instagram.com'].includes(hostname)
+        && (pathname.startsWith('/reel/') || pathname.startsWith('/p/'))
+      : platform === 'facebook'
+        ? (hostname === 'facebook.com' || hostname.endsWith('.facebook.com'))
+          && (pathname.startsWith('/reel/') || pathname.startsWith('/watch'))
+        : platform === 'tiktok'
+          ? (hostname === 'tiktok.com' || hostname.endsWith('.tiktok.com')) && pathname.includes('/video/')
+          : false
+  if (!valid) return null
+  url.hash = ''
+  return url.toString()
+}
+
+const publishedSocialProof = value => {
+  if (!isRecord(value)) return null
+  const platform = typeof value.platform === 'string' ? value.platform.trim().toLowerCase() : ''
+  if (!platformSet.has(platform)) return null
+  const status = typeof value.status === 'string' ? value.status.trim().toLowerCase() : ''
+  if (!publishedSocialStatuses.has(status)) return null
+  const publicUrl = validPublicUrl(value.url, platform)
+  if (publicUrl === null || typeof value.publishedAt !== 'string') return null
+  const timestamp = new Date(value.publishedAt)
+  if (Number.isNaN(timestamp.valueOf())) return null
+  const title = typeof value.title === 'string' && value.title.trim()
+    ? value.title.trim().slice(0, 240)
+    : null
+  const description = normalizeDescription(value.description)
+  const contentId = typeof value.contentId === 'string' && identifierPattern.test(value.contentId.trim())
+    ? value.contentId.trim()
+    : null
+  return {
+    platform,
+    status: 'published',
+    contentId,
+    title,
+    description,
+    publishedAt: timestamp.toISOString(),
+    publicUrl,
+  }
+}
+
+const uniqueEntries = values => values.length === 1 ? values[0] : null
+
+/**
+ * Reconciles stale, non-public upload receipts with authoritative public platform
+ * inventory. Every promotion is fail-closed: a valid platform URL, publication
+ * time and unambiguous content association are all required.
+ */
+export function reconcilePublishedSocial(contentOperations, socialVideos) {
+  const base = requiredRecord(contentOperations, 'content-operations')
+  if (base.schemaVersion !== 1 || !Array.isArray(socialVideos)) return base
+  const runs = requiredArray(base.runs, 'content-operations.runs', 100)
+  const publications = requiredArray(base.publications, 'content-operations.publications', 400)
+  const runIdsByContentId = new Map()
+  for (const run of runs) {
+    const runIds = runIdsByContentId.get(run.contentId) ?? new Set()
+    runIds.add(run.runId)
+    runIdsByContentId.set(run.contentId, runIds)
+  }
+  // A platform proof identifies content, not one specific production attempt.
+  // If several runs share the content ID, applying the proof would be a guess.
+  const unambiguousContentIds = new Set([...runIdsByContentId.entries()]
+    .filter(([, runIds]) => runIds.size === 1)
+    .map(([contentId]) => contentId))
+  const proofs = socialVideos.map(publishedSocialProof).filter(Boolean)
+
+  const metaIdsByDescription = new Map()
+  for (const proof of proofs) {
+    if (!['instagram', 'facebook'].includes(proof.platform) || proof.contentId === null || !unambiguousContentIds.has(proof.contentId) || !proof.description) continue
+    const ids = metaIdsByDescription.get(proof.description) ?? new Set()
+    ids.add(proof.contentId)
+    metaIdsByDescription.set(proof.description, ids)
+  }
+
+  const associatedProofs = proofs.flatMap(proof => {
+    if (proof.contentId !== null && unambiguousContentIds.has(proof.contentId)) return [{ ...proof, associatedContentId: proof.contentId }]
+    if (proof.platform !== 'youtube' || !proof.description) return []
+    const matchingIds = metaIdsByDescription.get(proof.description)
+    if (!matchingIds || matchingIds.size !== 1) return []
+    return [{ ...proof, associatedContentId: [...matchingIds][0] }]
+  })
+  if (associatedProofs.length === 0) return base
+
+  const proofsByContentAndPlatform = new Map()
+  for (const proof of associatedProofs) {
+    const key = `${proof.associatedContentId}:${proof.platform}`
+    const matching = proofsByContentAndPlatform.get(key) ?? []
+    matching.push(proof)
+    proofsByContentAndPlatform.set(key, matching)
+  }
+  const proofFor = (contentId, platform) => uniqueEntries(proofsByContentAndPlatform.get(`${contentId}:${platform}`) ?? [])
+
+  const reconciledPublications = publications.map(publication => {
+    const proof = proofFor(publication.contentId, publication.platform)
+    if (proof === null) return publication
+    return {
+      ...publication,
+      status: 'published',
+      updatedAt: proof.publishedAt,
+      title: proof.title,
+      scheduledAt: null,
+      publishedAt: proof.publishedAt,
+      publicUrl: proof.publicUrl,
+    }
+  })
+
+  const publicationsByRun = new Map()
+  for (const publication of reconciledPublications) {
+    const entries = publicationsByRun.get(publication.runId) ?? []
+    entries.push(publication)
+    publicationsByRun.set(publication.runId, entries)
+  }
+
+  const reconciledRuns = runs.map(run => {
+    const entries = publicationsByRun.get(run.runId) ?? []
+    const core = corePlatforms.map(platform => entries.find(entry => entry.platform === platform))
+    const corePublished = core.every(entry => entry?.status === 'published')
+    if (!corePublished || run.qualityStatus !== 'passed') return run
+    const completedAt = core.map(entry => entry.publishedAt).filter(Boolean).sort().at(-1)
+    const preferredTitle = ['youtube', 'instagram', 'facebook']
+      .map(platform => entries.find(entry => entry.platform === platform)?.title)
+      .find(Boolean) ?? run.title
+    return {
+      ...run,
+      title: preferredTitle,
+      status: 'completed',
+      completedAt: completedAt ?? run.completedAt,
+    }
+  })
+
+  const completedRunIds = new Set(reconciledRuns.filter(run => run.status === 'completed').map(run => run.runId))
+  const finalPublications = reconciledPublications.map(publication => publication.platform === 'tiktok'
+    && publication.status === 'planned'
+    && completedRunIds.has(publication.runId)
+    ? {
+        ...publication,
+        status: 'not_configured',
+        scheduledAt: null,
+        publishedAt: null,
+        publicUrl: null,
+      }
+    : publication)
+
+  const platformSummaries = platforms.map(platform => {
+    const prior = base.platforms.find(entry => entry.platform === platform)
+    if (!prior) return null
+    const matching = finalPublications.filter(entry => entry.platform === platform)
+    const published = matching.filter(entry => entry.status === 'published')
+    const latest = [...matching].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]
+    if (published.length > 0) {
+      const latestPublished = [...published].sort((left, right) => right.publishedAt.localeCompare(left.publishedAt))[0]
+      return {
+        ...prior,
+        status: 'published',
+        uploads: matching.filter(entry => confirmedUploadStatus(entry.status) || entry.status === 'published').length,
+        publications: published.length,
+        reason: `${published.length} öffentliche ${published.length === 1 ? 'Veröffentlichung' : 'Veröffentlichungen'} bestätigt.`,
+        updatedAt: latestPublished.publishedAt,
+      }
+    }
+    if (platform === 'tiktok' && matching.some(entry => entry.status === 'not_configured')) {
+      return {
+        ...prior,
+        status: 'not_configured',
+        uploads: matching.filter(entry => confirmedUploadStatus(entry.status)).length,
+        publications: 0,
+        reason: 'Keine öffentliche TikTok-Veröffentlichung nachgewiesen.',
+        updatedAt: latest?.updatedAt ?? prior.updatedAt,
+      }
+    }
+    return prior
+  }).filter(Boolean)
+
+  const confirmedCount = finalPublications.filter(entry => entry.status === 'published').length
+  const messages = requiredArray(base.messages, 'content-operations.messages', 100)
+    .filter(message => typeof message === 'string' && !message.startsWith(stagingMessagePrefix) && !message.startsWith(legacyStagingMessagePrefix))
+  if (confirmedCount > 0) messages.push(`${confirmedCount} öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.`)
+
+  return {
+    ...base,
+    status: contentDataStatus(reconciledRuns),
+    messages,
+    platforms: platformSummaries,
+    runs: reconciledRuns,
+    publications: finalPublications,
+  }
+}
+
 export function mergeStagingFeed(previous, staging) {
   const base = requiredRecord(previous, 'content-operations')
   if (base.schemaVersion !== 1) throw new Error('Unbekannte Content-Operations-Schemaversion.')
@@ -316,6 +526,19 @@ export async function fetchStagingFeed(url, fetchImpl = fetch) {
 
 const loadPrevious = async () => JSON.parse(await readFile(outputUrl, 'utf8'))
 
+const loadSocialVideos = async () => {
+  try {
+    const text = await readFile(dashboardDataUrl, 'utf8')
+    if (text.length > 10_000_000) return []
+    const dashboard = JSON.parse(text)
+    return isRecord(dashboard) && isRecord(dashboard.social) && Array.isArray(dashboard.social.videos)
+      ? dashboard.social.videos.slice(0, 2_000)
+      : []
+  } catch {
+    return []
+  }
+}
+
 const writeAtomically = async payload => {
   const temporaryUrl = new URL(`./content-operations-${process.pid}-${Date.now()}.json`, outputUrl)
   await writeFile(temporaryUrl, `${JSON.stringify(payload, null, 2)}\n`)
@@ -327,7 +550,8 @@ export async function collectContentOperations({ env = process.env, fetchImpl = 
   if (url === null) return { updated: false, reason: 'not_configured' }
   const previous = await loadPrevious()
   const staging = await fetchStagingFeed(url, fetchImpl)
-  const payload = mergeStagingFeed(previous, staging)
+  const merged = mergeStagingFeed(previous, staging)
+  const payload = reconcilePublishedSocial(merged, await loadSocialVideos())
   await writeAtomically(payload)
   return { updated: true, payload }
 }
