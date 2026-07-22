@@ -64,6 +64,41 @@ test('public production feed exposes only safe queue state and categorized failu
   assert.doesNotMatch(feed, /jobId\s*:/)
 })
 
+test('Meta credentials keep Facebook and Instagram token types separate and fail closed', async () => {
+  const source = await readFile(workerUrl, 'utf8')
+  const credentialsStart = source.indexOf('const instagramTokenFor =')
+  const credentialsEnd = source.indexOf('const graph =', credentialsStart)
+  assert.ok(credentialsStart >= 0 && credentialsEnd > credentialsStart)
+  const credentials = source.slice(credentialsStart, credentialsEnd)
+  assert.match(credentials, /META_INSTAGRAM_USER_ACCESS_TOKEN/)
+  assert.match(credentials, /env\.META_FACEBOOK_PAGE_ACCESS_TOKEN\?\.trim\(\)/)
+  assert.doesNotMatch(credentials, /pageTokenFor|fields:\s*"access_token"/)
+  assert.match(credentials, /code === 190/)
+  assert.match(credentials, /code >= 200 && code <= 299/)
+
+  const queueStart = source.indexOf('const processJob =')
+  const queueEnd = source.indexOf('const stagingAuthError =', queueStart)
+  const queue = source.slice(queueStart, queueEnd)
+  assert.match(queue, /error instanceof MetaApiError/)
+  assert.match(queue, /metaCredentialStatus\(payload\.platform, env\)/)
+
+  const readyStart = source.indexOf('if (request.method === "GET" && url.pathname === "/ready")')
+  const readyEnd = source.indexOf('if (request.method === "POST" && url.pathname === "/analytics\/refresh-meta")', readyStart)
+  const ready = source.slice(readyStart, readyEnd)
+  assert.match(ready, /credentials_invalid/)
+  assert.match(ready, /metaCredentialStatus\("instagram", env\)/)
+  assert.match(ready, /metaCredentialStatus\("facebook", env\)/)
+})
+
+test('successful state transitions can explicitly clear an earlier provider error', async () => {
+  const source = await readFile(workerUrl, 'utf8')
+  const start = source.indexOf('const setState =')
+  const end = source.indexOf('const facebookReelUrl =', start)
+  const setState = source.slice(start, end)
+  assert.match(setState, /Object\.prototype\.hasOwnProperty\.call\(changes, key\)/)
+  assert.doesNotMatch(setState, /changes\.last_error \?\? job\.last_error/)
+})
+
 test('protected staging receipts expose an authoritative confirmation timestamp', async () => {
   const source = await readFile(workerUrl, 'utf8')
   const start = source.indexOf('const stagingTargetResponse =')

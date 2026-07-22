@@ -25,7 +25,12 @@ export interface Env {
   /** Only this temporary Cloudflare Pages project may serve staging media. */
   UPLOAD_STAGING_MEDIA_PROJECT?: string;
   ANALYTICS_INGEST_TOKEN?: string;
-  META_ACCESS_TOKEN: string;
+  /** Preferred Instagram Login token. Never reuse a Facebook Page token here. */
+  META_INSTAGRAM_USER_ACCESS_TOKEN?: string;
+  /** Transitional alias used by older deployments. */
+  META_INSTAGRAM_ACCESS_TOKEN?: string;
+  /** Deprecated transitional alias; retained only for zero-downtime migration. */
+  META_ACCESS_TOKEN?: string;
   META_INSTAGRAM_ACCOUNT_ID: string;
   META_FACEBOOK_PAGE_ACCESS_TOKEN: string;
   META_FACEBOOK_PAGE_ID: string;
@@ -47,6 +52,18 @@ type PublicationFailureCode =
   | "processing_timeout"
   | "platform_rejected"
   | "unknown";
+
+class MetaApiError extends Error {
+  readonly failureCode: PublicationFailureCode;
+  readonly retryable: boolean;
+
+  constructor(message: string, failureCode: PublicationFailureCode, retryable: boolean) {
+    super(message);
+    this.name = "MetaApiError";
+    this.failureCode = failureCode;
+    this.retryable = retryable;
+  }
+}
 type StagingPlatform = "youtube" | "instagram" | "facebook" | "tiktok";
 type StagingMode = "private" | "container_unpublished" | "draft" | "manual_uploaded";
 type StagingTransport = "planned" | "uploading" | "processing" | "ready" | "failed" | "expired" | "reconcile_required";
@@ -595,32 +612,60 @@ const graphBase = (platform: Platform): string => platform === "instagram" ? "ht
 const accountFor = (platform: Platform, env: Env): string => platform === "instagram" ? env.META_INSTAGRAM_ACCOUNT_ID : env.META_FACEBOOK_PAGE_ID;
 const graphUrl = (platform: Platform, env: Env, path: string): string => `${graphBase(platform)}/${graphVersion(env)}/${path.replace(/^\//, "")}`;
 
-/** Meta accepts a user token locally, but the Page Reels edge requires the
- * short-lived Page token derived from it. Resolve it per Worker invocation and
- * never persist or expose it. */
-const pageTokenFor = async (env: Env): Promise<string> => {
-  const parameters = new URLSearchParams({ fields: "access_token", access_token: env.META_FACEBOOK_PAGE_ACCESS_TOKEN });
-  const response = await fetch(`${graphUrl("facebook", env, accountFor("facebook", env))}?${parameters.toString()}`);
-  const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok || typeof body.access_token !== "string" || !body.access_token) {
-    throw new Error("Facebook konnte keinen berechtigten Page-Token ableiten.");
+const instagramTokenFor = (env: Env): string | null =>
+  env.META_INSTAGRAM_USER_ACCESS_TOKEN?.trim()
+  || env.META_INSTAGRAM_ACCESS_TOKEN?.trim()
+  || env.META_ACCESS_TOKEN?.trim()
+  || null;
+
+/** The Facebook secret is already a Page Access Token. Passing it back through
+ * the user-token exchange endpoint invalidates an otherwise usable credential. */
+const tokenFor = (platform: Platform, env: Env): string => {
+  const token = platform === "instagram" ? instagramTokenFor(env) : env.META_FACEBOOK_PAGE_ACCESS_TOKEN?.trim();
+  if (!token) {
+    throw new MetaApiError(
+      `${platform === "instagram" ? "Instagram" : "Facebook"}-Zugangstoken fehlt.`,
+      "authentication_failed",
+      false,
+    );
   }
-  return body.access_token;
+  return token;
 };
 
-const tokenFor = async (platform: Platform, env: Env): Promise<string> =>
-  platform === "instagram" ? env.META_ACCESS_TOKEN : pageTokenFor(env);
+const metaApiError = (body: Record<string, unknown>, httpStatus: number): MetaApiError => {
+  const provider = typeof body.error === "object" && body.error !== null
+    ? body.error as Record<string, unknown>
+    : {};
+  const code = typeof provider.code === "number" ? provider.code : null;
+  const rawMessage = typeof provider.message === "string" ? provider.message.toLowerCase() : "";
+  const retryable = provider.is_transient === true || httpStatus === 429 || httpStatus >= 500
+    || (code !== null && [4, 17, 32, 613].includes(code));
+  if (rawMessage.includes("api access blocked")) {
+    return new MetaApiError("Meta hat den API-Zugriff fuer dieses Entwicklerkonto blockiert.", "api_access_blocked", false);
+  }
+  if (code === 190) {
+    return new MetaApiError("Meta-Zugangstoken ist ungueltig oder abgelaufen (Code 190).", "authentication_failed", false);
+  }
+  if (code !== null && code >= 200 && code <= 299) {
+    return new MetaApiError(`Meta-Berechtigung fehlt oder wurde entzogen (Code ${code}).`, "permission_denied", false);
+  }
+  if (retryable) {
+    return new MetaApiError("Meta ist voruebergehend nicht erreichbar oder hat das Ratenlimit erreicht.", "rate_limited", true);
+  }
+  return new MetaApiError(
+    `Meta hat die Anfrage abgelehnt${code === null ? ` (HTTP ${httpStatus})` : ` (Code ${code})`}.`,
+    "platform_rejected",
+    false,
+  );
+};
 
 const graphForPlatform = async (platform: Platform, env: Env, path: string, values: Record<string, string>, method: "GET" | "POST" = "POST"): Promise<Record<string, unknown>> => {
-  const params = new URLSearchParams({ ...values, access_token: await tokenFor(platform, env) });
+  const params = new URLSearchParams({ ...values, access_token: tokenFor(platform, env) });
   const response = method === "GET"
     ? await fetch(`${graphUrl(platform, env, path)}?${params.toString()}`)
     : await fetch(graphUrl(platform, env, path), { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: params });
   const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (!response.ok) {
-    const error = typeof body.error === "object" && body.error ? JSON.stringify(body.error) : `HTTP ${response.status}`;
-    throw new Error(`Meta API: ${error}`);
-  }
+  if (!response.ok) throw metaApiError(body, response.status);
   return body;
 };
 
@@ -630,12 +675,14 @@ const graph = async (job: Job, env: Env, path: string, values: Record<string, st
 const metadata = (job: Job): Metadata => JSON.parse(job.metadata_json) as Metadata;
 
 const setState = async (env: Env, job: Job, state: JobStatus, changes: Partial<Job> & { readonly publishedAt?: string } = {}): Promise<void> => {
+  const changed = <K extends keyof Job>(key: K, fallback: Job[K]): Job[K] =>
+    Object.prototype.hasOwnProperty.call(changes, key) ? changes[key] as Job[K] : fallback;
   await env.DB.prepare(`UPDATE meta_publication_jobs
       SET status = ?, attempt_count = ?, platform_video_id = ?, publication_url = ?, container_id = ?, last_error = ?, updated_at = ?, published_at = ?
       WHERE job_id = ?`)
-    .bind(state, changes.attempt_count ?? job.attempt_count, changes.platform_video_id ?? job.platform_video_id,
-      changes.publication_url ?? job.publication_url, changes.container_id ?? job.container_id,
-      changes.last_error ?? job.last_error, now(), changes.publishedAt ?? (state === "published" ? now() : null), job.job_id).run();
+    .bind(state, changed("attempt_count", job.attempt_count), changed("platform_video_id", job.platform_video_id),
+      changed("publication_url", job.publication_url), changed("container_id", job.container_id),
+      changed("last_error", job.last_error), now(), changes.publishedAt ?? (state === "published" ? now() : null), job.job_id).run();
 };
 
 const facebookReelUrl = (id: string): string => `https://www.facebook.com/reel/${encodeURIComponent(id)}`;
@@ -716,7 +763,7 @@ const publishFacebook = async (job: Job, env: Env): Promise<void> => {
   const size = media.headers.get("content-length");
   const uploaded = await fetch(uploadUrl, {
     method: "POST",
-    headers: { Authorization: `OAuth ${await tokenFor("facebook", env)}`, offset: "0", file_size: size || "0", "content-type": "application/octet-stream" },
+    headers: { Authorization: `OAuth ${tokenFor("facebook", env)}`, offset: "0", file_size: size || "0", "content-type": "application/octet-stream" },
     body: media.body,
   });
   if (!uploaded.ok) throw new Error(`Facebook-Medienupload fehlgeschlagen (HTTP ${uploaded.status}).`);
@@ -926,7 +973,7 @@ const stageFacebookDraft = async (env: Env, run: StagingRunPayload): Promise<voi
     const uploaded = await fetch(uploadUrl, {
       method: "POST",
       headers: {
-        Authorization: `OAuth ${await tokenFor("facebook", env)}`,
+        Authorization: `OAuth ${tokenFor("facebook", env)}`,
         offset: "0",
         file_size: media.headers.get("content-length") || "0",
         "content-type": "application/octet-stream",
@@ -1070,8 +1117,12 @@ const processJob = async (job: Job, env: Env): Promise<void> => {
     else await publishFacebook(job, env);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unbekannter Cloud-Veröffentlichungsfehler.";
-    const retryable = job.attempt_count < 4;
-    await setState(env, job, retryable ? "scheduled" : "failed", { attempt_count: job.attempt_count + 1, last_error: message });
+    const canRetry = !(error instanceof MetaApiError) || error.retryable;
+    const retryable = canRetry && job.attempt_count < 4;
+    await setState(env, job, retryable ? "scheduled" : "failed", {
+      attempt_count: job.attempt_count + 1,
+      last_error: message,
+    });
     await event(env, job.job_id, "error", retryable ? `Wird erneut versucht: ${message}` : message);
   }
 };
@@ -1085,6 +1136,37 @@ const processDue = async (env: Env): Promise<void> => {
 
 const authorized = (request: Request, env: Env): boolean => request.headers.get("authorization") === `Bearer ${env.META_QUEUE_TOKEN}`;
 
+interface MetaCredentialStatus {
+  readonly status: "ready" | "invalid";
+  readonly failureCode: PublicationFailureCode | null;
+  readonly reason: string | null;
+}
+
+const verifyMetaCredential = async (platform: Platform, env: Env): Promise<void> => {
+  const expectedId = accountFor(platform, env);
+  if (!expectedId) {
+    throw new MetaApiError(`${platform === "instagram" ? "Instagram" : "Facebook"}-Konto-ID fehlt.`, "authentication_failed", false);
+  }
+  const account = await graphForPlatform(platform, env, expectedId, {
+    fields: platform === "instagram" ? "id,username" : "id,name",
+  }, "GET");
+  if (String(account.id ?? "") !== expectedId) {
+    throw new MetaApiError("Meta-Token und konfigurierte Konto-ID gehoeren nicht zusammen.", "authentication_failed", false);
+  }
+};
+
+const metaCredentialStatus = async (platform: Platform, env: Env): Promise<MetaCredentialStatus> => {
+  try {
+    await verifyMetaCredential(platform, env);
+    return { status: "ready", failureCode: null, reason: null };
+  } catch (error) {
+    if (error instanceof MetaApiError) {
+      return { status: "invalid", failureCode: error.failureCode, reason: error.message };
+    }
+    return { status: "invalid", failureCode: "unknown", reason: "Meta-Zugang konnte nicht verifiziert werden." };
+  }
+};
+
 const enqueue = async (request: Request, env: Env): Promise<Response> => {
   // Do not accept media unless the Worker can delete the temporary Pages
   // deployment afterwards. This is an explicit cost/storage guardrail, not a
@@ -1094,6 +1176,15 @@ const enqueue = async (request: Request, env: Env): Promise<Response> => {
   }
   const payload = await request.json().catch(() => null);
   if (!validPayload(payload)) return json({ error: "Ungültiger Queue-Auftrag." }, 400);
+  const credential = await metaCredentialStatus(payload.platform, env);
+  if (credential.status !== "ready") {
+    return json({
+      error: "Meta-Zugang ist nicht veröffentlichungsbereit.",
+      platform: payload.platform,
+      failureCode: credential.failureCode,
+      reason: credential.reason,
+    }, 503);
+  }
   const createdAt = now();
   await env.DB.prepare(`INSERT INTO meta_publication_jobs (
     job_id, source_video_id, platform, publish_at, status, metadata_json, media_url, media_project, media_branch,
@@ -1237,7 +1328,7 @@ const insertStagingRun = async (
 };
 
 const metaStagingConfiguration = (env: Env): string[] => [
-  ["META_ACCESS_TOKEN", env.META_ACCESS_TOKEN],
+  ["META_INSTAGRAM_USER_ACCESS_TOKEN", instagramTokenFor(env)],
   ["META_INSTAGRAM_ACCOUNT_ID", env.META_INSTAGRAM_ACCOUNT_ID],
   ["META_FACEBOOK_PAGE_ACCESS_TOKEN", env.META_FACEBOOK_PAGE_ACCESS_TOKEN],
   ["META_FACEBOOK_PAGE_ID", env.META_FACEBOOK_PAGE_ID],
@@ -1488,8 +1579,8 @@ const stagingFeed = async (env: Env): Promise<Response> => {
 
 const publicationFailureCode = (error: string | null): PublicationFailureCode => {
   const value = (error ?? "").normalize("NFKC").toLowerCase();
-  if (value.includes("api access blocked")) return "api_access_blocked";
-  if (/page-token|access[_ -]?token|oauth|token.*(invalid|expired)|invalid.*token/.test(value)) return "authentication_failed";
+  if (value.includes("api access blocked") || (value.includes("api-zugriff") && value.includes("blockiert"))) return "api_access_blocked";
+  if (/page-token|access[_ -]?token|oauth|token.*(invalid|expired|ungueltig|abgelaufen)|invalid.*token/.test(value)) return "authentication_failed";
   if (/permission|berechtigung|not authorized|not authorised|code[\"': ]+200/.test(value)) return "permission_denied";
   if (/rate.?limit|quota|too many requests|code[\"': ]+(4|17|32|613)\b/.test(value)) return "rate_limited";
   if (/media|video.*(download|fetch|unavailable)|source url|mp4/.test(value)) return "media_unavailable";
@@ -1713,7 +1804,7 @@ const analyticsGraph = async (
   path: string,
   parameters: Record<string, string>,
 ): Promise<Record<string, unknown>> => {
-  const query = new URLSearchParams({ ...parameters, access_token: await tokenFor(platform, env) });
+  const query = new URLSearchParams({ ...parameters, access_token: tokenFor(platform, env) });
   const response = await fetch(`${graphUrl(platform, env, path)}?${query.toString()}`);
   if (!response.ok) throw new Error(`${platform} Analytics HTTP ${response.status}`);
   return response.json() as Promise<Record<string, unknown>>;
@@ -1966,14 +2057,23 @@ export default {
     if (!authorized(request, env)) return json({ error: "Nicht autorisiert." }, 401);
     if (request.method === "GET" && url.pathname === "/ready") {
       const missing = [
-        ["META_ACCESS_TOKEN", env.META_ACCESS_TOKEN],
+        ["META_INSTAGRAM_USER_ACCESS_TOKEN", instagramTokenFor(env)],
         ["META_INSTAGRAM_ACCOUNT_ID", env.META_INSTAGRAM_ACCOUNT_ID],
         ["META_FACEBOOK_PAGE_ACCESS_TOKEN", env.META_FACEBOOK_PAGE_ACCESS_TOKEN],
         ["META_FACEBOOK_PAGE_ID", env.META_FACEBOOK_PAGE_ID],
         ["CLOUDFLARE_API_TOKEN", env.CLOUDFLARE_API_TOKEN],
         ["CLOUDFLARE_ACCOUNT_ID", env.CLOUDFLARE_ACCOUNT_ID],
       ].filter(([, value]) => !value).map(([name]) => name);
-      return json({ status: missing.length === 0 ? "ready" : "configuration_incomplete", missing });
+      if (missing.length > 0) return json({ status: "configuration_incomplete", missing });
+      const [instagram, facebook] = await Promise.all([
+        metaCredentialStatus("instagram", env),
+        metaCredentialStatus("facebook", env),
+      ]);
+      return json({
+        status: instagram.status === "ready" && facebook.status === "ready" ? "ready" : "credentials_invalid",
+        missing: [],
+        credentials: { instagram, facebook },
+      });
     }
     if (request.method === "POST" && url.pathname === "/analytics/refresh-meta") {
       await refreshMetaAnalyticsIfDue(env, true);
