@@ -173,6 +173,7 @@ test('production publication feed accepts only the safe status contract', () => 
     scheduledAt: '2026-07-21T13:00:00.000Z',
     updatedAt: '2026-07-21T13:05:00.000Z',
     publishedAt: null,
+    publicUrl: null,
     failureCode: 'api_access_blocked',
   })
   assert.doesNotMatch(JSON.stringify(normalized), /raw provider|platform-id|media\.example|private title/)
@@ -184,9 +185,33 @@ test('production publication feed accepts only the safe status contract', () => 
   const missingPublishedAt = publicationFeed([{
     ...publicationFeed().publications[0],
     status: 'published',
+    publicUrl: 'https://www.instagram.com/flaggenbande/reel/DbGSI2gFgL_/',
     failureCode: null,
   }])
   assert.throws(() => normalizePublicationFeed(missingPublishedAt), /publishedAt fehlt/)
+
+  const published = normalizePublicationFeed(publicationFeed([{
+    contentId,
+    platform: 'instagram',
+    status: 'published',
+    scheduledAt: '2026-07-21T13:00:00Z',
+    updatedAt: '2026-07-21T13:05:00Z',
+    publishedAt: '2026-07-21T13:04:00Z',
+    publicUrl: 'https://www.instagram.com/flaggenbande/reel/DbGSI2gFgL_/?utm_source=test#fragment',
+    failureCode: null,
+  }]))
+  assert.equal(published.publications[0].publicUrl, 'https://www.instagram.com/flaggenbande/reel/DbGSI2gFgL_/')
+
+  const missingPublicUrl = publicationFeed([{
+    contentId,
+    platform: 'facebook',
+    status: 'published',
+    scheduledAt: '2026-07-21T13:00:00Z',
+    updatedAt: '2026-07-21T13:05:00Z',
+    publishedAt: '2026-07-21T13:04:00Z',
+    failureCode: null,
+  }])
+  assert.throws(() => normalizePublicationFeed(missingPublicUrl), /publicUrl fehlt/)
 })
 
 test('production queue failures override planned staging targets with safe failure codes', () => {

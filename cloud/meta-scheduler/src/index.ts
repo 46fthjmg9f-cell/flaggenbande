@@ -132,6 +132,7 @@ interface PublicationFeedJobRow {
   readonly platform: Platform;
   readonly publish_at: string;
   readonly status: JobStatus;
+  readonly publication_url: string | null;
   readonly last_error: string | null;
   readonly updated_at: string;
   readonly published_at: string | null;
@@ -695,20 +696,82 @@ const currentJob = async (env: Env, jobId: string): Promise<Job | null> =>
 
 const facebookReelUrl = (id: string): string => `https://www.facebook.com/reel/${encodeURIComponent(id)}`;
 
-const publicUrl = (platform: Platform, id: string): string =>
-  platform === "instagram" ? `https://www.instagram.com/p/${id}/` : facebookReelUrl(id);
+const normalizedInstagramPermalink = (value: unknown): string | null => {
+  if (typeof value !== "string" || value.length > 2048) return null;
+  try {
+    const candidate = new URL(value);
+    const hostname = candidate.hostname.toLowerCase();
+    const segments = candidate.pathname.split("/").filter(Boolean);
+    const permalinkIndex = segments.findIndex((segment) => ["reel", "p"].includes(segment.toLowerCase()));
+    const validPath = (permalinkIndex === 0 || permalinkIndex === 1) &&
+      segments.length === permalinkIndex + 2 &&
+      (permalinkIndex === 0 || /^[a-z0-9._]+$/i.test(segments[0])) &&
+      /^[a-z0-9_-]+$/i.test(segments[permalinkIndex + 1]);
+    if (candidate.protocol !== "https:" || candidate.username || candidate.password || candidate.port ||
+        !["instagram.com", "www.instagram.com"].includes(hostname) || !validPath) return null;
+    candidate.search = "";
+    candidate.hash = "";
+    return candidate.toString();
+  } catch {
+    return null;
+  }
+};
+
+const normalizedFacebookPermalink = (value: unknown): string | null => {
+  if (typeof value !== "string" || value.length > 2048) return null;
+  try {
+    const candidate = new URL(value);
+    const hostname = candidate.hostname.toLowerCase();
+    const path = candidate.pathname;
+    const videoId = candidate.searchParams.get("v");
+    const isReelPath = /^\/reel\/[a-z0-9._-]+\/?$/i.test(path);
+    const isVideoPath = /^\/(?:[a-z0-9._-]+\/)?videos\/[a-z0-9._-]+\/?$/i.test(path);
+    const isWatchPath = /^\/watch\/?$/i.test(path) && typeof videoId === "string" && /^[a-z0-9._-]+$/i.test(videoId);
+    if (candidate.protocol !== "https:" || candidate.username || candidate.password || candidate.port ||
+        !(hostname === "facebook.com" || hostname.endsWith(".facebook.com")) ||
+        (!isReelPath && !isVideoPath && !isWatchPath)) return null;
+    candidate.search = isWatchPath ? `?v=${encodeURIComponent(videoId!)}` : "";
+    candidate.hash = "";
+    return candidate.toString();
+  } catch {
+    return null;
+  }
+};
+
+const validatedPublicationUrl = (platform: Platform, value: unknown): string | null =>
+  platform === "instagram" ? normalizedInstagramPermalink(value) : normalizedFacebookPermalink(value);
 
 const verifiedFacebookPermalink = (id: unknown, value: unknown): string => {
+  return normalizedFacebookPermalink(value) ?? facebookReelUrl(String(id));
+};
+
+const resolveInstagramPermalink = async (job: Job, env: Env, mediaId: string): Promise<string | null> => {
   try {
-    const candidate = new URL(String(value ?? ""));
-    const hostname = candidate.hostname.toLowerCase();
-    const isVideoPath = /^\/reel\/[^/]+/.test(candidate.pathname) || /\/videos\/[^/]+/.test(candidate.pathname) ||
-      (candidate.pathname.startsWith("/watch") && candidate.searchParams.has("v"));
-    if (candidate.protocol === "https:" && (hostname === "facebook.com" || hostname.endsWith(".facebook.com")) && isVideoPath) {
-      return candidate.toString();
-    }
-  } catch { /* Missing or malformed Graph permalinks use the stable Reel route. */ }
-  return facebookReelUrl(String(id));
+    const media = await graph(job, env, mediaId, { fields: "id,permalink" }, "GET");
+    if (String(media.id ?? "") !== mediaId) return null;
+    return normalizedInstagramPermalink(media.permalink);
+  } catch (error) {
+    if (error instanceof MetaApiError && !error.retryable) throw error;
+    return null;
+  }
+};
+
+const completeInstagramPublication = async (job: Job, env: Env, mediaId: string): Promise<boolean> => {
+  const permalink = await resolveInstagramPermalink(job, env, mediaId);
+  if (!permalink) {
+    await setState(env, job, "waiting_for_meta", {
+      platform_video_id: mediaId,
+      publication_url: null,
+      last_error: null,
+    });
+    return false;
+  }
+  await setState(env, job, "published", {
+    platform_video_id: mediaId,
+    publication_url: permalink,
+    last_error: null,
+  });
+  return true;
 };
 
 /**
@@ -737,6 +800,13 @@ const removeTemporaryPagesDeployment = async (job: Job, env: Env): Promise<void>
 
 const publishInstagram = async (job: Job, env: Env): Promise<void> => {
   const details = metadata(job);
+  if (job.platform_video_id) {
+    if (await completeInstagramPublication(job, env, job.platform_video_id)) {
+      await event(env, job.job_id, "info", "Instagram-Reel anhand des öffentlichen Permalinks bestätigt.");
+      await removeTemporaryPagesDeployment(job, env);
+    }
+    return;
+  }
   if (!job.container_id) {
     const container = await graph(job, env, `${accountFor("instagram", env)}/media`, {
       media_type: "REELS", video_url: job.media_url, caption: details.description, share_to_feed: "true",
@@ -774,21 +844,25 @@ const publishInstagram = async (job: Job, env: Env): Promise<void> => {
         true,
       );
     }
-    const permalink = typeof match.permalink === "string" && match.permalink.startsWith("https://www.instagram.com/")
-      ? match.permalink
-      : publicUrl("instagram", id);
-    await setState(env, job, "published", { platform_video_id: id, publication_url: permalink, last_error: null });
-    await event(env, job.job_id, "info", "Instagram-Reel nach unterbrochener Bestaetigung abgeglichen.");
-    await removeTemporaryPagesDeployment(job, env);
+    await setState(env, job, "waiting_for_meta", { platform_video_id: id, publication_url: null, last_error: null });
+    if (await completeInstagramPublication(job, env, id)) {
+      await event(env, job.job_id, "info", "Instagram-Reel nach unterbrochener Bestaetigung abgeglichen.");
+      await removeTemporaryPagesDeployment(job, env);
+    }
     return;
   }
   if (code !== "FINISHED") throw new Error(`Instagram-Verarbeitung fehlgeschlagen: ${typeof status.status === "string" ? status.status : code}`);
   const result = await graph(job, env, `${accountFor("instagram", env)}/media_publish`, { creation_id: job.container_id });
   const id = typeof result.id === "string" ? result.id : null;
   if (!id) throw new Error("Instagram bestätigte keine Reel-ID.");
-  await setState(env, job, "published", { platform_video_id: id, publication_url: publicUrl("instagram", id), last_error: null });
-  await event(env, job.job_id, "info", "Instagram-Reel veröffentlicht.");
-  await removeTemporaryPagesDeployment(job, env);
+  // Persist the returned media ID before any follow-up request. If Meta has not
+  // populated the public permalink yet, the next cron tick reconciles this
+  // exact media object instead of repeating media_publish.
+  await setState(env, job, "waiting_for_meta", { platform_video_id: id, publication_url: null, last_error: null });
+  if (await completeInstagramPublication(job, env, id)) {
+    await event(env, job.job_id, "info", "Instagram-Reel veröffentlicht.");
+    await removeTemporaryPagesDeployment(job, env);
+  }
 };
 
 const publishFacebook = async (job: Job, env: Env): Promise<void> => {
@@ -857,7 +931,7 @@ const publishFacebook = async (job: Job, env: Env): Promise<void> => {
   await graph(job, env, edge, { video_id: videoId, upload_phase: "finish", video_state: "PUBLISHED", description: details.description, title: details.title });
   await setState(env, job, "published", {
     platform_video_id: videoId,
-    publication_url: publicUrl("facebook", videoId),
+    publication_url: facebookReelUrl(videoId),
     container_id: null,
     attempt_count: job.attempt_count + 1,
     last_error: null,
@@ -1750,20 +1824,28 @@ const publicationFailureCode = (error: string | null): PublicationFailureCode =>
  */
 const publicationFeed = async (env: Env): Promise<Response> => {
   const jobs = await env.DB.prepare(`SELECT source_video_id, platform, publish_at, status,
-      last_error, updated_at, published_at
+      publication_url, last_error, updated_at, published_at
     FROM meta_publication_jobs
     ORDER BY updated_at DESC LIMIT 400`).all<PublicationFeedJobRow>();
   const publications = (jobs.results ?? [])
     .filter((job) => /^[a-z0-9][a-z0-9._-]{2,199}$/i.test(job.source_video_id) && validPlatform(job.platform))
-    .map((job) => ({
-      contentId: job.source_video_id,
-      platform: job.platform,
-      status: job.status,
-      scheduledAt: job.publish_at,
-      updatedAt: job.updated_at,
-      publishedAt: job.status === "published" ? job.published_at : null,
-      failureCode: job.status === "failed" ? publicationFailureCode(job.last_error) : null,
-    }));
+    .flatMap((job) => {
+      const publicUrl = job.status === "published" ? validatedPublicationUrl(job.platform, job.publication_url) : null;
+      // A published row without both public proof fields is intentionally
+      // withheld until reconciliation completes. No private identifier is used
+      // as a public fallback.
+      if (job.status === "published" && (!job.published_at || !publicUrl)) return [];
+      return [{
+        contentId: job.source_video_id,
+        platform: job.platform,
+        status: job.status,
+        scheduledAt: job.publish_at,
+        updatedAt: job.updated_at,
+        publishedAt: job.status === "published" ? job.published_at : null,
+        publicUrl,
+        failureCode: job.status === "failed" ? publicationFailureCode(job.last_error) : null,
+      }];
+    });
   return new Response(JSON.stringify({
     schemaVersion: 1,
     lane: "production-publication",

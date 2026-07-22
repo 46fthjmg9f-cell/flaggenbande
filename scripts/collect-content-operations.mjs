@@ -253,6 +253,11 @@ const normalizeProductionPublication = (value, index) => {
   const publishedAt = nullableIso(record.publishedAt, `${path}.publishedAt`)
   if (status === 'published' && publishedAt === null) throw new Error(`${path}.publishedAt fehlt.`)
   if (status !== 'published' && publishedAt !== null) throw new Error(`${path}.publishedAt ist nur nach Veröffentlichung zulässig.`)
+  const rawPublicUrl = record.publicUrl ?? null
+  const publicUrl = rawPublicUrl === null ? null : validPublicUrl(rawPublicUrl, platform)
+  if (rawPublicUrl !== null && publicUrl === null) throw new Error(`${path}.publicUrl ist keine gültige öffentliche Plattform-URL.`)
+  if (status === 'published' && publicUrl === null) throw new Error(`${path}.publicUrl fehlt.`)
+  if (status !== 'published' && publicUrl !== null) throw new Error(`${path}.publicUrl ist nur nach Veröffentlichung zulässig.`)
   return {
     contentId: requiredIdentifier(record.contentId, `${path}.contentId`),
     platform,
@@ -260,6 +265,7 @@ const normalizeProductionPublication = (value, index) => {
     scheduledAt: requiredIso(record.scheduledAt, `${path}.scheduledAt`),
     updatedAt: requiredIso(record.updatedAt, `${path}.updatedAt`),
     publishedAt,
+    publicUrl,
     failureCode,
   }
 }
@@ -315,22 +321,35 @@ const validPublicUrl = (value, platform) => {
   } catch {
     return null
   }
-  if (url.protocol !== 'https:' || url.username || url.password) return null
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) return null
   const hostname = url.hostname.toLowerCase()
   const pathname = url.pathname.toLowerCase()
+  const pathSegments = url.pathname.split('/').filter(Boolean)
+  const instagramPermalinkIndex = pathSegments.findIndex(segment => ['reel', 'p'].includes(segment.toLowerCase()))
+  const validInstagramPath = (instagramPermalinkIndex === 0 || instagramPermalinkIndex === 1)
+    && pathSegments.length === instagramPermalinkIndex + 2
+    && (instagramPermalinkIndex === 0 || /^[a-z0-9._]+$/i.test(pathSegments[0]))
+    && /^[a-z0-9_-]+$/i.test(pathSegments[instagramPermalinkIndex + 1])
+  const facebookVideoId = url.searchParams.get('v')
+  const validFacebookReelPath = /^\/reel\/[a-z0-9._-]+\/?$/i.test(url.pathname)
+  const validFacebookVideoPath = /^\/(?:[a-z0-9._-]+\/)?videos\/[a-z0-9._-]+\/?$/i.test(url.pathname)
+  const validFacebookWatchPath = /^\/watch\/?$/i.test(url.pathname)
+    && typeof facebookVideoId === 'string' && /^[a-z0-9._-]+$/i.test(facebookVideoId)
   const valid = platform === 'youtube'
     ? ['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(hostname)
       && (pathname === '/watch' || pathname.startsWith('/shorts/'))
     : platform === 'instagram'
       ? ['instagram.com', 'www.instagram.com'].includes(hostname)
-        && (pathname.startsWith('/reel/') || pathname.startsWith('/p/'))
+        && validInstagramPath
       : platform === 'facebook'
         ? (hostname === 'facebook.com' || hostname.endsWith('.facebook.com'))
-          && (pathname.startsWith('/reel/') || pathname.startsWith('/watch'))
+          && (validFacebookReelPath || validFacebookVideoPath || validFacebookWatchPath)
         : platform === 'tiktok'
           ? (hostname === 'tiktok.com' || hostname.endsWith('.tiktok.com')) && pathname.includes('/video/')
           : false
   if (!valid) return null
+  if (platform === 'instagram' || (platform === 'facebook' && !validFacebookWatchPath)) url.search = ''
+  if (platform === 'facebook' && validFacebookWatchPath) url.search = `?v=${encodeURIComponent(facebookVideoId)}`
   url.hash = ''
   return url.toString()
 }
@@ -629,7 +648,7 @@ export function mergePublicationFeed(contentOperations, production) {
       updatedAt: queue.updatedAt,
       scheduledAt: queue.scheduledAt,
       publishedAt: queue.publishedAt,
-      publicUrl: null,
+      publicUrl: queue.publicUrl,
       failureCode: queue.failureCode,
     }
   })
