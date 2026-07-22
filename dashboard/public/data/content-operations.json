@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-22T14:32:26.059Z",
+  "generatedAt": "2026-07-22T17:52:09.504Z",
   "status": "partial",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Prüfungen.",
@@ -11,8 +11,9 @@
     "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
+    "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "Produktions-Queue: 6 eindeutige Meta-Statusse übernommen; 0 fehlgeschlagen.",
-    "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt."
+    "12 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt."
   ],
   "system": [
     {
@@ -54,10 +55,10 @@
       "label": "YouTube",
       "status": "published",
       "uploads": 4,
-      "publications": 3,
+      "publications": 4,
       "performanceAvailable": false,
-      "reason": "3 öffentliche Veröffentlichungen bestätigt.",
-      "updatedAt": "2026-07-21T20:10:47.000Z"
+      "reason": "4 öffentliche Veröffentlichungen bestätigt.",
+      "updatedAt": "2026-07-22T12:30:11.000Z"
     },
     {
       "platform": "instagram",
@@ -67,7 +68,7 @@
       "publications": 4,
       "performanceAvailable": false,
       "reason": "4 öffentliche Veröffentlichungen bestätigt.",
-      "updatedAt": "2026-07-22T14:17:22.381Z"
+      "updatedAt": "2026-07-22T14:17:14.000Z"
     },
     {
       "platform": "tiktok",
@@ -77,7 +78,7 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Keine öffentliche TikTok-Veröffentlichung nachgewiesen.",
-      "updatedAt": "2026-07-22T08:50:07.985Z"
+      "updatedAt": "2026-07-22T17:42:57.942Z"
     },
     {
       "platform": "facebook",
@@ -87,18 +88,27 @@
       "publications": 4,
       "performanceAvailable": false,
       "reason": "4 öffentliche Veröffentlichungen bestätigt.",
-      "updatedAt": "2026-07-22T14:08:24.223Z"
+      "updatedAt": "2026-07-22T14:08:13.000Z"
     }
   ],
   "runs": [
     {
+      "runId": "upload-video-e5866d048c7f5cf134ccaaac-aligned-v3",
+      "contentId": "flaggenbande-d5d58ed0a267906df92b71bdd913555f27f3a7be064765f5d6b4d3cd092dc67d",
+      "title": null,
+      "status": "queued",
+      "qualityStatus": "passed",
+      "startedAt": "2026-07-22T17:42:30.000Z",
+      "completedAt": null
+    },
+    {
       "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
       "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
-      "title": null,
-      "status": "partial",
+      "title": "Nur echte Flaggenbosse schaffen 5/5 👀 #Flaggenquiz #Flaggen #Geografie #Quiz #Shorts",
+      "status": "completed",
       "qualityStatus": "passed",
       "startedAt": "2026-07-22T08:46:39.000Z",
-      "completedAt": null
+      "completedAt": "2026-07-22T14:17:14.000Z"
     },
     {
       "runId": "upload-gameshow-v8-check-das-mal-aus",
@@ -130,12 +140,48 @@
   ],
   "publications": [
     {
-      "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
-      "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
+      "runId": "upload-video-e5866d048c7f5cf134ccaaac-aligned-v3",
+      "contentId": "flaggenbande-d5d58ed0a267906df92b71bdd913555f27f3a7be064765f5d6b4d3cd092dc67d",
       "platform": "youtube",
       "mode": "private",
-      "status": "private",
-      "updatedAt": "2026-07-22T08:50:13.535Z",
+      "status": "planned",
+      "updatedAt": "2026-07-22T17:42:57.942Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-video-e5866d048c7f5cf134ccaaac-aligned-v3",
+      "contentId": "flaggenbande-d5d58ed0a267906df92b71bdd913555f27f3a7be064765f5d6b4d3cd092dc67d",
+      "platform": "instagram",
+      "mode": "container_unpublished",
+      "status": "planned",
+      "updatedAt": "2026-07-22T17:42:57.942Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-video-e5866d048c7f5cf134ccaaac-aligned-v3",
+      "contentId": "flaggenbande-d5d58ed0a267906df92b71bdd913555f27f3a7be064765f5d6b4d3cd092dc67d",
+      "platform": "tiktok",
+      "mode": "manual_uploaded",
+      "status": "planned",
+      "updatedAt": "2026-07-22T17:42:57.942Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-video-e5866d048c7f5cf134ccaaac-aligned-v3",
+      "contentId": "flaggenbande-d5d58ed0a267906df92b71bdd913555f27f3a7be064765f5d6b4d3cd092dc67d",
+      "platform": "facebook",
+      "mode": "draft",
+      "status": "planned",
+      "updatedAt": "2026-07-22T17:42:57.942Z",
       "title": null,
       "scheduledAt": null,
       "publishedAt": null,
@@ -144,14 +190,27 @@
     {
       "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
       "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
+      "platform": "youtube",
+      "mode": "private",
+      "status": "published",
+      "updatedAt": "2026-07-22T12:30:11.000Z",
+      "title": "Nur echte Flaggenbosse schaffen 5/5 👀 #Flaggenquiz #Flaggen #Geografie #Quiz #Shorts",
+      "scheduledAt": null,
+      "publishedAt": "2026-07-22T12:30:11.000Z",
+      "publicUrl": "https://www.youtube.com/watch?v=VWmi4DLFDXM",
+      "failureCode": null
+    },
+    {
+      "runId": "upload-gameshow-five-flag-60plus-20260722-v2",
+      "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
       "platform": "instagram",
       "mode": "container_unpublished",
       "status": "published",
-      "updatedAt": "2026-07-22T14:21:44.822Z",
-      "title": null,
-      "scheduledAt": "2026-07-22T14:15:12.700Z",
-      "publishedAt": "2026-07-22T14:17:22.381Z",
-      "publicUrl": "https://www.instagram.com/flaggenbande/reel/DbGSI2gFgL_/",
+      "updatedAt": "2026-07-22T14:17:14.000Z",
+      "title": "Fünf Flaggen, steigende Schwierigkeit – aber nur echte Flaggenbosse schaffen den Clean Sweep. Wie viele hattest du? Schreib nur deinen Score, keine Spoiler. 👀🔥",
+      "scheduledAt": null,
+      "publishedAt": "2026-07-22T14:17:14.000Z",
+      "publicUrl": "https://www.instagram.com/reel/DbGSI2gFgL_/",
       "failureCode": null
     },
     {
@@ -159,7 +218,7 @@
       "contentId": "flaggenbande-2937437f0c18c124cb527f5919ffacbfcc14144ed9d6c48d33fa55787eae42f3",
       "platform": "tiktok",
       "mode": "manual_uploaded",
-      "status": "planned",
+      "status": "not_configured",
       "updatedAt": "2026-07-22T08:50:07.985Z",
       "title": null,
       "scheduledAt": null,
@@ -172,10 +231,10 @@
       "platform": "facebook",
       "mode": "draft",
       "status": "published",
-      "updatedAt": "2026-07-22T14:08:24.223Z",
-      "title": null,
-      "scheduledAt": "2026-07-22T14:07:48.864Z",
-      "publishedAt": "2026-07-22T14:08:24.223Z",
+      "updatedAt": "2026-07-22T14:08:13.000Z",
+      "title": "Nur echte Flaggenbosse schaffen 5/5 👀",
+      "scheduledAt": null,
+      "publishedAt": "2026-07-22T14:08:13.000Z",
       "publicUrl": "https://www.facebook.com/reel/25555504217479857",
       "failureCode": null
     },
