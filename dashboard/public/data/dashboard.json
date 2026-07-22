@@ -1,33 +1,33 @@
 {
   "schemaVersion": 3,
-  "generatedAt": "2026-07-22T13:49:47Z",
+  "generatedAt": "2026-07-22T14:18:35Z",
   "status": "ok",
   "messages": [],
   "availability": {
     "App Analytics": {
       "available": true,
-      "updatedAt": "2026-07-22T13:49:47Z"
+      "updatedAt": "2026-07-22T14:18:35Z"
     },
     "App Store Feedback & Release": {
       "available": true,
-      "updatedAt": "2026-07-22T13:49:47Z"
+      "updatedAt": "2026-07-22T14:18:35Z"
     },
     "Sales & Trends": {
       "available": true,
-      "updatedAt": "2026-07-22T13:49:47Z"
+      "updatedAt": "2026-07-22T14:18:35Z"
     },
     "CloudKit Public DB": {
       "available": true,
-      "updatedAt": "2026-07-22T13:49:47Z"
+      "updatedAt": "2026-07-22T14:18:35Z"
     },
     "Finance": {
       "available": false,
       "reason": "Der monatliche Finanzreport ist noch nicht verfügbar.",
-      "updatedAt": "2026-07-22T13:49:47Z"
+      "updatedAt": "2026-07-22T14:18:35Z"
     },
     "YouTube": {
       "available": true,
-      "updatedAt": "2026-07-22T13:49:45Z"
+      "updatedAt": "2026-07-22T14:18:30Z"
     },
     "Instagram": {
       "available": true,
@@ -42,7 +42,7 @@
     "TikTok": {
       "available": false,
       "reason": "TikTok access token or refresh credentials are missing.",
-      "updatedAt": "2026-07-22T13:49:45Z"
+      "updatedAt": "2026-07-22T14:18:29Z"
     }
   },
   "kpis": {
@@ -781,15 +781,15 @@
   },
   "social": {
     "schemaVersion": 1,
-    "syncedAt": "2026-07-22T13:49:45Z",
+    "syncedAt": "2026-07-22T14:18:30Z",
     "platforms": {
       "youtube": {
         "status": "available",
         "accountName": "Flaggenbande",
         "videoCount": 6,
         "uploadCount": 6,
-        "startedAt": "2026-07-22T13:49:45Z",
-        "completedAt": "2026-07-22T13:49:45Z"
+        "startedAt": "2026-07-22T14:18:29Z",
+        "completedAt": "2026-07-22T14:18:30Z"
       },
       "instagram": {
         "status": "partial",
@@ -797,7 +797,7 @@
         "accountName": "flaggenbande",
         "videoCount": 5,
         "uploadCount": 5,
-        "startedAt": "2026-07-22T13:49:44.994Z",
+        "startedAt": "2026-07-22T14:18:29.361Z",
         "completedAt": "2026-07-22T13:45:14.092Z"
       },
       "facebook": {
@@ -806,7 +806,7 @@
         "accountName": "Flaggenbande",
         "videoCount": 5,
         "uploadCount": 5,
-        "startedAt": "2026-07-22T13:49:44.994Z",
+        "startedAt": "2026-07-22T14:18:29.361Z",
         "completedAt": "2026-07-22T13:45:14.716Z"
       },
       "tiktok": {
@@ -815,15 +815,15 @@
         "accountName": null,
         "videoCount": 0,
         "uploadCount": 0,
-        "startedAt": "2026-07-22T13:49:45Z",
-        "completedAt": "2026-07-22T13:49:45Z"
+        "startedAt": "2026-07-22T14:18:29Z",
+        "completedAt": "2026-07-22T14:18:29Z"
       }
     },
     "totals": {
-      "views": 3268,
+      "views": 3300,
       "reach": 676,
       "likes": 26,
-      "comments": 5,
+      "comments": 6,
       "shares": 0,
       "saves": 0,
       "watchTimeMinutes": 0,
@@ -844,7 +844,7 @@
         "status": "public",
         "durationSeconds": 64,
         "metrics": {
-          "views": 56,
+          "views": 66,
           "reach": null,
           "likes": 0,
           "comments": 0,
@@ -871,9 +871,9 @@
         "status": "public",
         "durationSeconds": 42,
         "metrics": {
-          "views": 200,
+          "views": 188,
           "reach": null,
-          "likes": 4,
+          "likes": 3,
           "comments": 0,
           "shares": null,
           "saves": null,
@@ -946,10 +946,10 @@
         "status": "public",
         "durationSeconds": 37,
         "metrics": {
-          "views": 569,
+          "views": 593,
           "reach": null,
           "likes": 7,
-          "comments": 2,
+          "comments": 3,
           "shares": null,
           "saves": null,
           "watchTimeMinutes": null,
@@ -1069,9 +1069,9 @@
         "status": "public",
         "durationSeconds": 67,
         "metrics": {
-          "views": 284,
+          "views": 302,
           "reach": null,
-          "likes": 2,
+          "likes": 3,
           "comments": 2,
           "shares": null,
           "saves": null,
@@ -1120,7 +1120,7 @@
         "status": "public",
         "durationSeconds": 36,
         "metrics": {
-          "views": 599,
+          "views": 591,
           "reach": null,
           "likes": 6,
           "comments": 0,
@@ -5010,6 +5010,278 @@
         "platform": "facebook",
         "platformVideoId": "2303128737184032",
         "capturedAt": "2026-07-22T13:49:45Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "VWmi4DLFDXM",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 66,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "DktvsM8azzA",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 188,
+          "reach": null,
+          "likes": 3,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "mDhSJzJL5ZE",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 593,
+          "reach": null,
+          "likes": 7,
+          "comments": 3,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "xoof2HIiMiA",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 302,
+          "reach": null,
+          "likes": 3,
+          "comments": 2,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "6k737HP6lDg",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 591,
+          "reach": null,
+          "likes": 6,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "youtube",
+        "platformVideoId": "1E6mxi4V3IY",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 771,
+          "reach": null,
+          "likes": 2,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "17981979423051498",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 147,
+          "reach": 92,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "18131654047536109",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 131,
+          "reach": 118,
+          "likes": 0,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "18052317206547183",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 134,
+          "reach": 121,
+          "likes": 0,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "17950735707015400",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 208,
+          "reach": 206,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "instagram",
+        "platformVideoId": "18084176021208292",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": 169,
+          "reach": 139,
+          "likes": 1,
+          "comments": 0,
+          "shares": 0,
+          "saves": 0,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1743115230290254",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1733906214152833",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1594633352224956",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 0,
+          "comments": 0,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "1527700882467308",
+        "capturedAt": "2026-07-22T14:18:30Z",
+        "metrics": {
+          "views": null,
+          "reach": null,
+          "likes": 2,
+          "comments": 1,
+          "shares": null,
+          "saves": null,
+          "watchTimeMinutes": null,
+          "averageViewDurationSeconds": null,
+          "averageViewPercentage": null,
+          "followersGained": null
+        }
+      },
+      {
+        "platform": "facebook",
+        "platformVideoId": "2303128737184032",
+        "capturedAt": "2026-07-22T14:18:30Z",
         "metrics": {
           "views": null,
           "reach": null,
