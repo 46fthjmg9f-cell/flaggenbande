@@ -8,6 +8,7 @@ import {
   buildUserStatsRecords,
   canonicalChallenge,
   challengeRecord,
+  challengeRecordContentMatches,
   challengeRecordMatches,
   CloudKitClient,
   deterministicCountryOrder,
@@ -25,11 +26,14 @@ import {
   winnerAwardEligibleAt,
 } from './cloudkit-daily-maintenance.mjs'
 
-const originalWriteGate = process.env.CLOUDKIT_DAILY_WRITES_ENABLED
+const originalDevelopmentWriteGate = process.env.CLOUDKIT_DEVELOPMENT_WRITES_ENABLED
+const originalProductionWriteGate = process.env.CLOUDKIT_PRODUCTION_WRITES_ENABLED
 
 afterEach(() => {
-  if (originalWriteGate === undefined) delete process.env.CLOUDKIT_DAILY_WRITES_ENABLED
-  else process.env.CLOUDKIT_DAILY_WRITES_ENABLED = originalWriteGate
+  if (originalDevelopmentWriteGate === undefined) delete process.env.CLOUDKIT_DEVELOPMENT_WRITES_ENABLED
+  else process.env.CLOUDKIT_DEVELOPMENT_WRITES_ENABLED = originalDevelopmentWriteGate
+  if (originalProductionWriteGate === undefined) delete process.env.CLOUDKIT_PRODUCTION_WRITES_ENABLED
+  else process.env.CLOUDKIT_PRODUCTION_WRITES_ENABLED = originalProductionWriteGate
 })
 
 function fields(values) {
@@ -318,7 +322,7 @@ describe('idempotent maintenance', () => {
     assert.equal(takeoverRecords.find(record => record.fields.userId.value === 'a').fields.rankOneSinceDate.value, berlinDayBounds('2026-07-06').start)
   })
 
-  test('creates canonical challenges once and rejects non-server records', async () => {
+  test('creates canonical challenges once and classifies canonical legacy records', async () => {
     const caller = 'server_user'
     const now = Date.parse('2026-07-22T13:00:00Z')
     const client = new MemoryCloudKitClient([], caller, now)
@@ -333,6 +337,28 @@ describe('idempotent maintenance', () => {
     assert.equal(challengeRecordMatches(client.records.get(challenge.recordName), challenge, caller), true)
     const forged = serverRecord(challengeRecord(challenge), 'app_user', now)
     assert.equal(challengeRecordMatches(forged, challenge, caller), false)
+    assert.equal(challengeRecordContentMatches(forged, challenge), true)
+    const legacyClient = new MemoryCloudKitClient([forged], caller, now)
+    const migrated = await maintainChallenges({ client: legacyClient, apply: false, dateKeys, countryCodes, caller })
+    assert.equal(migrated.legacyCanonical, 1)
+    assert.equal(migrated.rejected, 0)
+    assert.equal(migrated.planned, 1)
+  })
+
+  test('preflights every challenge before performing any write', async () => {
+    const caller = 'server_user'
+    const now = Date.parse('2026-07-22T13:00:00Z')
+    const countryCodes = await readCanonicalCountryCodes()
+    const dateKey = '2026-07-23'
+    const forged = serverRecord(challengeRecord(canonicalChallenge('daily_flaggenrun', dateKey, countryCodes)), 'app_user', now)
+    forged.fields.seed.value = 'forged'
+    const client = new MemoryCloudKitClient([forged], caller, now)
+    const before = client.records.size
+    await assert.rejects(
+      maintainChallenges({ client, apply: true, dateKeys: [dateKey], countryCodes, caller }),
+      /not canonical/,
+    )
+    assert.equal(client.records.size, before)
   })
 
   test('creates one trusted winner, then rebuilds UserStats without double-awarding', async () => {
@@ -367,12 +393,25 @@ describe('idempotent maintenance', () => {
 })
 
 describe('write gate', () => {
-  test('defaults to dry-run and requires an explicit security acknowledgement for writes', () => {
-    delete process.env.CLOUDKIT_DAILY_WRITES_ENABLED
-    assert.equal(parseArguments([]).apply, false)
-    assert.throws(() => parseArguments(['--apply']), /CLOUDKIT_DAILY_WRITES_ENABLED=true/)
-    process.env.CLOUDKIT_DAILY_WRITES_ENABLED = 'true'
+  test('defaults to Development dry-run and requires an environment-specific write gate', () => {
+    delete process.env.CLOUDKIT_DEVELOPMENT_WRITES_ENABLED
+    delete process.env.CLOUDKIT_PRODUCTION_WRITES_ENABLED
+    assert.deepEqual(
+      { apply: parseArguments([]).apply, environment: parseArguments([]).environment },
+      { apply: false, environment: 'development' },
+    )
+    assert.throws(() => parseArguments(['--apply']), /CLOUDKIT_DEVELOPMENT_WRITES_ENABLED=true/)
+    process.env.CLOUDKIT_DEVELOPMENT_WRITES_ENABLED = 'true'
     assert.equal(parseArguments(['--apply', '--environment=development']).apply, true)
+    assert.throws(() => parseArguments(['--apply', '--environment=production']), /CLOUDKIT_PRODUCTION_WRITES_ENABLED=true/)
+    process.env.CLOUDKIT_PRODUCTION_WRITES_ENABLED = 'true'
+    assert.equal(parseArguments(['--apply', '--environment=production']).apply, true)
+  })
+
+  test('rejects direct client mutations unless the caller explicitly enables writes', async () => {
+    const client = new CloudKitClient({ keyId: 'test', privateKey: 'unused', environment: 'development' })
+    await assert.rejects(client.createRecord({}), /writes are disabled/)
+    await assert.rejects(client.forceReplaceRecords([]), /writes are disabled/)
   })
 
   test('winner eligibility includes the two-hour submission window and index delay', () => {
