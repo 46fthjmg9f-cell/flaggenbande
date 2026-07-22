@@ -94,8 +94,9 @@ test('Meta credentials keep Facebook and Instagram token types separate and fail
   const verificationStart = source.indexOf('const verifyMetaCredential =')
   const verificationEnd = source.indexOf('const metaCredentialStatus =', verificationStart)
   const verification = source.slice(verificationStart, verificationEnd)
-  assert.match(verification, /id,name,tasks/)
-  assert.match(verification, /CREATE_CONTENT/)
+  assert.match(verification, /"id,name"/)
+  assert.match(verification, /typeof account\.name !== "string"/)
+  assert.doesNotMatch(verification, /id,name,tasks|account\.tasks|CREATE_CONTENT/)
   assert.match(verification, /content_publishing_limit/)
 })
 
