@@ -13,6 +13,7 @@ import {
   type CalendarPlatform,
   type CalendarPlatformState,
 } from './operatorApi'
+import type { SocialPlatform, SocialVideo } from './types'
 
 const platforms: CalendarPlatform[] = ['youtube', 'instagram', 'facebook', 'tiktok']
 const platformLabels: Record<CalendarPlatform, string> = { youtube: 'YT', instagram: 'IG', facebook: 'FB', tiktok: 'TT' }
@@ -73,6 +74,60 @@ function publicCalendarEntries(data: ContentOperationsData): CalendarEntry[] {
   return [...grouped.values()]
 }
 
+function normalizeContentText(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase('en').replace(/https?:\/\/\S+/gu, ' ').replace(/#/gu, '').replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/gu, ' ').trim()
+}
+
+function cleanTitle(value: string): string {
+  const title = value.split(/\r?\n/u)[0]?.replace(/(?:\s*#[\p{L}\p{N}_-]+)+\s*$/gu, '').trim() ?? ''
+  return title || 'Video'
+}
+
+function socialCalendarEntries(videos: readonly SocialVideo[]): CalendarEntry[] {
+  const signature = (video: SocialVideo): string | null => {
+    const description = normalizeContentText(video.description)
+    if (description.length >= 40) return description
+    const title = normalizeContentText(video.title)
+    return title.length >= 24 ? title : null
+  }
+  const candidates = new Map<string, { contentIds: Set<string>; platforms: Map<SocialPlatform, number> }>()
+  for (const video of videos) {
+    const value = signature(video)
+    if (!value) continue
+    const candidate = candidates.get(value) ?? { contentIds: new Set<string>(), platforms: new Map<SocialPlatform, number>() }
+    if (video.contentId) candidate.contentIds.add(video.contentId)
+    candidate.platforms.set(video.platform, (candidate.platforms.get(video.platform) ?? 0) + 1)
+    candidates.set(value, candidate)
+  }
+  const groupKeys = new Map([...candidates.entries()]
+    .filter(([, candidate]) => candidate.contentIds.size <= 1 && candidate.platforms.size >= 2 && [...candidate.platforms.values()].every(count => count === 1))
+    .map(([value, candidate]) => [value, [...candidate.contentIds][0] ?? `copy:${value}`]))
+  const groups = new Map<string, SocialVideo[]>()
+  for (const video of videos) {
+    if (!video.publishedAt) continue
+    const value = signature(video)
+    const key = video.contentId ?? (value ? groupKeys.get(value) : undefined) ?? `${video.platform}:${video.platformVideoId}`
+    groups.set(key, [...(groups.get(key) ?? []), video])
+  }
+  return [...groups.entries()].flatMap(([key, grouped]) => {
+    const scheduledAt = grouped.map(video => video.publishedAt).filter((value): value is string => Boolean(value)).sort().at(-1)
+    if (!scheduledAt) return []
+    const platforms = blankPlatforms()
+    for (const video of grouped) {
+      let publicUrl: string | undefined
+      try {
+        const parsed = video.url ? new URL(video.url) : null
+        publicUrl = parsed?.protocol === 'https:' ? parsed.toString() : undefined
+      } catch {
+        publicUrl = undefined
+      }
+      platforms[video.platform] = { status: 'published', ...(publicUrl ? { publicUrl } : {}) }
+    }
+    const preferred = grouped.find(video => video.platform === 'youtube') ?? grouped[0]
+    return [{ id: `social:${key}`, contentId: key, title: cleanTitle(preferred?.title ?? 'Video'), scheduledAt, platforms }]
+  })
+}
+
 function mergeEntries(primary: CalendarEntry[], fallback: CalendarEntry[]): CalendarEntry[] {
   const byContent = new Map<string, CalendarEntry>()
   for (const entry of [...fallback, ...primary]) {
@@ -99,7 +154,7 @@ function weekLabel(start: Date, end: Date): string {
   return `${format.format(start)}–${format.format(addDays(end, -1))}`
 }
 
-export default function PublishingCalendar() {
+export default function PublishingCalendar({ socialVideos }: { readonly socialVideos: readonly SocialVideo[] }) {
   const [weekStart, setWeekStart] = useState(() => startOfDay(new Date()))
   const [entries, setEntries] = useState<CalendarEntry[]>([])
   const [refreshing, setRefreshing] = useState(false)
@@ -120,13 +175,13 @@ export default function PublishingCalendar() {
           setError(reason instanceof Error ? reason.message : String(reason))
         }
       }
-      setEntries(mergeEntries(protectedEntries, publicCalendarEntries(publicData)))
+      setEntries(mergeEntries(protectedEntries, [...publicCalendarEntries(publicData), ...socialCalendarEntries(socialVideos)]))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setRefreshing(false)
     }
-  }, [weekEnd, weekStart])
+  }, [socialVideos, weekEnd, weekStart])
 
   useEffect(() => {
     void refresh()
