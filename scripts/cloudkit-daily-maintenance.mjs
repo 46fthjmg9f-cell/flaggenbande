@@ -540,8 +540,15 @@ export class CloudKitClient {
     const response = await this.request('users/caller', null, 'GET')
     const identity = response?.users?.[0]
     const name = identity?.userRecordName ?? identity?.lookupInfo?.userRecordName
-    if (typeof name !== 'string' || !name) throw new Error('CloudKit server caller identity is unavailable')
-    return name
+    if (typeof name === 'string' && name) return name
+
+    // Some server-to-server keys authenticate as the container developer but
+    // return an empty users/caller identity. The deprecated endpoint still
+    // exposes the same record name and is used only as a compatibility fallback.
+    const current = await this.request('users/current', null, 'GET')
+    const currentName = current?.userRecordName
+    if (typeof currentName === 'string' && currentName) return currentName
+    throw new Error('CloudKit server caller identity is unavailable')
   }
 
   async lookupRecords(recordNames, desiredKeys = undefined) {
