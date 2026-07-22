@@ -43,10 +43,6 @@ const formatDate = (value: string | null) => value
   ? new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
   : 'Nicht verfügbar'
 
-const isStale = (value: string | null) => value
-  ? Date.now() - new Date(value).valueOf() > 2 * 60 * 60 * 1000
-  : true
-
 const metricValue = (videos: SocialVideo[], key: keyof SocialMetrics): number | null => {
   const values = videos.map(video => video.metrics[key]).filter((value): value is number => typeof value === 'number')
   return values.length > 0 ? values.reduce((sum, value) => sum + value, 0) : null
@@ -236,22 +232,10 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
     lastFocusedElement.current?.focus()
   }
 
-  const exportJson = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'flaggenbande-social-stats.json'
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
   const coverage = (key: keyof SocialMetrics) => `${visibleVideos.filter(video => video.metrics[key] !== null).length}/${visibleVideos.length}`
 
   return <section className="social-analytics" aria-label="Auswertung der sozialen Medien">
-    <div className="social-heading">
-      <div><span className="eyebrow">LEISTUNG</span><h2>Veröffentlichte Videos</h2><p>Plattformen frei kombinieren und jedes Video für den Detailvergleich öffnen.</p></div>
-      <button className="social-export" type="button" onClick={exportJson}>JSON exportieren</button>
-    </div>
+    <div className="social-heading"><h2>Veröffentlichte Videos</h2></div>
 
     <div className="platform-comparison-filter" role="group" aria-label="Plattformen vergleichen">
       <button type="button" className={allSelected ? 'active' : ''} aria-pressed={allSelected} onClick={selectAllPlatforms}>Alle vergleichen</button>
@@ -262,7 +246,6 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
         aria-pressed={selectedPlatforms.has(platform)}
         onClick={() => togglePlatform(platform)}
       >{platformLabels[platform]}</button>)}
-      <small>{selectedPlatforms.size} von {platformOrder.length} Plattformen ausgewählt</small>
     </div>
 
     <div className="social-kpis social-kpis-focused">
@@ -286,7 +269,6 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
         <button type="button" className="social-video-title-button" onClick={event => { event.stopPropagation(); openDetails(group) }}>
           <span className="video-card-kicker">Veröffentlicht {formatDate(group.publishedAt)}</span>
           <span className="social-video-title">{group.title}</span>
-          <span className="social-video-open-label">Details und Plattformvergleich öffnen →</span>
         </button>
         <div className="video-platform-links" aria-label="Externe Videolinks">{group.videos.map(video => {
           const url = trustedPlatformUrl(video)
@@ -348,16 +330,5 @@ export default function SocialAnalytics({ data }: { readonly data: SocialData })
       </div> : null}
     </dialog>
 
-    <details className="connection-details">
-      <summary>Verbindungen und Datenstand</summary>
-      <div className="platform-status-grid">
-        {(Object.entries(data.platforms) as Array<[SocialPlatform, SocialData['platforms'][SocialPlatform]]>).map(([name, state]) => <article key={name} className={`platform-status ${state.status}`}>
-          <div><b>{platformLabels[name]}</b><span className="platform-state-dot" /></div>
-          <strong>{state.videoCount} veröffentlicht</strong>
-          <small title={state.reason ?? state.accountName ?? undefined}>{state.reason ?? state.accountName ?? 'Verbindung vorbereitet'}</small>
-          <em className={isStale(state.completedAt) ? 'stale' : ''}>{state.completedAt ? `${isStale(state.completedAt) ? 'Veraltet · ' : ''}Abgleich ${formatDate(state.completedAt)}` : 'Noch kein erfolgreicher Abgleich'}</em>
-        </article>)}
-      </div>
-    </details>
   </section>
 }

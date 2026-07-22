@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths:
       - 'dashboard/**'
+      - 'cloud/operator-api/**'
+      - 'scripts/operator-runner.mjs'
       - 'scripts/collect-dashboard-data.mjs'
       - 'scripts/collect-content-operations.mjs'
       - 'scripts/social-platforms.mjs'
@@ -85,6 +87,8 @@ jobs:
       - run: npm ci
         working-directory: dashboard
       - run: npm run check && npm run build
+        env:
+          VITE_OPERATOR_API_URL: ${{ vars.OPERATOR_API_URL }}
         working-directory: dashboard
       - uses: actions/upload-pages-artifact@v3
         with: { path: dashboard/dist }

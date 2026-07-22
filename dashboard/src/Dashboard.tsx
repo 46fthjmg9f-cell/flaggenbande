@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import * as echarts from 'echarts'
-import type { EChartsOption } from 'echarts'
+import type { EChartsOption, EChartsType } from 'echarts'
 import ContentSystemDashboard from './ContentSystemDashboard'
 import FinancePage from './FinancePage'
+import PublishingCalendar from './PublishingCalendar'
 import SocialStatsPage from './SocialStatsPage'
 import { DASHBOARD_SECTIONS, dashboardSectionFromHash, type DashboardSectionId } from './dashboardSections'
 import type { DashboardData, DailyMetric, Numeric } from './types'
@@ -23,11 +23,16 @@ function Chart({ option, label }: { option: EChartsOption; label: string }) {
   const [element, setElement] = useState<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!element) return
-    const chart = echarts.init(element, undefined, { renderer: 'canvas' })
-    chart.setOption(option)
-    const observer = new ResizeObserver(() => chart.resize())
-    observer.observe(element)
-    return () => { observer.disconnect(); chart.dispose() }
+    let disposed = false
+    let chart: EChartsType | null = null
+    const observer = new ResizeObserver(() => chart?.resize())
+    void import('echarts').then(echarts => {
+      if (disposed) return
+      chart = echarts.init(element, undefined, { renderer: 'canvas' })
+      chart.setOption(option)
+      observer.observe(element)
+    })
+    return () => { disposed = true; observer.disconnect(); chart?.dispose() }
   }, [element, option])
   return <div className="chart" ref={setElement} aria-label={label} role="img" />
 }
@@ -241,17 +246,14 @@ export default function Dashboard() {
         onKeyDown={event => moveSectionFocus(event, index)}
       >{section.label}</button>)}
     </nav>
-    {activeView === 'videos' && <ContentSystemDashboard />}
+    {activeView === 'production' && <ContentSystemDashboard />}
+    {activeView === 'calendar' && <PublishingCalendar />}
     {activeView === 'social-stats' && <SocialStatsPage data={data.social} generatedAt={data.generatedAt} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
     {activeView === 'finance' && <FinancePage data={data} rows={data.daily} refreshing={refreshing} onRefresh={() => void refreshDashboard()} />}
     {activeView === 'app-development' && <section id="app-development-view" className="dashboard-view" role="tabpanel" aria-labelledby="app-development-tab" tabIndex={0}>
-    <header className="hero">
-      <div><span className="eyebrow">FLAGGENBANDE · APP & ENTWICKLUNG</span><h1>Produkt, Nutzung und Qualität.</h1><p>App Store, Versionen, technische Qualität und anonymisierte CloudKit-Nutzung – klar getrennt von Videos, Plattformleistung und Finanzen.</p></div>
-      <div className="sync-controls">
-        <div className={`sync-state ${data.status}`}><span className="pulse" />{data.generatedAt ? `Aktualisiert ${new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.generatedAt))}` : 'Warte auf den ersten Cloud-Abgleich'}</div>
-        <button className="refresh" onClick={() => void refreshDashboard()} disabled={refreshing}>{refreshing ? 'Wird aktualisiert …' : 'Übersicht aktualisieren'}</button>
-        <small>Automatischer Datenabruf stündlich zur Minute 17.</small>
-      </div>
+    <header className="compact-page-header">
+      <div><h1>App</h1><span className={`compact-sync ${data.status}`}>{data.generatedAt ? new Intl.DateTimeFormat('de-DE', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(data.generatedAt)) : '—'}</span></div>
+      <button onClick={() => void refreshDashboard()} disabled={refreshing} aria-label="App-Daten aktualisieren">↻</button>
     </header>
     <section className="filters" aria-label="Filter der Übersicht">
       <label>Zeitraum<select aria-label="Zeitraum" value={days} onChange={event => setDays(event.target.value)}><option value="7">7 Tage</option><option value="30">30 Tage</option><option value="90">90 Tage</option><option value="all">Gesamt</option></select></label>
@@ -285,7 +287,6 @@ export default function Dashboard() {
         <div className="metric-list">{Object.entries(data.availability).length ? <ul>{Object.entries(data.availability).map(([name, entry]) => <li key={name}><span className={entry.available ? 'available-dot' : 'unavailable-dot'} /><b>{availabilityLabels[name] ?? name}</b><small>{entry.available ? 'Verfügbar' : entry.reason ?? 'Noch nicht verfügbar'}</small></li>)}</ul> : <p>Der erste Abruf füllt hier transparent die verfügbaren Apple- und CloudKit-Quellen ein.</p>}</div>
       </Panel>
     </section>
-    <footer>Flaggenbande App &amp; Entwicklung · GitHub Pages zeigt keine API-Schlüssel, Spieler-IDs, Namen, Texte oder CloudKit-Rohdaten.</footer>
     </section>}
   </main>
 }
