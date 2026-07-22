@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-22T14:18:36.991Z",
+  "generatedAt": "2026-07-22T14:30:39.798Z",
   "status": "partial",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Prüfungen.",
@@ -9,7 +9,8 @@
     "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "9 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
-    "Produktions-Queue: 7 eindeutige Meta-Statusse übernommen; 0 fehlgeschlagen.",
+    "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
+    "Produktions-Queue: 6 eindeutige Meta-Statusse übernommen; 0 fehlgeschlagen.",
     "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt."
   ],
   "system": [
@@ -145,11 +146,11 @@
       "platform": "instagram",
       "mode": "container_unpublished",
       "status": "published",
-      "updatedAt": "2026-07-22T14:17:22.381Z",
+      "updatedAt": "2026-07-22T14:21:44.822Z",
       "title": null,
       "scheduledAt": "2026-07-22T14:15:12.700Z",
       "publishedAt": "2026-07-22T14:17:22.381Z",
-      "publicUrl": null,
+      "publicUrl": "https://www.instagram.com/flaggenbande/reel/DbGSI2gFgL_/",
       "failureCode": null
     },
     {
@@ -174,7 +175,7 @@
       "title": null,
       "scheduledAt": "2026-07-22T14:07:48.864Z",
       "publishedAt": "2026-07-22T14:08:24.223Z",
-      "publicUrl": null,
+      "publicUrl": "https://www.facebook.com/reel/25555504217479857",
       "failureCode": null
     },
     {

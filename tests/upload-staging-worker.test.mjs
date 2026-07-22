@@ -59,7 +59,9 @@ test('public production feed exposes only safe queue state and categorized failu
   assert.match(feed, /failureCode:/)
   assert.match(feed, /contentId:/)
   assert.match(feed, /scheduledAt:/)
-  assert.doesNotMatch(feed, /metadata_json|media_url|media_project|media_branch|container_id|platform_video_id|publication_url/)
+  assert.match(feed, /validatedPublicationUrl/)
+  assert.match(feed, /publicUrl/)
+  assert.doesNotMatch(feed, /metadata_json|media_url|media_project|media_branch|container_id|platform_video_id/)
   assert.doesNotMatch(feed, /lastError\s*:/)
   assert.doesNotMatch(feed, /jobId\s*:/)
 })
@@ -136,6 +138,10 @@ test('Meta publishing resumes persisted remote state and classifies binary auth 
   const processEnd = source.indexOf('const publicationClaimTimeoutMs =', processStart)
   const process = source.slice(processStart, processEnd)
   assert.match(process, /currentJob\(env, job\.job_id\)/)
+  assert.match(source, /const resolveInstagramPermalink/)
+  assert.match(source, /fields: "id,permalink"/)
+  assert.match(instagram, /completeInstagramPublication/)
+  assert.doesNotMatch(source, /instagram\.com\/p\/\$\{id\}/)
 })
 
 test('successful state transitions can explicitly clear an earlier provider error', async () => {
