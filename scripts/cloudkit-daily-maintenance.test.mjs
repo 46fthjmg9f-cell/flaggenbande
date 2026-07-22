@@ -9,6 +9,7 @@ import {
   canonicalChallenge,
   challengeRecord,
   challengeRecordMatches,
+  CloudKitClient,
   deterministicCountryOrder,
   deriveTrophyStandings,
   immutableLeaderboardRecordName,
@@ -34,6 +35,14 @@ afterEach(() => {
 function fields(values) {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }]))
 }
+
+describe('CloudKit server identity', () => {
+  test('accepts the privacy-preserving lookupInfo response from users/caller', async () => {
+    const client = new CloudKitClient({ keyId: 'test', privateKey: 'unused' })
+    client.request = async () => ({ users: [{ lookupInfo: { userRecordName: '_developer' } }] })
+    assert.equal(await client.callerRecordName(), '_developer')
+  })
+})
 
 function serverRecord(record, owner, createdAt, modifiedAt = createdAt) {
   return {
