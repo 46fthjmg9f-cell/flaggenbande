@@ -21,7 +21,7 @@ on:
           - development
           - production
       apply:
-        description: Apply writes (also requires repository variable CLOUDKIT_DAILY_WRITES_ENABLED=true)
+        description: Apply writes (also requires the matching environment-specific repository gate)
         required: true
         default: false
         type: boolean
@@ -40,11 +40,12 @@ concurrency:
 
 jobs:
   maintain:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - name: Verify maintenance logic
@@ -54,7 +55,8 @@ jobs:
           CLOUDKIT_CONTAINER: ${{ secrets.CLOUDKIT_CONTAINER }}
           CLOUDKIT_KEY_ID: ${{ secrets.CLOUDKIT_KEY_ID }}
           CLOUDKIT_PRIVATE_KEY: ${{ secrets.CLOUDKIT_PRIVATE_KEY }}
-          CLOUDKIT_DAILY_WRITES_ENABLED: ${{ vars.CLOUDKIT_DAILY_WRITES_ENABLED }}
+          CLOUDKIT_DEVELOPMENT_WRITES_ENABLED: ${{ vars.CLOUDKIT_DEVELOPMENT_WRITES_ENABLED }}
+          CLOUDKIT_PRODUCTION_WRITES_ENABLED: ${{ vars.CLOUDKIT_PRODUCTION_WRITES_ENABLED }}
           REQUESTED_TASK: ${{ inputs.task }}
           REQUESTED_ENVIRONMENT: ${{ inputs.environment }}
           REQUESTED_APPLY: ${{ inputs.apply }}
@@ -87,8 +89,13 @@ jobs:
             "--days-forward=${days_forward}"
           )
 
-          if [[ "${CLOUDKIT_DAILY_WRITES_ENABLED:-false}" == "true" ]] \
-            && { [[ "${GITHUB_EVENT_NAME}" == "schedule" ]] || [[ "${REQUESTED_APPLY:-false}" == "true" ]]; }; then
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
+            if [[ "${CLOUDKIT_PRODUCTION_WRITES_ENABLED:-false}" == "true" ]]; then
+              arguments+=(--apply)
+            fi
+          elif [[ "${REQUESTED_APPLY:-false}" == "true" ]]; then
+            # The CLI validates the environment-specific gate and fails closed
+            # instead of silently turning an explicitly requested write into a dry-run.
             arguments+=(--apply)
           fi
 

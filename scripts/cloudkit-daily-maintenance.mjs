@@ -212,9 +212,8 @@ export function challengeRecord(challenge) {
   }
 }
 
-export function challengeRecordMatches(record, challenge, trustedServerUser = null) {
+export function challengeRecordContentMatches(record, challenge) {
   if (!record || record.recordType !== 'DailyChallenge' || record.recordName !== challenge.recordName) return false
-  if (trustedServerUser && serverUser(record, 'created') !== trustedServerUser) return false
   const startsAt = requiredNumber(record, 'startsAt')
   const endsAt = requiredNumber(record, 'endsAt')
   return requiredString(record, 'dateKey') === challenge.dateKey
@@ -223,6 +222,11 @@ export function challengeRecordMatches(record, challenge, trustedServerUser = nu
     && requiredString(record, 'flagOrder') === challenge.flagOrder.join(',')
     && startsAt !== null && Math.abs(startsAt - challenge.startsAt) <= 1_000
     && endsAt !== null && Math.abs(endsAt - challenge.endsAt) <= 1_000
+}
+
+export function challengeRecordMatches(record, challenge, trustedServerUser = null) {
+  return challengeRecordContentMatches(record, challenge)
+    && (!trustedServerUser || serverUser(record, 'created') === trustedServerUser)
 }
 
 export function safeRecordComponent(value) {
@@ -496,7 +500,8 @@ export class CloudKitClient {
     container = process.env.CLOUDKIT_CONTAINER || 'iCloud.de.phil.SpassmitFlaggen',
     keyId = process.env.CLOUDKIT_KEY_ID,
     privateKey = process.env.CLOUDKIT_PRIVATE_KEY,
-    environment = 'production',
+    environment = 'development',
+    writesEnabled = false,
   } = {}) {
     if (!container.startsWith('iCloud.')) throw new Error('Invalid CLOUDKIT_CONTAINER')
     if (!['development', 'production'].includes(environment)) throw new Error('CloudKit environment must be development or production')
@@ -505,6 +510,7 @@ export class CloudKitClient {
     this.keyId = keyId
     this.privateKey = privateKey.replace(/\\n/g, '\n')
     this.environment = environment
+    this.writesEnabled = writesEnabled === true
   }
 
   path(operation) {
@@ -581,6 +587,7 @@ export class CloudKitClient {
   }
 
   async createRecord(record) {
+    if (!this.writesEnabled) throw new Error('CloudKit mutation rejected because writes are disabled')
     const response = await this.request('records/modify', { operations: [{ operationType: 'create', record }] })
     const result = response.records?.[0]
     if (!result || result.serverErrorCode) throw sanitizeCloudKitFailure('CloudKit create', response, 200)
@@ -588,6 +595,7 @@ export class CloudKitClient {
   }
 
   async forceReplaceRecords(records) {
+    if (!this.writesEnabled) throw new Error('CloudKit mutation rejected because writes are disabled')
     for (let offset = 0; offset < records.length; offset += 200) {
       const operations = records.slice(offset, offset + 200).map(record => ({ operationType: 'forceReplace', record }))
       const response = await this.request('records/modify', { operations, atomic: false })
@@ -778,18 +786,26 @@ export function buildUserStatsRecords(events, timestamp) {
 export async function maintainChallenges({ client, apply, dateKeys, countryCodes, caller }) {
   const challenges = dateKeys.flatMap(dateKey => MODES.map(mode => canonicalChallenge(mode, dateKey, countryCodes)))
   const existing = await client.lookupRecords(challenges.map(challenge => challenge.recordName))
-  const summary = { checked: challenges.length, created: 0, planned: 0, unchanged: 0, rejected: 0 }
+  const summary = { checked: challenges.length, created: 0, planned: 0, unchanged: 0, legacyCanonical: 0, rejected: 0 }
+  const missing = []
   for (const challenge of challenges) {
     const record = existing.get(challenge.recordName)
     if (record) {
       if (challengeRecordMatches(record, challenge, caller)) summary.unchanged += 1
+      else if (challengeRecordContentMatches(record, challenge)) summary.legacyCanonical += 1
       else summary.rejected += 1
       continue
     }
-    if (!apply) {
-      summary.planned += 1
-      continue
-    }
+    missing.push(challenge)
+  }
+  summary.planned = apply ? 0 : missing.length
+  if (summary.rejected > 0) {
+    if (apply) throw new Error(`Refusing writes because ${summary.rejected} existing DailyChallenge record(s) are not canonical`)
+    return summary
+  }
+  if (!apply) return summary
+
+  for (const challenge of missing) {
     try {
       await client.createRecord(challengeRecord(challenge))
     } catch {
@@ -799,9 +815,6 @@ export async function maintainChallenges({ client, apply, dateKeys, countryCodes
     const verified = await client.lookupRecords([challenge.recordName])
     if (!challengeRecordMatches(verified.get(challenge.recordName), challenge, caller)) throw new Error('Created DailyChallenge failed read-back verification')
     summary.created += 1
-  }
-  if (apply && summary.rejected > 0) {
-    throw new Error(`Refusing writes because ${summary.rejected} existing DailyChallenge record(s) are not trusted and canonical`)
   }
   return summary
 }
@@ -875,12 +888,13 @@ function integerArgument(args, name, fallback, minimum, maximum) {
 
 export function parseArguments(args) {
   const task = argumentValue(args, 'task', 'both')
-  const environment = argumentValue(args, 'environment', 'production')
+  const environment = argumentValue(args, 'environment', 'development')
   const apply = args.includes('--apply')
   if (!['challenge', 'winner', 'both'].includes(task)) throw new Error('--task must be challenge, winner, or both')
   if (!['development', 'production'].includes(environment)) throw new Error('--environment must be development or production')
-  if (apply && process.env.CLOUDKIT_DAILY_WRITES_ENABLED !== 'true') {
-    throw new Error('--apply requires CLOUDKIT_DAILY_WRITES_ENABLED=true after schema/security verification')
+  const writeGate = environment === 'production' ? 'CLOUDKIT_PRODUCTION_WRITES_ENABLED' : 'CLOUDKIT_DEVELOPMENT_WRITES_ENABLED'
+  if (apply && process.env[writeGate] !== 'true') {
+    throw new Error(`--apply requires ${writeGate}=true after schema/security verification`)
   }
   return {
     task,
@@ -893,7 +907,7 @@ export function parseArguments(args) {
 
 export async function main(args = process.argv.slice(2)) {
   const options = parseArguments(args)
-  const client = new CloudKitClient({ environment: options.environment })
+  const client = new CloudKitClient({ environment: options.environment, writesEnabled: options.apply })
   const [countryCodes, caller] = await Promise.all([readCanonicalCountryCodes(), client.callerRecordName()])
   const today = berlinDateKey()
   const output = {
