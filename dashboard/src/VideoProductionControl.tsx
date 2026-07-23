@@ -2,12 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   approveOperatorScript,
   approveOperatorVideo,
+  generateOperatorScriptDraft,
+  getResearchRecommendations,
   listOperatorRuns,
   operatorApiConfigured,
   operatorPreviewUrl,
   startOperatorRun,
   type OperatorRun,
   type OperatorRunStatus,
+  type ResearchRecommendationFeed,
+  type ScriptDraft,
+  type SupportedRoundCount,
 } from './operatorApi'
 import { displayReleaseLabel } from './videoDisplay'
 
@@ -28,6 +33,19 @@ const markerPattern = /^\s*\(auflösung\)\s*$/gimu
 
 function markerCount(script: string): number {
   return [...script.matchAll(markerPattern)].length
+}
+
+function spokenWordCount(script: string): number {
+  return script.replace(markerPattern, '').match(/[\p{L}\p{N}]+/gu)?.length ?? 0
+}
+
+function brandMentionCount(script: string): number {
+  return script.match(/\bflaggenbande\b/giu)?.length ?? 0
+}
+
+const targetDurationByRounds: Record<SupportedRoundCount, number> = {
+  5: 64,
+  7: 69,
 }
 
 function formatTime(value: string): string {
@@ -150,14 +168,28 @@ function RunCard({ run, busyAction, onApproveScript, onApproveVideo, initiallyOp
 
 export default function VideoProductionControl() {
   const [script, setScript] = useState('')
-  const [targetDurationSeconds, setTargetDurationSeconds] = useState(65)
+  const [autoGenerate, setAutoGenerate] = useState(false)
+  const [roundCount, setRoundCount] = useState<SupportedRoundCount>(5)
+  const [targetDurationSeconds, setTargetDurationSeconds] = useState(targetDurationByRounds[5])
+  const [draft, setDraft] = useState<ScriptDraft | null>(null)
+  const [research, setResearch] = useState<ResearchRecommendationFeed | null>(null)
+  const [researchError, setResearchError] = useState<string | null>(null)
+  const [selectedRecommendationId, setSelectedRecommendationId] = useState<string | null>(null)
   const [runs, setRuns] = useState<OperatorRun[]>([])
   const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const markers = useMemo(() => markerCount(script), [script])
-  const scriptValid = script.trim().length >= 80 && markers === 5
+  const words = useMemo(() => spokenWordCount(script), [script])
+  const brandMentions = useMemo(() => brandMentionCount(script), [script])
+  const minimumWords = roundCount === 5 ? 90 : 70
+  const brandValid = roundCount === 5 ? brandMentions === 1 : brandMentions === 0
+  const scriptValid = script.trim().length >= 80 &&
+    markers === roundCount &&
+    words >= minimumWords &&
+    brandValid
   const activeRun = runs.some(run => !['published', 'completed', 'failed'].includes(run.status))
 
   const refresh = useCallback(async (silent = false) => {
@@ -184,6 +216,26 @@ export default function VideoProductionControl() {
     }
   }, [activeRun, refresh])
 
+  useEffect(() => {
+    if (!operatorApiConfigured) return
+    const loadResearch = () => {
+      void getResearchRecommendations()
+        .then(value => {
+          setResearch(value)
+          setResearchError(null)
+        })
+        .catch(reason => setResearchError(reason instanceof Error ? reason.message : String(reason)))
+    }
+    loadResearch()
+    const timer = window.setInterval(loadResearch, 5 * 60_000)
+    const onFocus = () => loadResearch()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+
   const updateRun = (run: OperatorRun) => {
     setRuns(previous => [run, ...previous.filter(entry => entry.runId !== run.runId)])
   }
@@ -193,13 +245,52 @@ export default function VideoProductionControl() {
     setSaving(true)
     setError(null)
     try {
-      updateRun(await startOperatorRun({ script: script.trim(), targetDurationSeconds }))
+      updateRun(await startOperatorRun({
+        script: script.trim(),
+        targetDurationSeconds,
+        roundCount,
+        ...(draft ? { draftId: draft.draftId } : {}),
+      }))
       setScript('')
+      setDraft(null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setSaving(false)
     }
+  }
+
+  const generateDraft = async () => {
+    setGenerating(true)
+    setError(null)
+    try {
+      const generated = await generateOperatorScriptDraft({
+        roundCount,
+        targetDurationSeconds,
+        recommendationId: selectedRecommendationId,
+      })
+      setDraft(generated)
+      setScript(generated.script)
+      setTargetDurationSeconds(generated.suggestedDurationSeconds)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const changeRoundCount = (value: SupportedRoundCount) => {
+    setRoundCount(value)
+    setTargetDurationSeconds(targetDurationByRounds[value])
+    setDraft(null)
+  }
+
+  const selectRecommendation = (recommendationId: string | null) => {
+    setSelectedRecommendationId(recommendationId)
+    // Ein bereits erzeugter Draft gehört weiterhin zu seiner ursprünglichen
+    // Research-Hypothese. Nach einem Wechsel wird er als manueller Text
+    // behandelt, bis ein neuer Entwurf explizit erzeugt wurde.
+    setDraft(null)
   }
 
   const approveScript = async (run: OperatorRun) => {
@@ -234,26 +325,99 @@ export default function VideoProductionControl() {
 
   return <section className="operator-layout">
     <article className="operator-card">
-      <div className="compact-heading"><h2>Neues Skript</h2></div>
-      <textarea
-        aria-label="Videoskript"
-        onChange={event => setScript(event.target.value)}
-        placeholder="Skript einfügen …"
-        rows={14}
-        value={script}
-      />
-      <div className="operator-controls">
-        <label>Länge
+      <div className="compact-heading">
+        <h2>Neues Skript</h2>
+        <label className="auto-script-toggle">
+          <input
+            type="checkbox"
+            checked={autoGenerate}
+            onChange={event => setAutoGenerate(event.target.checked)}
+          />
+          <span>Autogenerate Skript</span>
+        </label>
+      </div>
+      <div className="production-profile-controls">
+        <label>Auflösungen
+          <select
+            value={roundCount}
+            onChange={event => changeRoundCount(Number(event.target.value) as SupportedRoundCount)}
+          >
+            <option value={5}>5</option>
+            <option value={7}>7</option>
+          </select>
+        </label>
+        <label>Ziellänge
           <select value={targetDurationSeconds} onChange={event => setTargetDurationSeconds(Number(event.target.value))}>
             {[61, 62, 63, 64, 65, 66, 67, 68, 69, 70].map(seconds => <option value={seconds} key={seconds}>{seconds} s</option>)}
           </select>
         </label>
-        <span className={markers === 5 ? 'marker-count valid' : 'marker-count'}>{markers}/5 Auflösungen</span>
+        {autoGenerate && <button
+          className="secondary-action"
+          type="button"
+          onClick={() => void generateDraft()}
+          disabled={generating || saving}
+        >
+          {generating ? 'Entwurf wird erstellt …' : 'Entwurf erstellen'}
+        </button>}
+      </div>
+      {autoGenerate && <div className="auto-script-meta">
+        {draft
+          ? <span>{draft.styleExampleCount} freigegebene Stilbeispiele · Entwurf bleibt editierbar</span>
+          : <span>Erstellt nur einen Entwurf. Produktion startet erst nach deiner Freigabe.</span>}
+      </div>}
+      <textarea
+        aria-label="Videoskript"
+        onChange={event => setScript(event.target.value)}
+        placeholder={autoGenerate ? 'Entwurf erstellen oder Skript selbst eingeben …' : 'Skript einfügen …'}
+        rows={14}
+        value={script}
+      />
+      <div className="operator-controls">
+        <span className={markers === roundCount ? 'marker-count valid' : 'marker-count'}>{markers}/{roundCount} Auflösungen</span>
+        <span className={words >= minimumWords ? 'marker-count valid' : 'marker-count'}>{words}/{minimumWords} Wörter</span>
+        <span className={brandValid ? 'marker-count valid' : 'marker-count'}>
+          {roundCount === 5 ? `${brandMentions}/1 Flaggenbande` : brandMentions === 0 ? 'organisch' : 'ohne App-Nennung'}
+        </span>
         <button className="primary-action" type="button" onClick={() => void saveScript()} disabled={saving || !scriptValid}>
           {saving ? 'Wird gespeichert …' : 'Skript zur Prüfung speichern'}
         </button>
       </div>
       {error && <p className="operator-error">{error}</p>}
+
+      <section className="research-suggestions">
+        <div className="compact-heading">
+          <h2>Research</h2>
+          {research && <span className={research.dataReadiness.status}>
+            Retention {research.dataReadiness.retentionVideos}/{research.dataReadiness.minimumComparableVideos}
+          </span>}
+        </div>
+        {research
+          ? <>
+              <p className="research-readiness">{research.dataReadiness.message}</p>
+              <div className="research-options">
+                <button
+                  type="button"
+                  className={selectedRecommendationId === null ? 'selected' : ''}
+                  onClick={() => selectRecommendation(null)}
+                >
+                  Baseline
+                </button>
+                {research.recommendations.map(recommendation => <button
+                  type="button"
+                  key={recommendation.id}
+                  className={selectedRecommendationId === recommendation.id ? 'selected' : ''}
+                  onClick={() => selectRecommendation(recommendation.id)}
+                >
+                  <strong>{recommendation.title}</strong>
+                  <small>{recommendation.primaryParameter} · {recommendation.confidence}</small>
+                </button>)}
+              </div>
+              {selectedRecommendationId && <p className="research-action">
+                {research.recommendations.find(entry => entry.id === selectedRecommendationId)?.action}
+              </p>}
+            </>
+          : <p className="compact-empty">{researchError ?? 'Research wird geladen …'}</p>}
+      </section>
     </article>
 
     <aside className="operator-card operator-runs">

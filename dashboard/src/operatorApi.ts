@@ -79,9 +79,54 @@ export interface CalendarEntry {
   platforms: Record<CalendarPlatform, CalendarPlatformState>
 }
 
+export type SupportedRoundCount = 5 | 7
+
+export interface ScriptDraft {
+  draftId: string
+  script: string
+  scriptSha256: string
+  roundCount: SupportedRoundCount
+  suggestedDurationSeconds: number
+  generatorVersion: string
+  styleExampleCount: number
+  recommendationId: string | null
+  learnedSignals: string[]
+  createdAt: string
+}
+
+export interface ResearchRecommendation {
+  id: string
+  title: string
+  action: string
+  primaryParameter: string
+  targetMetric: string
+  evidenceLevel: 'measured' | 'public' | 'inferred' | 'unavailable'
+  confidence: 'low' | 'medium' | 'high'
+  sampleSize: number
+  sourceRun: string
+  autoApplicable: false
+}
+
+export interface ResearchRecommendationFeed {
+  schemaVersion: '1.0.0'
+  generatedAt: string
+  dataReadiness: {
+    status: 'ready' | 'insufficient'
+    platformVideoCount: number
+    linkedYoutubeVideos: number
+    retentionVideos: number
+    averageViewPercentageVideos: number
+    minimumComparableVideos: number
+    message: string
+  }
+  recommendations: ResearchRecommendation[]
+}
+
 interface StartRunInput {
   script: string
   targetDurationSeconds: number
+  roundCount: SupportedRoundCount
+  draftId?: string
 }
 
 function configuredBaseUrl(): string | null {
@@ -127,6 +172,17 @@ function nullableNumber(value: unknown): number | null {
 function requiredBoolean(value: unknown, field: string): boolean {
   if (typeof value !== 'boolean') throw new Error(`${field} fehlt.`)
   return value
+}
+
+function requiredFalse(value: unknown, field: string): false {
+  if (value !== false) throw new Error(`${field} ist ungültig.`)
+  return false
+}
+
+function requiredInteger(value: unknown, field: string): number {
+  const number = requiredNumber(value, field)
+  if (!Number.isInteger(number)) throw new Error(`${field} ist ungültig.`)
+  return number
 }
 
 function enumValue<const T extends readonly string[]>(value: unknown, allowed: T, field: string): T[number] {
@@ -295,6 +351,73 @@ export async function listOperatorRuns(limit = 20): Promise<OperatorRun[]> {
 
 export async function startOperatorRun(input: StartRunInput): Promise<OperatorRun> {
   return parseRun(await request('/v1/runs', { method: 'POST', body: JSON.stringify(input) }))
+}
+
+function parseScriptDraft(value: unknown): ScriptDraft {
+  if (!isRecord(value) || !Array.isArray(value.learnedSignals)) throw new Error('Ungültiger Skriptentwurf.')
+  const roundCount = requiredInteger(value.roundCount, 'roundCount')
+  if (roundCount !== 5 && roundCount !== 7) throw new Error('roundCount ist ungültig.')
+  return {
+    draftId: requiredString(value.draftId, 'draftId'),
+    script: requiredString(value.script, 'script'),
+    scriptSha256: requiredString(value.scriptSha256, 'scriptSha256'),
+    roundCount,
+    suggestedDurationSeconds: requiredNumber(value.suggestedDurationSeconds, 'suggestedDurationSeconds'),
+    generatorVersion: requiredString(value.generatorVersion, 'generatorVersion'),
+    styleExampleCount: requiredInteger(value.styleExampleCount, 'styleExampleCount'),
+    recommendationId: nullableString(value.recommendationId),
+    learnedSignals: value.learnedSignals.map((entry, index) => requiredString(entry, `learnedSignals.${index}`)),
+    createdAt: requiredString(value.createdAt, 'createdAt'),
+  }
+}
+
+function parseResearchRecommendation(value: unknown): ResearchRecommendation {
+  if (!isRecord(value)) throw new Error('Ungültige Research-Empfehlung.')
+  return {
+    id: requiredString(value.id, 'recommendation.id'),
+    title: requiredString(value.title, 'recommendation.title'),
+    action: requiredString(value.action, 'recommendation.action'),
+    primaryParameter: requiredString(value.primaryParameter, 'recommendation.primaryParameter'),
+    targetMetric: requiredString(value.targetMetric, 'recommendation.targetMetric'),
+    evidenceLevel: enumValue(value.evidenceLevel, ['measured', 'public', 'inferred', 'unavailable'] as const, 'recommendation.evidenceLevel'),
+    confidence: enumValue(value.confidence, ['low', 'medium', 'high'] as const, 'recommendation.confidence'),
+    sampleSize: requiredInteger(value.sampleSize, 'recommendation.sampleSize'),
+    sourceRun: requiredString(value.sourceRun, 'recommendation.sourceRun'),
+    autoApplicable: requiredFalse(value.autoApplicable, 'recommendation.autoApplicable'),
+  }
+}
+
+export async function generateOperatorScriptDraft(input: {
+  roundCount: SupportedRoundCount
+  targetDurationSeconds: number
+  recommendationId: string | null
+}): Promise<ScriptDraft> {
+  const clientRequestId = `draft:${crypto.randomUUID()}`
+  return parseScriptDraft(await request('/v1/script-drafts', {
+    method: 'POST',
+    body: JSON.stringify({ ...input, clientRequestId }),
+  }))
+}
+
+export async function getResearchRecommendations(): Promise<ResearchRecommendationFeed> {
+  const value = await request('/v1/research/recommendations')
+  if (!isRecord(value) || !isRecord(value.dataReadiness) || !Array.isArray(value.recommendations)) {
+    throw new Error('Ungültige Research-Antwort.')
+  }
+  return {
+    schemaVersion: enumValue(value.schemaVersion, ['1.0.0'] as const, 'schemaVersion'),
+    generatedAt: requiredString(value.generatedAt, 'generatedAt'),
+    dataReadiness: {
+      status: enumValue(value.dataReadiness.status, ['ready', 'insufficient'] as const, 'dataReadiness.status'),
+      platformVideoCount: requiredInteger(value.dataReadiness.platformVideoCount, 'dataReadiness.platformVideoCount'),
+      linkedYoutubeVideos: requiredInteger(value.dataReadiness.linkedYoutubeVideos, 'dataReadiness.linkedYoutubeVideos'),
+      retentionVideos: requiredInteger(value.dataReadiness.retentionVideos, 'dataReadiness.retentionVideos'),
+      averageViewPercentageVideos: requiredInteger(value.dataReadiness.averageViewPercentageVideos, 'dataReadiness.averageViewPercentageVideos'),
+      minimumComparableVideos: requiredInteger(value.dataReadiness.minimumComparableVideos, 'dataReadiness.minimumComparableVideos'),
+      message: requiredString(value.dataReadiness.message, 'dataReadiness.message'),
+    },
+    recommendations: value.recommendations.map(parseResearchRecommendation),
+  }
 }
 
 export async function approveOperatorScript(run: OperatorRun): Promise<OperatorRun> {

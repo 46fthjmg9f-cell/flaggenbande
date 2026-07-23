@@ -91,6 +91,79 @@ CREATE TABLE IF NOT EXISTS operator_production_reviews (
 CREATE INDEX IF NOT EXISTS operator_production_reviews_release_label_idx
   ON operator_production_reviews(release_label);
 
+CREATE TABLE IF NOT EXISTS operator_script_drafts (
+  draft_id TEXT PRIMARY KEY,
+  client_request_id TEXT NOT NULL UNIQUE,
+  script TEXT NOT NULL,
+  script_sha256 TEXT NOT NULL,
+  round_count INTEGER NOT NULL CHECK (round_count IN (5, 7)),
+  suggested_duration_seconds REAL NOT NULL CHECK (suggested_duration_seconds >= 61 AND suggested_duration_seconds <= 70),
+  generator_version TEXT NOT NULL,
+  style_example_count INTEGER NOT NULL DEFAULT 0 CHECK (style_example_count >= 0),
+  recommendation_id TEXT,
+  learned_signals_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS operator_script_drafts_created_idx
+  ON operator_script_drafts(created_at);
+
+CREATE TABLE IF NOT EXISTS operator_script_origins (
+  run_id TEXT PRIMARY KEY,
+  draft_id TEXT,
+  origin TEXT NOT NULL CHECK (origin IN ('manual', 'auto_unedited', 'auto_edited')),
+  reveal_count INTEGER NOT NULL CHECK (reveal_count IN (5, 7)),
+  submitted_script_sha256 TEXT NOT NULL,
+  draft_script_sha256 TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (run_id) REFERENCES operator_production_runs(run_id),
+  FOREIGN KEY (draft_id) REFERENCES operator_script_drafts(draft_id)
+);
+
+CREATE INDEX IF NOT EXISTS operator_script_origins_origin_idx
+  ON operator_script_origins(origin, updated_at);
+
+CREATE TABLE IF NOT EXISTS operator_script_style_examples (
+  example_id TEXT PRIMARY KEY,
+  script_sha256 TEXT NOT NULL UNIQUE,
+  script TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('seeded', 'manual', 'auto_edited')),
+  reveal_count INTEGER NOT NULL CHECK (reveal_count IN (5, 7)),
+  target_duration_seconds REAL NOT NULL CHECK (target_duration_seconds >= 61 AND target_duration_seconds <= 70),
+  trust_level TEXT NOT NULL CHECK (trust_level IN ('candidate', 'high_confidence')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS operator_script_style_examples_retrieval_idx
+  ON operator_script_style_examples(reveal_count, trust_level, updated_at);
+
+INSERT OR IGNORE INTO operator_script_style_examples
+  (example_id, script_sha256, script, source, reveal_count, target_duration_seconds,
+   trust_level, created_at, updated_at)
+VALUES (
+  'style-seed-german-v7-benchmark',
+  '2d5cc6f4d833a995d49cd547c7b0c0e1adddb98ace7415e01dfb845c9277d81f',
+  'was läuft was läuft, schnelles flaggenquiz, fünf flaggen, eine wird richtig kernig. fängt easy an: welches land ist das?
+(auflösung)
+okok, sauber. die nächste wird schon tougher, also nicht zu früh feiern. wie schaut es hier aus?
+(auflösung)
+crazy, der bre hat ahnung. jetzt wird es knifflig: welches land gehört zu dieser flagge?
+(auflösung)
+drei von drei wäre stark. kurzer zwischenstand: mit Flaggenbande trainierst du genau solche flaggenrunden. bereit fürs halbfinale, welches land ist das?
+(auflösung)
+junge, vielleicht ist hier wirklich der flaggenboss am start. letzte runde, mann oder maus: welche flagge siehst du?
+(auflösung)
+anscheinend der allerechte flaggenchef. schreib ehrlich, wie viele du sauber erkannt hast.',
+  'seeded',
+  5,
+  64,
+  'high_confidence',
+  '2026-07-23T00:00:00.000Z',
+  '2026-07-23T00:00:00.000Z'
+);
+
 CREATE TABLE IF NOT EXISTS operator_review_events (
   review_event_id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id TEXT NOT NULL,

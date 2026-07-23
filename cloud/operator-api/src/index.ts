@@ -1,3 +1,11 @@
+import {
+  buildResearchRecommendationFeed,
+  DEFAULT_TARGET_DURATION,
+  generateScriptDraft,
+  validateScriptProfile,
+  type SupportedRoundCount,
+} from "./scriptDrafts.ts";
+
 interface D1Result {
   readonly success?: boolean;
   readonly meta?: { readonly changes?: number };
@@ -86,6 +94,35 @@ interface RunRow {
   readonly created_at: string;
   readonly updated_at: string;
   readonly completed_at: string | null;
+}
+
+interface ScriptDraftRow {
+  readonly draft_id: string;
+  readonly client_request_id: string;
+  readonly script: string;
+  readonly script_sha256: string;
+  readonly round_count: SupportedRoundCount;
+  readonly suggested_duration_seconds: number;
+  readonly generator_version: string;
+  readonly style_example_count: number;
+  readonly recommendation_id: string | null;
+  readonly learned_signals_json: string;
+  readonly created_at: string;
+}
+
+interface ScriptOriginRow {
+  readonly run_id: string;
+  readonly draft_id: string | null;
+  readonly origin: "manual" | "auto_unedited" | "auto_edited";
+  readonly reveal_count: SupportedRoundCount;
+  readonly submitted_script_sha256: string;
+  readonly draft_script_sha256: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+}
+
+interface StyleExampleRow {
+  readonly script: string;
 }
 
 interface CalendarRow {
@@ -448,11 +485,15 @@ const berlinDay = (timestamp: string): { readonly dayKey: string; readonly displ
 interface NewRunInput {
   readonly script: string;
   readonly targetDurationSeconds: number;
+  readonly roundCount: SupportedRoundCount;
+  readonly draftId?: string;
   readonly clientRequestId?: string;
 }
 
 const parseNewRun = (value: unknown): NewRunInput => {
-  if (!isRecord(value) || !exactKeys(value, ["script", "targetDurationSeconds", "clientRequestId"])) {
+  if (!isRecord(value) || !exactKeys(value, [
+    "script", "targetDurationSeconds", "roundCount", "draftId", "clientRequestId",
+  ])) {
     throw new Error("INVALID_VIDEO_RUN_INPUT");
   }
   const script = typeof value.script === "string" ? normalizeScript(value.script) : "";
@@ -460,13 +501,186 @@ const parseNewRun = (value: unknown): NewRunInput => {
     ? Number(value.targetDurationSeconds.toFixed(3))
     : Number.NaN;
   const clientRequestId = value.clientRequestId === undefined ? undefined : safeText(value.clientRequestId, 128);
+  const draftId = value.draftId === undefined ? undefined : safeText(value.draftId, 80);
   const revealCount = script.split("\n").filter((line) => line === "(auflösung)").length;
+  const roundCount = value.roundCount === undefined ? revealCount : Number(value.roundCount);
   if (
-    script.length < 80 || script.length > 20_000 || revealCount !== 5 ||
+    script.length < 80 || script.length > 20_000 ||
+    (roundCount !== 5 && roundCount !== 7) || revealCount !== roundCount ||
     !Number.isFinite(target) || target < 61 || target > 70 ||
+    (value.draftId !== undefined && (!draftId || !/^draft-[a-f0-9]{24}$/u.test(draftId))) ||
     (value.clientRequestId !== undefined && (!clientRequestId || !/^[A-Za-z0-9._:-]{8,128}$/u.test(clientRequestId)))
   ) throw new Error("INVALID_VIDEO_RUN_INPUT");
-  return { script, targetDurationSeconds: target, ...(clientRequestId ? { clientRequestId } : {}) };
+  if (!validateScriptProfile(script, roundCount, target).valid) {
+    throw new Error("INVALID_VIDEO_RUN_INPUT");
+  }
+  return {
+    script,
+    targetDurationSeconds: target,
+    roundCount,
+    ...(draftId ? { draftId } : {}),
+    ...(clientRequestId ? { clientRequestId } : {}),
+  };
+};
+
+interface NewDraftInput {
+  readonly roundCount: SupportedRoundCount;
+  readonly targetDurationSeconds: number;
+  readonly recommendationId: string | null;
+  readonly clientRequestId: string;
+}
+
+const RESEARCH_RECOMMENDATION_IDS = new Set([
+  "difficulty-ladder-visibility-v1",
+  "first-reveal-delay-v1",
+]);
+
+const parseNewDraft = (value: unknown): NewDraftInput => {
+  if (!isRecord(value) || !exactKeys(value, [
+    "roundCount", "targetDurationSeconds", "recommendationId", "clientRequestId",
+  ])) throw new Error("INVALID_SCRIPT_DRAFT_INPUT");
+  const roundCount = Number(value.roundCount);
+  const defaultTarget = roundCount === 5 || roundCount === 7
+    ? DEFAULT_TARGET_DURATION[roundCount]
+    : Number.NaN;
+  const target = value.targetDurationSeconds === undefined
+    ? defaultTarget
+    : Number(value.targetDurationSeconds);
+  const recommendationId = value.recommendationId === null || value.recommendationId === undefined
+    ? null
+    : safeText(value.recommendationId, 80);
+  const clientRequestId = safeText(value.clientRequestId, 128);
+  if (
+    (roundCount !== 5 && roundCount !== 7) ||
+    !Number.isFinite(target) || target < 61 || target > 70 ||
+    !clientRequestId || !/^[A-Za-z0-9._:-]{8,128}$/u.test(clientRequestId) ||
+    (recommendationId !== null && !RESEARCH_RECOMMENDATION_IDS.has(recommendationId))
+  ) throw new Error("INVALID_SCRIPT_DRAFT_INPUT");
+  return {
+    roundCount,
+    targetDurationSeconds: Number(target.toFixed(3)),
+    recommendationId,
+    clientRequestId,
+  };
+};
+
+const draftById = (env: Env, draftId: string): Promise<ScriptDraftRow | null> =>
+  env.DB.prepare("SELECT * FROM operator_script_drafts WHERE draft_id = ?")
+    .bind(draftId).first<ScriptDraftRow>();
+
+const draftProjection = (row: ScriptDraftRow): Record<string, unknown> => {
+  let learnedSignals: readonly string[] = [];
+  try {
+    const parsed = JSON.parse(row.learned_signals_json) as unknown;
+    learnedSignals = Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === "string").slice(0, 12)
+      : [];
+  } catch {
+    learnedSignals = [];
+  }
+  return {
+    draftId: row.draft_id,
+    script: row.script,
+    scriptSha256: row.script_sha256,
+    roundCount: row.round_count,
+    suggestedDurationSeconds: row.suggested_duration_seconds,
+    generatorVersion: row.generator_version,
+    styleExampleCount: row.style_example_count,
+    recommendationId: row.recommendation_id,
+    learnedSignals,
+    createdAt: row.created_at,
+  };
+};
+
+const createScriptDraft = async (
+  request: Request,
+  env: Env,
+  origin: string | null,
+): Promise<Response> => {
+  const input = parseNewDraft(await readJson(request));
+  const existingByRequest = await env.DB.prepare(
+    "SELECT * FROM operator_script_drafts WHERE client_request_id = ?",
+  ).bind(input.clientRequestId).first<ScriptDraftRow>();
+  if (existingByRequest) return json(draftProjection(existingByRequest), 200, origin);
+
+  const examples = await env.DB.prepare(`SELECT script FROM operator_script_style_examples
+    WHERE reveal_count = ?
+    ORDER BY CASE trust_level WHEN 'high_confidence' THEN 0 ELSE 1 END, updated_at DESC
+    LIMIT 20`).bind(input.roundCount).all<StyleExampleRow>();
+  const styleScripts = (examples.results ?? []).map((example) => example.script);
+  const priorHashes = await env.DB.prepare(`SELECT script_sha256
+    FROM operator_script_drafts
+    WHERE round_count = ?
+    UNION
+    SELECT script_sha256
+    FROM operator_script_style_examples
+    WHERE reveal_count = ?`).bind(input.roundCount, input.roundCount)
+    .all<{ readonly script_sha256: string }>();
+  const seenHashes = new Set(
+    (priorHashes.results ?? []).map((row) => row.script_sha256),
+  );
+  let generated: ReturnType<typeof generateScriptDraft> | null = null;
+  let script = "";
+  let scriptSha256 = "";
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    const candidate = generateScriptDraft({
+      roundCount: input.roundCount,
+      targetDurationSeconds: input.targetDurationSeconds,
+      recommendationId: input.recommendationId,
+      requestSeed: `${input.clientRequestId}:${String(attempt)}`,
+    }, styleScripts);
+    const normalized = normalizeScript(candidate.script);
+    const validation = validateScriptProfile(
+      normalized,
+      input.roundCount,
+      input.targetDurationSeconds,
+    );
+    if (!validation.valid) continue;
+    const candidateSha256 = await sha256(normalized);
+    if (seenHashes.has(candidateSha256)) continue;
+    generated = candidate;
+    script = normalized;
+    scriptSha256 = candidateSha256;
+    break;
+  }
+  if (!generated || !script || !scriptSha256) {
+    return errorResponse("SCRIPT_DRAFT_UNIQUE_VARIATION_FAILED", 409, origin);
+  }
+  if (!validateScriptProfile(script, input.roundCount, input.targetDurationSeconds).valid) {
+    return errorResponse("SCRIPT_DRAFT_VALIDATION_FAILED", 500, origin);
+  }
+  const draftId = `draft-${(await sha256(`${input.clientRequestId}:${scriptSha256}`)).slice(0, 24)}`;
+  const timestamp = now();
+  try {
+    await env.DB.prepare(`INSERT INTO operator_script_drafts
+      (draft_id, client_request_id, script, script_sha256, round_count,
+       suggested_duration_seconds, generator_version, style_example_count,
+       recommendation_id, learned_signals_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+      draftId,
+      input.clientRequestId,
+      script,
+      scriptSha256,
+      input.roundCount,
+      input.targetDurationSeconds,
+      generated.generatorVersion,
+      styleScripts.length,
+      input.recommendationId,
+      JSON.stringify(generated.learnedSignals),
+      timestamp,
+    ).run();
+  } catch {
+    const raced = await env.DB.prepare(
+      "SELECT * FROM operator_script_drafts WHERE client_request_id = ?",
+    ).bind(input.clientRequestId).first<ScriptDraftRow>();
+    return raced
+      ? json(draftProjection(raced), 200, origin)
+      : errorResponse("SCRIPT_DRAFT_CREATE_FAILED", 500, origin);
+  }
+  const created = await draftById(env, draftId);
+  return created
+    ? json(draftProjection(created), 201, origin)
+    : errorResponse("SCRIPT_DRAFT_CREATE_FAILED", 500, origin);
 };
 
 const runById = (env: Env, runId: string): Promise<RunRow | null> =>
@@ -628,6 +842,10 @@ const insertEventStatement = (
 
 const createRun = async (request: Request, env: Env, origin: string | null): Promise<Response> => {
   const input = parseNewRun(await readJson(request));
+  const linkedDraft = input.draftId ? await draftById(env, input.draftId) : null;
+  if (input.draftId && (!linkedDraft || linkedDraft.round_count !== input.roundCount)) {
+    return errorResponse("SCRIPT_DRAFT_NOT_FOUND", 404, origin);
+  }
   const canonical = JSON.stringify({
     schemaVersion: "1.0.0",
     language: "de",
@@ -636,6 +854,11 @@ const createRun = async (request: Request, env: Env, origin: string | null): Pro
   });
   const inputSha256 = await sha256(canonical);
   const scriptSha256 = await sha256(input.script);
+  const scriptOrigin: ScriptOriginRow["origin"] = !linkedDraft
+    ? "manual"
+    : linkedDraft.script_sha256 === scriptSha256
+      ? "auto_unedited"
+      : "auto_edited";
   const runId = `video-${inputSha256.slice(0, 24)}`;
   const clientRequestId = input.clientRequestId ?? `dashboard-${inputSha256.slice(0, 32)}`;
   const byRequest = await env.DB.prepare(
@@ -671,6 +894,19 @@ const createRun = async (request: Request, env: Env, origin: string | null): Pro
          video_approval_status, created_at, updated_at)
         VALUES (?, ?, ?, 1, 'pending', 'not_ready', ?, ?)`).bind(
         runId, releaseLabel, scriptSha256, timestamp, timestamp,
+      ),
+      env.DB.prepare(`INSERT INTO operator_script_origins
+        (run_id, draft_id, origin, reveal_count, submitted_script_sha256,
+         draft_script_sha256, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        runId,
+        linkedDraft?.draft_id ?? null,
+        scriptOrigin,
+        input.roundCount,
+        scriptSha256,
+        linkedDraft?.script_sha256 ?? null,
+        timestamp,
+        timestamp,
       ),
       env.DB.prepare(`INSERT INTO operator_review_events
         (run_id, timestamp, event_type, revision, artifact_sha256)
@@ -803,6 +1039,19 @@ const approveScript = async (
         (run_id, timestamp, event_type, revision, artifact_sha256)
         VALUES (?, ?, 'script_approved', ?, ?)`).bind(
         runId, timestamp, input.scriptRevision, input.scriptSha256,
+      ),
+      env.DB.prepare(`INSERT OR IGNORE INTO operator_script_style_examples
+        (example_id, script_sha256, script, source, reveal_count,
+         target_duration_seconds, trust_level, created_at, updated_at)
+        SELECT ?, origins.submitted_script_sha256, runs.script,
+          CASE origins.origin WHEN 'manual' THEN 'manual' ELSE 'auto_edited' END,
+          origins.reveal_count, runs.target_duration_seconds, 'candidate', ?, ?
+        FROM operator_production_runs AS runs
+        JOIN operator_script_origins AS origins ON origins.run_id = runs.run_id
+        JOIN operator_production_reviews AS reviews ON reviews.run_id = runs.run_id
+        WHERE runs.run_id = ? AND reviews.script_approval_status = 'approved'
+          AND origins.origin IN ('manual', 'auto_edited')`).bind(
+        `style-${input.scriptSha256.slice(0, 24)}`, timestamp, timestamp, runId,
       ),
       insertEventStatement(env, runId, "queued", row.progress, "production_queue", message, null, timestamp),
     ]);
@@ -1360,6 +1609,14 @@ const updateRelease = async (
       final_release_approved = ?, updated_at = ? WHERE entry_id = ?`).bind(
       allPublished ? 1 : 0, timestamp, calendarEntryId,
     ),
+    env.DB.prepare(`UPDATE operator_script_style_examples SET
+      trust_level = CASE WHEN ? = 1 THEN 'high_confidence' ELSE trust_level END,
+      updated_at = CASE WHEN ? = 1 THEN ? ELSE updated_at END
+      WHERE script_sha256 = (
+        SELECT submitted_script_sha256 FROM operator_script_origins WHERE run_id = ?
+      )`).bind(
+      allPublished ? 1 : 0, allPublished ? 1 : 0, timestamp, release.run_id,
+    ),
     env.DB.prepare(`INSERT INTO operator_release_events
       (request_id, timestamp, status, platform_results_json, message, error_code)
       VALUES (?, ?, ?, ?, ?, ?)`).bind(
@@ -1618,6 +1875,50 @@ const validDashboardData = (bytes: Uint8Array, fileName: string): boolean => {
   }
 };
 
+const researchRecommendations = async (
+  env: Env,
+  origin: string | null,
+): Promise<Response> => {
+  const baseUrl = dashboardDataBaseUrl(env);
+  if (!baseUrl) {
+    return json(buildResearchRecommendationFeed(null, now()), 200, origin);
+  }
+  try {
+    const loadDataFile = async (
+      fileName: "dashboard.json" | "content-operations.json",
+    ): Promise<unknown | null> => {
+      const upstream = await fetch(new URL(fileName, baseUrl), {
+        headers: { Accept: "application/json" },
+        cf: { cacheEverything: true, cacheTtl: 300 },
+      } as RequestInit);
+      if (
+        !upstream.ok ||
+        !upstream.headers.get("content-type")?.toLowerCase().includes("application/json")
+      ) return null;
+      const bytes = await boundedResponseBytes(upstream, MAX_DASHBOARD_DATA_BYTES);
+      if (!validDashboardData(bytes, fileName)) return null;
+      return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    };
+    const [dashboard, contentOperations] = await Promise.all([
+      loadDataFile("dashboard.json"),
+      loadDataFile("content-operations.json"),
+    ]);
+    if (!dashboard) {
+      return json(buildResearchRecommendationFeed(null, now()), 200, origin);
+    }
+    const generatedAt = isRecord(dashboard) && typeof dashboard.generatedAt === "string"
+      ? dashboard.generatedAt
+      : now();
+    return json(
+      buildResearchRecommendationFeed(dashboard, generatedAt, contentOperations),
+      200,
+      origin,
+    );
+  } catch {
+    return json(buildResearchRecommendationFeed(null, now()), 200, origin);
+  }
+};
+
 const serveCurrentDashboardData = async (
   request: Request,
   env: Env,
@@ -1700,6 +2001,12 @@ const handle = async (request: Request, env: Env): Promise<Response> => {
       : await operatorAuthorized(request, env);
   if (!authorized) return errorResponse("NOT_AUTHORIZED", 401, origin);
 
+  if (request.method === "POST" && url.pathname === "/v1/script-drafts") {
+    return createScriptDraft(request, env, origin);
+  }
+  if (request.method === "GET" && url.pathname === "/v1/research/recommendations") {
+    return researchRecommendations(env, origin);
+  }
   if (request.method === "POST" && url.pathname === "/v1/runs") return createRun(request, env, origin);
   if (request.method === "GET" && url.pathname === "/v1/runs") return listRuns(url, env, origin, "operator");
   const runMatch = url.pathname.match(/^\/v1\/runs\/(video-[a-f0-9]{24})$/u);
@@ -1751,6 +2058,7 @@ const safeClientErrors = new Map<string, number>([
   ["REQUEST_BODY_TOO_LARGE", 413],
   ["INVALID_JSON", 400],
   ["INVALID_VIDEO_RUN_INPUT", 400],
+  ["INVALID_SCRIPT_DRAFT_INPUT", 400],
   ["INVALID_CLAIM", 400],
   ["INVALID_RUNNER_UPDATE", 400],
   ["INVALID_CALENDAR_ENTRY", 400],

@@ -4,6 +4,10 @@ import { readFile } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import test from 'node:test'
 import worker from '../cloud/operator-api/src/index.ts'
+import {
+  generateScriptDraft,
+  validateScriptProfile,
+} from '../cloud/operator-api/src/scriptDrafts.ts'
 
 const workerUrl = new URL('../cloud/operator-api/src/index.ts', import.meta.url)
 const schemaUrl = new URL('../cloud/operator-api/schema.sql', import.meta.url)
@@ -45,6 +49,9 @@ test('queue schema is idempotent, leased and append-only observable', async () =
   assert.match(schema, /CHECK \(status IN \('queued', 'claimed', 'running', 'waiting', 'completed', 'failed'\)\)/)
   assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_production_events/)
   assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_production_reviews/)
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_drafts/)
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_origins/)
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_style_examples/)
   assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_release_requests/)
   assert.match(schema, /run_id TEXT NOT NULL UNIQUE/)
   assert.match(schema, /FOREIGN KEY \(run_id\) REFERENCES operator_production_runs\(run_id\)/)
@@ -252,6 +259,219 @@ const jsonBody = (body, method = 'POST') => ({
   body: JSON.stringify(body),
 })
 
+test('script drafts are editable, do not start production and only approved human input becomes style evidence', async () => {
+  const schema = await readFile(schemaUrl, 'utf8')
+  const DB = new D1TestDatabase(schema)
+  const env = {
+    DB,
+    PREVIEWS: new PreviewBucket(),
+    OPERATOR_API_TOKEN: 'operator-token',
+  }
+  const draftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
+    roundCount: 5,
+    targetDurationSeconds: 64,
+    recommendationId: 'difficulty-ladder-visibility-v1',
+    clientRequestId: 'draft-contract-test-0001',
+  })), env)
+  assert.equal(draftResponse.status, 201)
+  const draft = await draftResponse.json()
+  assert.equal(draft.roundCount, 5)
+  assert.equal(draft.suggestedDurationSeconds, 64)
+  assert.equal(draft.styleExampleCount, 1)
+  assert.equal(draft.script.match(/^\(auflösung\)$/gmu)?.length, 5)
+  assert.equal(DB.database.prepare('SELECT COUNT(*) AS count FROM operator_production_runs').get().count, 0)
+
+  const generatedRunResponse = await worker.fetch(request('/v1/runs', 'operator-token', jsonBody({
+    script: draft.script,
+    targetDurationSeconds: 64,
+    roundCount: 5,
+    draftId: draft.draftId,
+    clientRequestId: 'draft-run-contract-0001',
+  })), env)
+  assert.equal(generatedRunResponse.status, 202)
+  const generatedRun = await generatedRunResponse.json()
+  assert.equal(
+    DB.database.prepare('SELECT origin FROM operator_script_origins WHERE run_id = ?').get(generatedRun.runId).origin,
+    'auto_unedited',
+  )
+  const generatedApproval = await worker.fetch(request(
+    `/v1/runs/${generatedRun.runId}/approve-script`,
+    'operator-token',
+    jsonBody({
+      scriptSha256: generatedRun.script.sha256,
+      scriptRevision: 1,
+      idempotencyKey: 'draft-script-approval-0001',
+    }),
+  ), env)
+  assert.equal(generatedApproval.status, 200)
+  assert.equal(DB.database.prepare('SELECT COUNT(*) AS count FROM operator_script_style_examples').get().count, 1)
+
+  const sevenDraftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
+    roundCount: 7,
+    targetDurationSeconds: 69,
+    recommendationId: null,
+    clientRequestId: 'draft-contract-test-0007',
+  })), env)
+  const sevenDraft = await sevenDraftResponse.json()
+  assert.equal(sevenDraft.script.match(/^\(auflösung\)$/gmu)?.length, 7)
+  const manualSevenScript = sevenDraft.script.replace(
+    '(auflösung)\n',
+    '(auflösung)\nGurkenminister-Modus, genau mein Tempo. ',
+  )
+  const manualRunResponse = await worker.fetch(request('/v1/runs', 'operator-token', jsonBody({
+    script: manualSevenScript,
+    targetDurationSeconds: 69,
+    roundCount: 7,
+    clientRequestId: 'manual-run-contract-0007',
+  })), env)
+  assert.equal(manualRunResponse.status, 202)
+  const manualRun = await manualRunResponse.json()
+  const manualApproval = await worker.fetch(request(
+    `/v1/runs/${manualRun.runId}/approve-script`,
+    'operator-token',
+    jsonBody({
+      scriptSha256: manualRun.script.sha256,
+      scriptRevision: 1,
+      idempotencyKey: 'manual-script-approval-0007',
+    }),
+  ), env)
+  assert.equal(manualApproval.status, 200)
+  const learned = DB.database.prepare(
+    "SELECT source, trust_level FROM operator_script_style_examples WHERE reveal_count = 7",
+  ).get()
+  assert.equal(learned.source, 'manual')
+  assert.equal(learned.trust_level, 'candidate')
+
+  const learnedDraftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
+    roundCount: 7,
+    targetDurationSeconds: 69,
+    recommendationId: null,
+    clientRequestId: 'draft-after-learning-0007',
+  })), env)
+  const learnedDraft = await learnedDraftResponse.json()
+  assert.equal(learnedDraft.styleExampleCount, 1)
+  assert.match(learnedDraft.script, /Gurkenminister-Modus/u)
+  assert.notEqual(learnedDraft.script, manualSevenScript)
+
+  const secondLearnedDraftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
+    roundCount: 7,
+    targetDurationSeconds: 69,
+    recommendationId: null,
+    clientRequestId: 'draft-after-learning-0008',
+  })), env)
+  const secondLearnedDraft = await secondLearnedDraftResponse.json()
+  assert.equal(secondLearnedDraftResponse.status, 201)
+  assert.notEqual(secondLearnedDraft.scriptSha256, learnedDraft.scriptSha256)
+  assert.match(secondLearnedDraft.script, /Gurkenminister-Modus/u)
+
+  const invalidDraftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
+    roundCount: 6,
+    targetDurationSeconds: 65,
+    recommendationId: null,
+    clientRequestId: 'invalid-draft-contract-0001',
+  })), env)
+  assert.equal(invalidDraftResponse.status, 400)
+})
+
+test('one learned style example still produces hundreds of valid distinct drafts', () => {
+  const approvedStyle = [
+    'was läuft was läuft, schnelles flaggenquiz, fünf flaggen, eine wird richtig kernig. fängt easy an: welches land ist das?',
+    '(auflösung)',
+    'okok, sauber. die nächste wird schon tougher, also nicht zu früh feiern. wie schaut es hier aus?',
+    '(auflösung)',
+    'crazy, der bre hat ahnung. jetzt wird es knifflig: welches land gehört zu dieser flagge?',
+    '(auflösung)',
+    'drei von drei wäre stark. kurzer zwischenstand: mit Flaggenbande trainierst du genau solche flaggenrunden. bereit fürs halbfinale, welches land ist das?',
+    '(auflösung)',
+    'junge, vielleicht ist hier wirklich der flaggenboss am start. letzte runde, mann oder maus: welche flagge siehst du?',
+    '(auflösung)',
+    'anscheinend der allerechte flaggenchef. schreib ehrlich, wie viele du sauber erkannt hast.',
+  ].join('\n')
+  const scripts = new Set()
+  for (let index = 0; index < 250; index += 1) {
+    const generated = generateScriptDraft({
+      roundCount: 5,
+      targetDurationSeconds: 64,
+      recommendationId: null,
+      requestSeed: `scale-contract-${String(index).padStart(4, '0')}`,
+    }, [approvedStyle])
+    assert.equal(validateScriptProfile(generated.script, 5, 64).valid, true)
+    scripts.add(generated.script)
+  }
+  assert.ok(scripts.size >= 240, `only ${scripts.size} distinct drafts generated`)
+})
+
+test('research recommendations expose coverage and only use linked retention when sample size is sufficient', async () => {
+  const schema = await readFile(schemaUrl, 'utf8')
+  const DB = new D1TestDatabase(schema)
+  const videos = Array.from({ length: 5 }, (_, index) => ({
+    platform: 'youtube',
+    platformVideoId: `youtube-${index}`,
+    contentId: null,
+    durationSeconds: 64,
+    metrics: { averageViewPercentage: 51 },
+    retention: [
+      { elapsedVideoTimeRatio: 0, audienceWatchRatio: 1 },
+      { elapsedVideoTimeRatio: 0.05, audienceWatchRatio: 0.62 },
+    ],
+  }))
+  videos.push({
+    platform: 'youtube',
+    platformVideoId: 'short-prototype',
+    contentId: `flaggenbande-${'f'.repeat(64)}`,
+    durationSeconds: 30,
+    metrics: { averageViewPercentage: 91 },
+    retention: [
+      { elapsedVideoTimeRatio: 0, audienceWatchRatio: 1 },
+      { elapsedVideoTimeRatio: 0.1, audienceWatchRatio: 0.2 },
+    ],
+  })
+  const publications = Array.from({ length: 5 }, (_, index) => ({
+    platform: 'youtube',
+    platformVideoId: `youtube-${index}`,
+    contentId: `flaggenbande-${index.toString(16).padStart(64, '0')}`,
+    status: 'published',
+  }))
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async input => {
+    const requestUrl = input instanceof URL
+      ? input
+      : new URL(typeof input === 'string' ? input : input.url)
+    const path = requestUrl.pathname
+    const payload = path.endsWith('/content-operations.json')
+      ? {
+          schemaVersion: 1,
+          generatedAt: '2026-07-23T09:00:00Z',
+          publications,
+        }
+      : {
+          schemaVersion: 3,
+          generatedAt: '2026-07-23T09:00:00Z',
+          social: { videos },
+        }
+    return new Response(JSON.stringify(payload), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    const response = await worker.fetch(request('/v1/research/recommendations', 'operator-token'), {
+      DB,
+      PREVIEWS: new PreviewBucket(),
+      OPERATOR_API_TOKEN: 'operator-token',
+      DASHBOARD_DATA_BASE_URL: 'https://dashboard.example.test/data/',
+    })
+    assert.equal(response.status, 200)
+    const feed = await response.json()
+    assert.equal(feed.dataReadiness.status, 'ready')
+    assert.equal(feed.dataReadiness.retentionVideos, 5)
+    assert.equal(feed.recommendations[0].id, 'first-reveal-delay-v1')
+    assert.equal(feed.recommendations[0].evidenceLevel, 'measured')
+    assert.equal(feed.recommendations[0].autoApplicable, false)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('two-stage approvals are hash-bound, idempotent and release exactly once', async () => {
   const schema = await readFile(schemaUrl, 'utf8')
   const DB = new D1TestDatabase(schema)
@@ -263,18 +483,17 @@ test('two-stage approvals are hash-bound, idempotent and release exactly once', 
     OPERATOR_RUNNER_TOKEN: 'runner-token',
   }
   const script = [
-    'was läuft was läuft, schnelles flaggenquiz',
-    'fängt easy an, welches land ist das?',
+    'was läuft was läuft, schnelles flaggenquiz, fünf flaggen, eine wird richtig kernig. fängt easy an: welches land ist das?',
     '(auflösung)',
-    'okok lass den bre mal kochen, weißt du das auch?',
+    'okok, sauber. die nächste wird schon tougher, also nicht zu früh feiern. wie schaut es hier aus?',
     '(auflösung)',
-    'okay hier geht was, welches land ist hier?',
+    'crazy, der bre hat ahnung. jetzt wird es knifflig: welches land gehört zu dieser flagge?',
     '(auflösung)',
-    'crazy, sag an welche flagge ist das?',
+    'drei von drei wäre stark. kurzer zwischenstand: mit Flaggenbande trainierst du genau solche flaggenrunden. bereit fürs halbfinale, welches land ist das?',
     '(auflösung)',
-    'ready fürs große finale, welche flagge ist das?',
+    'junge, vielleicht ist hier wirklich der flaggenboss am start. letzte runde, mann oder maus: welche flagge siehst du?',
     '(auflösung)',
-    'anscheinend der allerechte flaggenboss, nice',
+    'anscheinend der allerechte flaggenchef. schreib ehrlich, wie viele du sauber erkannt hast.',
   ].join('\n')
 
   const createdResponse = await worker.fetch(request('/v1/runs', 'operator-token', jsonBody({
