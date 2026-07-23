@@ -604,7 +604,16 @@ const uploadPreview = async (config, claim, local) => {
     },
     body: bytes,
   }, config.previewTimeoutMs)
-  if (!response.ok) throw new Error(`PREVIEW_UPLOAD_HTTP_${response.status}`)
+  if (!response.ok) {
+    const failure = await readJson(response).catch(() => null)
+    const remoteCode = record(failure) && typeof failure.error === 'string' &&
+      /^[A-Z0-9_]{3,80}$/u.test(failure.error)
+      ? failure.error
+      : null
+    throw new Error(remoteCode
+      ? `PREVIEW_UPLOAD_${remoteCode}`
+      : `PREVIEW_UPLOAD_HTTP_${response.status}`)
+  }
   const metadata = await readJson(response)
   if (
     !metadata || typeof metadata !== 'object' || Array.isArray(metadata) ||
@@ -621,7 +630,9 @@ const prepareCompleted = async (config, claim, local) => {
     await uploadPreview(config, claim, local)
     return local
   } catch (error) {
-    const code = error instanceof Error ? error.message : 'PREVIEW_UPLOAD_FAILED'
+    const rawCode = error instanceof Error ? error.message : 'PREVIEW_UPLOAD_FAILED'
+    const code = /^[A-Z0-9_]{3,100}$/u.test(rawCode) ? rawCode : 'PREVIEW_UPLOAD_FAILED'
+    console.error(`[operator-runner] ${claim.runId}: ${code}`)
     if (
       code === 'QUALITY_GATE_FAILED' ||
       code === 'MONETIZATION_GATE_FAILED' ||
