@@ -44,6 +44,7 @@ interface Env {
   readonly PREVIEWS: R2Bucket;
   readonly ASSETS?: Fetcher;
   readonly DASHBOARD_ORIGINS?: string;
+  readonly DASHBOARD_DATA_BASE_URL?: string;
   readonly OPERATOR_API_TOKEN?: string;
   readonly OPERATOR_API_TOKEN_SECONDARY?: string;
   readonly OPERATOR_RUNNER_TOKEN?: string;
@@ -169,6 +170,12 @@ const WAITING_RECHECK_SECONDS = 30;
 const MAX_PREVIEW_BYTES = 512 * 1024 * 1024;
 const ACCESS_TOKEN_MAX_BYTES = 16 * 1024;
 const ACCESS_JWKS_TTL_MS = 60 * 60 * 1_000;
+const MAX_DASHBOARD_DATA_BYTES = 2 * 1024 * 1024;
+const DASHBOARD_DATA_FILES = new Set(["dashboard.json", "content-operations.json"]);
+const DASHBOARD_DATA_SCHEMA_VERSIONS: Readonly<Record<string, number>> = {
+  "dashboard.json": 3,
+  "content-operations.json": 1,
+};
 
 const configuredReleasePlatforms = (env: Env): readonly CalendarPlatform[] => {
   const raw = env.RELEASE_PLATFORMS?.trim();
@@ -1555,6 +1562,94 @@ const calendar = async (url: URL, env: Env, origin: string | null): Promise<Resp
   return json({ entries: (rows.results ?? []).map(publicCalendarEntry) }, 200, origin);
 };
 
+const dashboardDataBaseUrl = (env: Env): URL | null => {
+  const value = env.DASHBOARD_DATA_BASE_URL?.trim();
+  if (!value) return null;
+  try {
+    const url = new URL(value.endsWith("/") ? value : `${value}/`);
+    if (
+      url.protocol !== "https:" || url.username || url.password ||
+      url.search || url.hash
+    ) return null;
+    return url;
+  } catch {
+    return null;
+  }
+};
+
+const boundedResponseBytes = async (response: Response, maximumBytes: number): Promise<Uint8Array> => {
+  const contentLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maximumBytes) throw new Error("DASHBOARD_DATA_TOO_LARGE");
+  if (!response.body) throw new Error("DASHBOARD_DATA_EMPTY");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      size += part.value.byteLength;
+      if (size > maximumBytes) {
+        await reader.cancel();
+        throw new Error("DASHBOARD_DATA_TOO_LARGE");
+      }
+      chunks.push(part.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (size === 0) throw new Error("DASHBOARD_DATA_EMPTY");
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+};
+
+const validDashboardData = (bytes: Uint8Array, fileName: string): boolean => {
+  try {
+    const value = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    if (!isRecord(value) || value.schemaVersion !== DASHBOARD_DATA_SCHEMA_VERSIONS[fileName]) return false;
+    return typeof value.generatedAt === "string" && Number.isFinite(Date.parse(value.generatedAt));
+  } catch {
+    return false;
+  }
+};
+
+const serveCurrentDashboardData = async (
+  request: Request,
+  env: Env,
+  origin: string | null,
+): Promise<Response | null> => {
+  if (request.method !== "GET") return null;
+  const requestUrl = new URL(request.url);
+  const match = requestUrl.pathname.match(/^\/data\/([a-z-]+\.json)$/u);
+  const fileName = match?.[1];
+  if (!fileName || !DASHBOARD_DATA_FILES.has(fileName)) return null;
+
+  const baseUrl = dashboardDataBaseUrl(env);
+  if (!baseUrl) return env.ASSETS ? env.ASSETS.fetch(request) : null;
+  try {
+    const upstreamUrl = new URL(fileName, baseUrl);
+    const upstream = await fetch(upstreamUrl, {
+      headers: { Accept: "application/json" },
+      cf: { cacheEverything: true, cacheTtl: 300 },
+    } as RequestInit);
+    if (!upstream.ok || !upstream.headers.get("content-type")?.toLowerCase().includes("application/json")) {
+      return env.ASSETS ? env.ASSETS.fetch(request) : null;
+    }
+    const bytes = await boundedResponseBytes(upstream, MAX_DASHBOARD_DATA_BYTES);
+    if (!validDashboardData(bytes, fileName)) return env.ASSETS ? env.ASSETS.fetch(request) : null;
+    const headers = responseHeaders(origin);
+    headers.set("x-flaggenbande-data-source", "hourly-github-pages");
+    return new Response(bytes, { status: 200, headers });
+  } catch {
+    return env.ASSETS ? env.ASSETS.fetch(request) : null;
+  }
+};
+
 const preflight = (origin: string): Response => {
   const headers = responseHeaders(origin);
   headers.set("access-control-allow-methods", "GET,POST,PUT,OPTIONS");
@@ -1643,6 +1738,8 @@ const handle = async (request: Request, env: Env): Promise<Response> => {
     ? url.pathname.match(/^\/v1\/release-runner\/requests\/(release-[a-f0-9]{24})\/status$/u)
     : null;
   if (releaseStatusMatch) return updateRelease(request, env, releaseStatusMatch[1]);
+  const dashboardData = await serveCurrentDashboardData(request, env, origin);
+  if (dashboardData) return dashboardData;
   if (request.method === "GET" && env.ASSETS && !url.pathname.startsWith("/v1/")) {
     return env.ASSETS.fetch(request);
   }

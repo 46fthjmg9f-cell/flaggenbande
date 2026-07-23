@@ -75,6 +75,82 @@ test('browser origins are explicit and wildcard CORS is absent', async () => {
   assert.doesNotMatch(env, /Bearer\s+\S+/u)
 })
 
+test('worker serves current hourly dashboard data and keeps a static fallback', async () => {
+  const source = await readFile(workerUrl, 'utf8')
+  assert.match(source, /DASHBOARD_DATA_BASE_URL/)
+  assert.match(source, /DASHBOARD_DATA_FILES/)
+  assert.match(source, /cacheTtl:\s*300/)
+  assert.match(source, /hourly-github-pages/)
+
+  const originalFetch = globalThis.fetch
+  const upstreamRequests = []
+  globalThis.fetch = async input => {
+    upstreamRequests.push(String(input))
+    return new Response('{"schemaVersion":3,"generatedAt":"2026-07-23T08:00:00Z"}\n', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    })
+  }
+  try {
+    const live = await worker.fetch(request('/data/dashboard.json?refresh=123', 'operator-token'), {
+      OPERATOR_API_TOKEN: 'operator-token',
+      DASHBOARD_DATA_BASE_URL: 'https://dashboard-data.example.test/current/',
+    })
+    assert.equal(live.status, 200)
+    assert.equal(live.headers.get('x-flaggenbande-data-source'), 'hourly-github-pages')
+    assert.deepEqual(await live.json(), { schemaVersion: 3, generatedAt: '2026-07-23T08:00:00Z' })
+    assert.deepEqual(upstreamRequests, ['https://dashboard-data.example.test/current/dashboard.json'])
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  const staticAsset = new Response('{"generatedAt":"static"}\n', {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const fallback = await worker.fetch(request('/data/dashboard.json', 'operator-token'), {
+    OPERATOR_API_TOKEN: 'operator-token',
+    ASSETS: { fetch: async () => staticAsset.clone() },
+  })
+  assert.equal(fallback.status, 200)
+  assert.deepEqual(await fallback.json(), { generatedAt: 'static' })
+})
+
+test('worker rejects invalid or incomplete live dashboard data and uses the static fallback', async () => {
+  const staticAsset = new Response('{"generatedAt":"safe-static"}\n', {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+  const responses = [
+    new Response('{"schemaVersion":3', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    new Response('{"schemaVersion":99,"generatedAt":"2026-07-23T08:00:00Z"}', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    new Response('temporary outage', { status: 503, headers: { 'Content-Type': 'application/json' } }),
+    new Response('not json', { status: 200, headers: { 'Content-Type': 'text/plain' } }),
+    new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"schemaVersion":3,'))
+        controller.error(new Error('upstream aborted'))
+      },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+  ]
+  const originalFetch = globalThis.fetch
+  try {
+    for (const upstream of responses) {
+      globalThis.fetch = async () => upstream
+      const response = await worker.fetch(request('/data/dashboard.json', 'operator-token'), {
+        OPERATOR_API_TOKEN: 'operator-token',
+        DASHBOARD_DATA_BASE_URL: 'https://dashboard-data.example.test/current/',
+        ASSETS: { fetch: async () => staticAsset.clone() },
+      })
+      assert.equal(response.status, 200)
+      assert.deepEqual(await response.json(), { generatedAt: 'safe-static' })
+      assert.equal(response.headers.get('x-flaggenbande-data-source'), null)
+    }
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('operator API has no publishing capability', async () => {
   const source = await readFile(workerUrl, 'utf8')
   assert.doesNotMatch(source, /media_publish|publishAt|videos\.insert|youtube\.googleapis|graph\.facebook|open\.tiktokapis/iu)
