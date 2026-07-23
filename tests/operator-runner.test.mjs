@@ -772,6 +772,7 @@ test('runner performs an explicit local preview revision before resuming the sam
       revisionCount += 1
       assert.equal(request.headers['x-flaggenbande-control-token'], 'local-control-test-token')
       assert.equal(request.headers['idempotency-key'], `preview-revision-${runId}-37`)
+      assert.equal(request.headers.origin, 'http://127.0.0.1:4173')
       const chunks = []
       for await (const chunk of request) chunks.push(chunk)
       assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString('utf8')), {
