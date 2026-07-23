@@ -4,6 +4,8 @@ Die Übersicht ist ein statisches Vite/React-Frontend für GitHub Pages. Die Nav
 
 Die App-, Plattform- und Finanzauswertung liest `public/data/dashboard.json`. Diese Datei enthält nur zusammengefasste Kennzahlen und wird durch GitHub Actions erzeugt; weder API-Schlüssel noch CloudKit-Rohdaten noch Spieleridentitäten werden veröffentlicht.
 
+Der Cloudflare-Worker reicht `dashboard.json` und `content-operations.json` aus dem stündlich aktualisierten GitHub-Pages-Datenfeed durch. Der Feed wird am Edge fünf Minuten zwischengespeichert; falls GitHub Pages vorübergehend nicht erreichbar ist, bleibt die zuletzt mit dem Dashboard deployte sichere Aggregation als Fallback sichtbar.
+
 **Neue Produktion** enthält ausschließlich die sichere Produktionssteuerung. Jeder Lauf hat zwei getrennte, unveränderlich an Hash und Revision gebundene Freigaben:
 
 1. Skript speichern, im Dashboard lesen und freigeben.
