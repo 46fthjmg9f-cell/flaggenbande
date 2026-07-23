@@ -139,19 +139,30 @@ CREATE TABLE IF NOT EXISTS operator_script_style_examples (
 CREATE INDEX IF NOT EXISTS operator_script_style_examples_retrieval_idx
   ON operator_script_style_examples(reveal_count, trust_level, updated_at);
 
+DELETE FROM operator_script_drafts
+WHERE instr(lower(script), 'flaggenbande') > 0
+  AND NOT EXISTS (
+    SELECT 1
+    FROM operator_script_origins
+    WHERE operator_script_origins.draft_id = operator_script_drafts.draft_id
+  );
+
+DELETE FROM operator_script_style_examples
+WHERE instr(lower(script), 'flaggenbande') > 0;
+
 INSERT OR IGNORE INTO operator_script_style_examples
   (example_id, script_sha256, script, source, reveal_count, target_duration_seconds,
    trust_level, created_at, updated_at)
 VALUES (
-  'style-seed-german-v7-benchmark',
-  '2d5cc6f4d833a995d49cd547c7b0c0e1adddb98ace7415e01dfb845c9277d81f',
+  'style-seed-german-v5-organic',
+  '34725210bd9f3933be511dbcdbbbf2486a32cc34abd1fc20bc012df49736416f',
   'was läuft was läuft, schnelles flaggenquiz, fünf flaggen, eine wird richtig kernig. fängt easy an: welches land ist das?
 (auflösung)
 okok, sauber. die nächste wird schon tougher, also nicht zu früh feiern. wie schaut es hier aus?
 (auflösung)
 crazy, der bre hat ahnung. jetzt wird es knifflig: welches land gehört zu dieser flagge?
 (auflösung)
-drei von drei wäre stark. kurzer zwischenstand: mit Flaggenbande trainierst du genau solche flaggenrunden. bereit fürs halbfinale, welches land ist das?
+drei von drei wäre stark. ab hier trennt sich glück von echter ahnung. bereit fürs halbfinale, welches land ist das?
 (auflösung)
 junge, vielleicht ist hier wirklich der flaggenboss am start. letzte runde, mann oder maus: welche flagge siehst du?
 (auflösung)

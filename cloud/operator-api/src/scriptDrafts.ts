@@ -41,7 +41,7 @@ export interface ResearchRecommendationFeed {
   readonly recommendations: readonly ResearchRecommendation[];
 }
 
-export const SCRIPT_GENERATOR_VERSION = "creator-style-remix-v4";
+export const SCRIPT_GENERATOR_VERSION = "creator-style-organic-v5";
 export const DEFAULT_TARGET_DURATION: Readonly<Record<SupportedRoundCount, number>> = {
   5: 64,
   7: 69,
@@ -159,18 +159,12 @@ export const validateScriptProfile = (
   const minimumWords = roundCount === 5 ? 90 : 70;
   if (words < minimumWords) issues.push("SPOKEN_WORDS_TOO_LOW");
   const brandMentions = script.match(/\bflaggenbande\b/giu)?.length ?? 0;
-  if (brandMentions !== (roundCount === 5 ? 1 : 0)) issues.push("BRAND_MENTION_POLICY");
+  if (brandMentions > 0) issues.push("BRAND_MENTION_FORBIDDEN");
   if (directPromotionPatterns.some((pattern) => pattern.test(script))) issues.push("DIRECT_PROMOTION");
   const foundGermanSignals = new Set(
     (script.toLocaleLowerCase("de").match(/[\p{L}]+/gu) ?? []).filter((token) => germanSignals.has(token)),
   );
   if (foundGermanSignals.size < 2) issues.push("GERMAN_LANGUAGE_SIGNAL");
-  if (roundCount === 5 && brandMentions === 1 && markerIndexes.length === 5) {
-    const bridgeIndex = lines.findIndex((line) => /\bflaggenbande\b/iu.test(line));
-    if (bridgeIndex <= (markerIndexes[2] ?? -1) || bridgeIndex >= (markerIndexes.at(-1) ?? lines.length)) {
-      issues.push("BRAND_BRIDGE_POSITION");
-    }
-  }
   const plausibleMinimumSeconds = words / 4 + roundCount * 3;
   const plausibleMaximumSeconds = words / 1.5 + roundCount * 7;
   if (
@@ -212,11 +206,7 @@ const remixApprovedStyle = (
   );
   if (!fallback) return null;
   const base = choose(templates, seed, 0);
-  const brandSegmentIndex = request.roundCount === 5
-    ? base.findIndex((segment) => /\bflaggenbande\b/iu.test(segment))
-    : -1;
   const mixed = base.map((segment, index) => {
-    if (index === brandSegmentIndex) return segment;
     const candidates = templates
       .map((template) => template[index] as string)
       .filter((candidate) => !/\bflaggenbande\b/iu.test(candidate));
@@ -227,7 +217,7 @@ const remixApprovedStyle = (
   // Lernbeispiel als vermeintlich "neues" Skript 1:1 zu kopieren.
   const variationIndexes = mixed
     .map((_, index) => index)
-    .filter((index) => index !== brandSegmentIndex && index !== 1);
+    .filter((index) => index !== 1);
   const variationIndex = choose(
     variationIndexes.length > 0 ? variationIndexes : [0],
     seed,
@@ -258,12 +248,9 @@ const addCreatorStyleVariation = (
   );
   if (!segments) return script;
   const varied = [...segments];
-  const brandSegmentIndex = request.roundCount === 5
-    ? varied.findIndex((segment) => /\bflaggenbande\b/iu.test(segment))
-    : -1;
   const flourishIndexes = varied
     .map((_, index) => index)
-    .filter((index) => index > 0 && index !== brandSegmentIndex);
+    .filter((index) => index > 0);
   const flourishIndex = chooseIndependent(
     flourishIndexes.length > 0 ? flourishIndexes : [0],
     seed,
@@ -311,7 +298,7 @@ const generateFiveRoundScript = (
     "(auflösung)",
     `Okay ${address}, hier geht was. Jetzt wird es wirklich knifflig: Welches Land gehört zu dieser Flagge?`,
     "(auflösung)",
-    "Drei von drei wäre brutal stark. Kurzer Zwischenstand: Mit Flaggenbande trainierst du genau solche Flaggenrunden. Bereit fürs Halbfinale, welches Land ist das?",
+    "Drei von drei wäre brutal stark. Ab hier trennt sich Glück von echter Ahnung. Bereit fürs Halbfinale, welches Land ist das?",
     "(auflösung)",
     `${hype}, vielleicht ist hier wirklich der ${finalTitle} am Start. Letzte Runde, Mann oder Maus: Welche Flagge siehst du?`,
     "(auflösung)",

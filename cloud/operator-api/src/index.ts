@@ -604,7 +604,7 @@ const createScriptDraft = async (
   if (existingByRequest) return json(draftProjection(existingByRequest), 200, origin);
 
   const examples = await env.DB.prepare(`SELECT script FROM operator_script_style_examples
-    WHERE reveal_count = ?
+    WHERE reveal_count = ? AND instr(lower(script), 'flaggenbande') = 0
     ORDER BY CASE trust_level WHEN 'high_confidence' THEN 0 ELSE 1 END, updated_at DESC
     LIMIT 20`).bind(input.roundCount).all<StyleExampleRow>();
   const styleScripts = (examples.results ?? []).map((example) => example.script);
