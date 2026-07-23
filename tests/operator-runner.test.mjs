@@ -26,6 +26,7 @@ const config = (operatorApiUrl, controlApiUrl, localRunsRoot = join(tmpdir(), 'u
   runnerToken: 'runner-test-token',
   runnerId: 'test-mac',
   controlApiUrl,
+  controlToken: 'local-control-test-token',
   localRunsRoot,
   pollIntervalMs: 10,
   requestTimeoutMs: 1_000,
@@ -243,6 +244,15 @@ test('runner config requires the private local run root for checksum-bound gate 
     OPERATOR_RUNNER_TOKEN: 'secret',
     VIDEO_CONTROL_API_URL: 'http://127.0.0.1:4317',
   }), /OPERATOR_LOCAL_RUNS_ROOT fehlt/)
+})
+
+test('runner config requires a separate loopback control token', () => {
+  assert.throws(() => loadRunnerConfig({
+    OPERATOR_API_URL: 'https://operator.example.test',
+    OPERATOR_RUNNER_TOKEN: 'secret',
+    VIDEO_CONTROL_API_URL: 'http://127.0.0.1:4317',
+    OPERATOR_LOCAL_RUNS_ROOT: '/tmp/flaggenbande-runs',
+  }), /VIDEO_CONTROL_API_TOKEN fehlt/)
 })
 
 test('claim sends only the separate runner token and handles an empty queue', async t => {
@@ -735,6 +745,80 @@ test('runner retries one matching local timeline-build failure without creating 
   assert.equal(updates.length, 1)
   assert.equal(updates[0].status, 'running')
   assert.equal(updates[0].providerRunId, localRunId)
+  assert.equal(updates[0].error, null)
+})
+
+test('runner performs an explicit local preview revision before resuming the same run', async t => {
+  const runId = 'video-abababababababababababab'
+  let revisionCount = 0
+  let startCount = 0
+  const updates = []
+  const queuedRun = {
+    runId,
+    status: 'queued',
+    progress: 75,
+    currentStep: 'render',
+    steps: publicSteps().map(step =>
+      ['render', 'quality_check', 'preview_ready'].includes(step.id)
+        ? { ...step, status: 'pending', progress: 0 }
+        : step),
+    message: 'Vorschau-Nachbesserung eingereiht.',
+    error: null,
+    previewUrl: null,
+  }
+
+  const local = await listen(async (request, response) => {
+    if (request.method === 'POST' && request.url === `/v1/video-runs/${runId}/revise-preview`) {
+      revisionCount += 1
+      assert.equal(request.headers['x-flaggenbande-control-token'], 'local-control-test-token')
+      assert.equal(request.headers['idempotency-key'], `preview-revision-${runId}-37`)
+      const chunks = []
+      for await (const chunk of request) chunks.push(chunk)
+      assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString('utf8')), {
+        acknowledgement: 'REVISE_PRIVATE_QA_PREVIEW',
+        reason: 'dashboard_quality_rejection',
+      })
+      response.writeHead(202, { 'content-type': 'application/json' }).end(JSON.stringify(queuedRun))
+      return
+    }
+    if (request.method === 'POST' && request.url === '/v1/video-runs') {
+      startCount += 1
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(queuedRun))
+      return
+    }
+    response.writeHead(404).end()
+  })
+  t.after(() => local.close())
+
+  const operator = await listen(async (request, response) => {
+    if (request.url === '/v1/runner/claim') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        run: { runId },
+        command: {
+          script,
+          targetDurationSeconds: 65,
+          clientRequestId: 'request-preview-revision-0001',
+          reworkPreview: true,
+          reworkPreviewRevision: 37,
+        },
+        leaseToken: 'lease-token-abababababababababababab',
+      }))
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    updates.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    response.writeHead(200, { 'content-type': 'application/json' }).end('{}')
+  })
+  t.after(() => operator.close())
+
+  const result = await runOnce(config(operator.url, local.url), { singleStatus: true })
+  assert.equal(result, 'queued')
+  assert.equal(revisionCount, 1)
+  assert.equal(startCount, 1)
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].status, 'running')
+  assert.equal(updates[0].providerRunId, runId)
   assert.equal(updates[0].error, null)
 })
 

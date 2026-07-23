@@ -8,6 +8,7 @@ import {
   operatorApiConfigured,
   operatorPreviewUrl,
   retryOperatorRun,
+  reviseOperatorVideo,
   startOperatorRun,
   type OperatorRun,
   type OperatorRunStatus,
@@ -126,14 +127,16 @@ interface RunCardProps {
   busyAction: string | null
   onApproveScript: (run: OperatorRun) => Promise<void>
   onApproveVideo: (run: OperatorRun) => Promise<void>
+  onReviseVideo: (run: OperatorRun) => Promise<void>
   onRetry: (run: OperatorRun) => Promise<void>
   initiallyOpen: boolean
 }
 
-function RunCard({ run, busyAction, onApproveScript, onApproveVideo, onRetry, initiallyOpen }: RunCardProps) {
+function RunCard({ run, busyAction, onApproveScript, onApproveVideo, onReviseVideo, onRetry, initiallyOpen }: RunCardProps) {
   const previewUrl = operatorPreviewUrl(run)
   const approvingScript = busyAction === `script:${run.runId}`
   const approvingVideo = busyAction === `video:${run.runId}`
+  const revisingVideo = busyAction === `revision:${run.runId}`
   const retrying = busyAction === `retry:${run.runId}`
   const gatesPassed = run.preview.qualityPassed && run.preview.monetizationPassed
   const scriptPending = run.status === 'awaiting_script_approval' && run.script.status === 'pending'
@@ -200,6 +203,14 @@ function RunCard({ run, busyAction, onApproveScript, onApproveVideo, onRetry, in
         disabled={Boolean(busyAction) || !gatesPassed || !run.preview.sha256}
       >
         {approvingVideo ? 'Wird freigegeben …' : 'Video freigeben & Veröffentlichung starten'}
+      </button>}
+      {videoPending && <button
+        className="secondary-action"
+        type="button"
+        onClick={() => void onReviseVideo(run)}
+        disabled={Boolean(busyAction)}
+      >
+        {revisingVideo ? 'Nachbesserung wird eingeplant …' : 'Video nachbessern'}
       </button>}
       {safelyRetryable && <button
         className="secondary-action"
@@ -389,6 +400,18 @@ export default function VideoProductionControl() {
     }
   }
 
+  const reviseVideo = async (run: OperatorRun) => {
+    setBusyAction(`revision:${run.runId}`)
+    setError(null)
+    try {
+      updateRun(await reviseOperatorVideo(run))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   const retryRun = async (run: OperatorRun) => {
     setBusyAction(`retry:${run.runId}`)
     setError(null)
@@ -543,6 +566,7 @@ export default function VideoProductionControl() {
             busyAction={busyAction}
             onApproveScript={approveScript}
             onApproveVideo={approveVideo}
+            onReviseVideo={reviseVideo}
             onRetry={retryRun}
             initiallyOpen={index === 0}
           />)
