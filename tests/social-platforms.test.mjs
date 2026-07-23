@@ -658,6 +658,43 @@ test('YouTube retention checks are cached for 24 hours and capped at 12 overdue 
   assert.ok(second.videos.every(entry => entry.retention?.length === 2))
 })
 
+test('legacy available status without retention points is downgraded and retried quickly', async () => {
+  const recentCheckedAt = new Date(Date.now() - (60 * 60 * 1000))
+    .toISOString()
+    .replace(/\.\d{3}Z$/, 'Z')
+  const previous = {
+    platforms: { youtube: { status: 'available', accountName: 'Flaggenbande', videoCount: 1 } },
+    videos: [socialVideo('youtube', 'public', {
+      retention: [],
+      retentionCheckedAt: recentCheckedAt,
+      retentionCheckStatus: 'available',
+    })],
+    snapshots: [],
+  }
+  const baseFetch = youtubeFetch()
+  let retentionCalls = 0
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    if (value.includes('youtubeanalytics.googleapis.com')) {
+      const query = new URL(value).searchParams
+      if (query.get('dimensions') === 'elapsedVideoTimeRatio') retentionCalls += 1
+    }
+    return baseFetch(url, options)
+  }
+
+  const social = await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-token' },
+    fetchImpl,
+    previous,
+  })
+
+  assert.equal(retentionCalls, 0)
+  assert.equal(social.platforms.youtube.status, 'partial')
+  assert.match(social.platforms.youtube.reason, /steht noch aus/)
+  assert.equal(social.videos[0].retentionCheckStatus, 'pending')
+  assert.equal(social.videos[0].retention.length, 0)
+})
+
 test('YouTube retention API errors mark the platform partial and preserve the last known curve', async () => {
   const oldCheckedAt = new Date(Date.now() - (25 * 60 * 60 * 1000)).toISOString().replace(/\.\d{3}Z$/, 'Z')
   const previousPoint = { elapsedVideoTimeRatio: 0.5, audienceWatchRatio: 0.62, relativeRetentionPerformance: 0.4 }
