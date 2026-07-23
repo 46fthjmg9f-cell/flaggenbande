@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { lstat, readFile, realpath } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
-import { isAbsolute, resolve, sep } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildOperatorAnalysisManifest } from './operator-analysis-manifest.mjs'
 
@@ -267,16 +267,28 @@ const failedStatus = (claim, code) => ({
 const record = value =>
   value && typeof value === 'object' && !Array.isArray(value) ? value : null
 
-const pathInside = (parent, child) => child.startsWith(`${parent}${sep}`)
+const pathInside = (parent, child) => {
+  const fromParent = relative(resolve(parent), resolve(child))
+  return (
+    fromParent !== '' &&
+    fromParent !== '..' &&
+    !fromParent.startsWith(`..${sep}`) &&
+    !isAbsolute(fromParent)
+  )
+}
 
-const readGateJson = async filePath => {
+const readGateJson = async file => {
   let bytes
   try {
-    bytes = await readFile(filePath)
+    bytes = await readFile(file.path)
   } catch {
     throw new Error('GATE_EVIDENCE_UNAVAILABLE')
   }
-  if (bytes.byteLength < 2 || bytes.byteLength > MAX_GATE_JSON_BYTES) {
+  if (
+    bytes.byteLength !== file.sizeBytes ||
+    bytes.byteLength < 2 ||
+    bytes.byteLength > MAX_GATE_JSON_BYTES
+  ) {
     throw new Error('GATE_EVIDENCE_INVALID')
   }
   try {
@@ -286,7 +298,70 @@ const readGateJson = async filePath => {
   }
 }
 
-const privateArtifact = (status, kind, runDirectory) => {
+const canonicalRunDirectory = async (configuredRunsRoot, runId) => {
+  const runDirectory = resolve(configuredRunsRoot, runId)
+  if (!pathInside(configuredRunsRoot, runDirectory)) throw new Error('GATE_EVIDENCE_INVALID')
+
+  let canonicalRunsRoot
+  let canonicalRun
+  let runEntry
+  try {
+    canonicalRunsRoot = await realpath(configuredRunsRoot)
+    runEntry = await lstat(runDirectory)
+    canonicalRun = await realpath(runDirectory)
+  } catch {
+    throw new Error('GATE_EVIDENCE_UNAVAILABLE')
+  }
+  if (
+    runEntry.isSymbolicLink() ||
+    !runEntry.isDirectory() ||
+    !pathInside(canonicalRunsRoot, canonicalRun)
+  ) throw new Error('GATE_EVIDENCE_INVALID')
+
+  return { runDirectory, canonicalRun }
+}
+
+const canonicalRegularFile = async (
+  runDirectory,
+  canonicalRun,
+  candidate,
+  maximumBytes,
+) => {
+  const artifactPath = resolve(runDirectory, candidate)
+  if (!pathInside(runDirectory, artifactPath)) throw new Error('GATE_EVIDENCE_INVALID')
+
+  let entry
+  let canonicalPath
+  let canonicalEntry
+  try {
+    entry = await lstat(artifactPath)
+    canonicalPath = await realpath(artifactPath)
+    canonicalEntry = await lstat(canonicalPath)
+  } catch {
+    throw new Error('GATE_EVIDENCE_UNAVAILABLE')
+  }
+  if (
+    entry.isSymbolicLink() ||
+    !entry.isFile() ||
+    !canonicalEntry.isFile() ||
+    entry.dev !== canonicalEntry.dev ||
+    entry.ino !== canonicalEntry.ino ||
+    entry.size !== canonicalEntry.size ||
+    entry.size < 1 ||
+    entry.size > maximumBytes ||
+    !pathInside(canonicalRun, canonicalPath)
+  ) throw new Error('GATE_EVIDENCE_INVALID')
+
+  return { path: canonicalPath, sizeBytes: entry.size }
+}
+
+const privateArtifact = async (
+  status,
+  kind,
+  runDirectory,
+  canonicalRun,
+  maximumBytes,
+) => {
   if (!Array.isArray(status.privateArtifacts)) throw new Error('GATE_EVIDENCE_INVALID')
   const candidates = status.privateArtifacts.filter(candidate =>
     record(candidate)?.kind === kind
@@ -298,9 +373,13 @@ const privateArtifact = (status, kind, runDirectory) => {
     typeof artifact.sha256 !== 'string' ||
     !/^[a-f0-9]{64}$/u.test(artifact.sha256)
   ) throw new Error('GATE_EVIDENCE_INVALID')
-  const artifactPath = resolve(runDirectory, artifact.path)
-  if (!pathInside(runDirectory, artifactPath)) throw new Error('GATE_EVIDENCE_INVALID')
-  return { path: artifactPath, sha256: artifact.sha256 }
+  const file = await canonicalRegularFile(
+    runDirectory,
+    canonicalRun,
+    artifact.path,
+    maximumBytes,
+  )
+  return { ...file, sha256: artifact.sha256 }
 }
 
 const privateQaReady = (status, runId) => {
@@ -367,17 +446,40 @@ const passedLocalMonetizationGate = report => {
 
 const verifyGateEvidence = async (config, local, previewSha256, previewSizeBytes) => {
   if (!publicQaReady(local)) throw new Error('QUALITY_GATE_FAILED')
-  const runDirectory = resolve(config.localRunsRoot, local.runId)
-  if (!pathInside(config.localRunsRoot, runDirectory)) throw new Error('GATE_EVIDENCE_INVALID')
-  const statusDocument = await readGateJson(resolve(runDirectory, 'status.json'))
+  const { runDirectory, canonicalRun } = await canonicalRunDirectory(
+    config.localRunsRoot,
+    local.runId,
+  )
+  const statusFile = await canonicalRegularFile(
+    runDirectory,
+    canonicalRun,
+    'status.json',
+    MAX_GATE_JSON_BYTES,
+  )
+  const statusDocument = await readGateJson(statusFile)
   const status = record(statusDocument.value)
   if (!status) throw new Error('GATE_EVIDENCE_INVALID')
   const revision = privateQaReady(status, local.runId)
-  const previewArtifact = privateArtifact(status, 'preview_video', runDirectory)
-  const reportArtifact = privateArtifact(status, 'quality_report', runDirectory)
-  if (previewArtifact.sha256 !== previewSha256) throw new Error('GATE_EVIDENCE_INVALID')
+  const previewArtifact = await privateArtifact(
+    status,
+    'preview_video',
+    runDirectory,
+    canonicalRun,
+    MAX_PREVIEW_BYTES,
+  )
+  const reportArtifact = await privateArtifact(
+    status,
+    'quality_report',
+    runDirectory,
+    canonicalRun,
+    MAX_GATE_JSON_BYTES,
+  )
+  if (
+    previewArtifact.sha256 !== previewSha256 ||
+    previewArtifact.sizeBytes !== previewSizeBytes
+  ) throw new Error('GATE_EVIDENCE_INVALID')
 
-  const qualityDocument = await readGateJson(reportArtifact.path)
+  const qualityDocument = await readGateJson(reportArtifact)
   const qualitySha256 = createHash('sha256').update(qualityDocument.bytes).digest('hex')
   if (qualitySha256 !== reportArtifact.sha256) throw new Error('GATE_EVIDENCE_INVALID')
   const report = record(qualityDocument.value)
@@ -413,11 +515,23 @@ const verifyGateEvidence = async (config, local, previewSha256, previewSizeBytes
     audio.clippingDetected !== false
   ) throw new Error('QUALITY_GATE_FAILED')
   if (!passedLocalMonetizationGate(report)) throw new Error('MONETIZATION_GATE_FAILED')
-  const contentArtifact = privateArtifact(status, 'content_manifest', runDirectory)
-  const runtimeArtifact = privateArtifact(status, 'runtime_manifest', runDirectory)
+  const contentArtifact = await privateArtifact(
+    status,
+    'content_manifest',
+    runDirectory,
+    canonicalRun,
+    MAX_GATE_JSON_BYTES,
+  )
+  const runtimeArtifact = await privateArtifact(
+    status,
+    'runtime_manifest',
+    runDirectory,
+    canonicalRun,
+    MAX_GATE_JSON_BYTES,
+  )
   const [contentDocument, runtimeDocument] = await Promise.all([
-    readGateJson(contentArtifact.path),
-    readGateJson(runtimeArtifact.path),
+    readGateJson(contentArtifact),
+    readGateJson(runtimeArtifact),
   ])
   const contentSha256 = createHash('sha256').update(contentDocument.bytes).digest('hex')
   const runtimeSha256 = createHash('sha256').update(runtimeDocument.bytes).digest('hex')

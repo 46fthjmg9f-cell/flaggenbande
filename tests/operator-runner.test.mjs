@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -170,6 +170,64 @@ const script = [
   '(auflösung)',
   'anscheinend der allerechte flaggenboss, nice',
 ].join('\n')
+
+const runCompletedEvidenceCase = async ({
+  t,
+  runId,
+  runsRoot,
+  previewBytes,
+}) => {
+  const updates = []
+  let previewUploadCount = 0
+  const local = await listen((request, response) => {
+    if (request.method === 'POST' && request.url === '/v1/video-runs') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        runId,
+        status: 'completed',
+        progress: 100,
+        currentStep: 'preview_ready',
+        steps: publicSteps(),
+        message: 'Vorschau bereit.',
+        error: null,
+        previewUrl: `${local.url}/preview`,
+      }))
+      return
+    }
+    if (request.url === '/preview') {
+      response.writeHead(200, {
+        'content-type': 'video/mp4',
+        'content-length': String(previewBytes.byteLength),
+      }).end(previewBytes)
+      return
+    }
+    response.writeHead(404).end()
+  })
+  t.after(() => local.close())
+
+  const operator = await listen(async (request, response) => {
+    if (request.url === '/v1/runner/claim') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        run: { runId },
+        command: { script, targetDurationSeconds: 65, clientRequestId: `request-${runId}` },
+        leaseToken: `lease-token-${runId}-1234567890`,
+      }))
+      return
+    }
+    if (request.method === 'PUT' && request.url.endsWith('/preview')) {
+      previewUploadCount += 1
+      response.writeHead(500).end()
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    updates.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    response.writeHead(200, { 'content-type': 'application/json' }).end('{}')
+  })
+  t.after(() => operator.close())
+
+  const result = await runOnce(config(operator.url, local.url, runsRoot), { singleStatus: true })
+  return { result, updates, previewUploadCount }
+}
 
 test('runner config refuses an internet-facing local production API', () => {
   assert.throws(() => loadRunnerConfig({
@@ -432,6 +490,101 @@ test('runner refuses upload when the checksum-bound local monetization report fa
   assert.equal(previewUploadCount, 0)
   assert.equal(updates.length, 1)
   assert.equal(updates[0].error, 'MONETIZATION_GATE_FAILED')
+})
+
+test('runner rejects a symlinked QA artifact even when its target and checksum are valid', async t => {
+  const runId = 'video-444444444444444444444444'
+  const runsRoot = await mkdtemp(join(tmpdir(), 'operator-runner-'))
+  t.after(() => rm(runsRoot, { recursive: true, force: true }))
+  const previewBytes = Buffer.from('preview-with-symlinked-quality-report')
+  await writeGateEvidence(runsRoot, runId, previewBytes)
+
+  const runDirectory = join(runsRoot, runId)
+  const qualityPath = join(
+    runDirectory,
+    'artifacts',
+    'production',
+    `${runId}-quality-report.json`,
+  )
+  const outsideDirectory = join(runsRoot, 'outside-quality')
+  const outsideQualityPath = join(outsideDirectory, 'quality-report.json')
+  await mkdir(outsideDirectory)
+  await rename(qualityPath, outsideQualityPath)
+  await symlink(outsideQualityPath, qualityPath)
+
+  const result = await runCompletedEvidenceCase({
+    t,
+    runId,
+    runsRoot,
+    previewBytes,
+  })
+  assert.equal(result.result, 'failed')
+  assert.equal(result.previewUploadCount, 0)
+  assert.equal(result.updates.length, 1)
+  assert.equal(result.updates[0].error, 'GATE_EVIDENCE_INVALID')
+})
+
+test('runner rejects an artifact that escapes through a symlinked parent directory', async t => {
+  const runId = 'video-555555555555555555555555'
+  const runsRoot = await mkdtemp(join(tmpdir(), 'operator-runner-'))
+  t.after(() => rm(runsRoot, { recursive: true, force: true }))
+  const previewBytes = Buffer.from('preview-with-parent-symlink-escape')
+  await writeGateEvidence(runsRoot, runId, previewBytes)
+
+  const runDirectory = join(runsRoot, runId)
+  const statusPath = join(runDirectory, 'status.json')
+  const status = JSON.parse(await readFile(statusPath, 'utf8'))
+  const contentArtifact = status.privateArtifacts.find(
+    artifact => artifact.kind === 'content_manifest',
+  )
+  assert.ok(contentArtifact)
+  const outsideDirectory = join(runsRoot, 'outside-content')
+  const outsideContentPath = join(outsideDirectory, 'content.json')
+  await mkdir(outsideDirectory)
+  await rename(contentArtifact.path, outsideContentPath)
+  const escapeDirectory = join(runDirectory, 'artifacts', 'escaped-parent')
+  await symlink(outsideDirectory, escapeDirectory)
+  contentArtifact.path = join(escapeDirectory, 'content.json')
+  await writeFile(statusPath, `${JSON.stringify(status, null, 2)}\n`)
+
+  const result = await runCompletedEvidenceCase({
+    t,
+    runId,
+    runsRoot,
+    previewBytes,
+  })
+  assert.equal(result.result, 'failed')
+  assert.equal(result.previewUploadCount, 0)
+  assert.equal(result.updates.length, 1)
+  assert.equal(result.updates[0].error, 'GATE_EVIDENCE_INVALID')
+})
+
+test('runner rejects a preview whose local file size differs from the streamed evidence', async t => {
+  const runId = 'video-666666666666666666666666'
+  const runsRoot = await mkdtemp(join(tmpdir(), 'operator-runner-'))
+  t.after(() => rm(runsRoot, { recursive: true, force: true }))
+  const previewBytes = Buffer.from('preview-with-size-binding')
+  await writeGateEvidence(runsRoot, runId, previewBytes)
+
+  const previewPath = join(
+    runsRoot,
+    runId,
+    'artifacts',
+    'production',
+    `${runId}.mp4`,
+  )
+  await writeFile(previewPath, Buffer.concat([previewBytes, Buffer.from('-tampered')]))
+
+  const result = await runCompletedEvidenceCase({
+    t,
+    runId,
+    runsRoot,
+    previewBytes,
+  })
+  assert.equal(result.result, 'failed')
+  assert.equal(result.previewUploadCount, 0)
+  assert.equal(result.updates.length, 1)
+  assert.equal(result.updates[0].error, 'GATE_EVIDENCE_INVALID')
 })
 
 test('unreachable local engine leaves the cloud job waiting instead of failing or publishing', async t => {
