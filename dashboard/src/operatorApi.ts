@@ -661,6 +661,18 @@ export async function retryOperatorRun(run: OperatorRun): Promise<OperatorRun> {
   }))
 }
 
+export async function reviseOperatorVideo(run: OperatorRun): Promise<OperatorRun> {
+  if (!run.preview.sha256) throw new Error('Video-Prüfsumme fehlt.')
+  return parseRun(await request(`/v1/runs/${encodeURIComponent(run.runId)}/revise-video`, {
+    method: 'POST',
+    body: JSON.stringify({
+      previewSha256: run.preview.sha256,
+      videoRevision: run.preview.revision,
+      idempotencyKey: idempotencyKey('revision', run.runId, run.preview.revision),
+    }),
+  }))
+}
+
 export async function approveOperatorVideo(run: OperatorRun): Promise<OperatorRun> {
   if (!run.preview.sha256) throw new Error('Video-Prüfsumme fehlt.')
   return parseRun(await request(`/v1/runs/${encodeURIComponent(run.runId)}/approve-video`, {

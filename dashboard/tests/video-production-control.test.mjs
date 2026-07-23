@@ -58,3 +58,12 @@ test('production retry is visible only for locally validated pre-preview steps',
   assert.match(source, /run\.release\.requestId === null/u)
   assert.match(source, /run\.release\.status === null/u)
 })
+
+test('an unapproved preview can be safely sent back for revision without releasing it', async () => {
+  const source = await readFile(componentUrl, 'utf8')
+
+  assert.match(source, /reviseOperatorVideo/u)
+  assert.match(source, /\{videoPending && <button/u)
+  assert.match(source, /Video nachbessern/u)
+  assert.match(source, /Video freigeben & Veröffentlichung starten/u)
+})

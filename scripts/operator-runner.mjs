@@ -79,6 +79,7 @@ export const loadRunnerConfig = (env = process.env) => ({
   runnerId: safeRunnerId(env.OPERATOR_RUNNER_ID?.trim() || `mac-${hostname()}`),
   controlApiUrl: normalizedUrl(env.VIDEO_CONTROL_API_URL?.trim() || 'http://127.0.0.1:4317', 'VIDEO_CONTROL_API_URL'),
   localRunsRoot: absoluteDirectory(required(env, 'OPERATOR_LOCAL_RUNS_ROOT'), 'OPERATOR_LOCAL_RUNS_ROOT'),
+  controlToken: required(env, 'VIDEO_CONTROL_API_TOKEN'),
   pollIntervalMs: integerSetting(env, 'OPERATOR_POLL_INTERVAL_MS', 5_000, 1_000, 60_000),
   requestTimeoutMs: integerSetting(env, 'OPERATOR_REQUEST_TIMEOUT_MS', 15_000, 1_000, 120_000),
   previewTimeoutMs: integerSetting(env, 'OPERATOR_PREVIEW_TIMEOUT_MS', 120_000, 30_000, 600_000),
@@ -193,6 +194,11 @@ const parseClaim = value => {
     typeof command.script !== 'string' || command.script.length < 80 || command.script.length > 20_000 ||
     typeof command.targetDurationSeconds !== 'number' || command.targetDurationSeconds < 61 || command.targetDurationSeconds > 70 ||
     typeof command.clientRequestId !== 'string' || command.clientRequestId.length > 128 ||
+    (command.reworkPreview !== undefined && typeof command.reworkPreview !== 'boolean') ||
+    (command.reworkPreview === true &&
+      (!Number.isInteger(command.reworkPreviewRevision) || command.reworkPreviewRevision < 1)) ||
+    (command.reworkPreview !== true &&
+      command.reworkPreviewRevision !== undefined && command.reworkPreviewRevision !== null) ||
     typeof claim.leaseToken !== 'string' || claim.leaseToken.length < 20 || claim.leaseToken.length > 200
   ) throw new Error('Claim-Antwort ist unvollständig.')
   return {
@@ -201,6 +207,8 @@ const parseClaim = value => {
       script: command.script,
       targetDurationSeconds: command.targetDurationSeconds,
       clientRequestId: command.clientRequestId,
+      reworkPreview: command.reworkPreview === true,
+      reworkPreviewRevision: command.reworkPreview === true ? command.reworkPreviewRevision : null,
     },
     leaseToken: claim.leaseToken,
   }
@@ -657,6 +665,33 @@ const prepareCompleted = async (config, claim, local) => {
 }
 
 const startLocal = async (config, claim) => {
+  if (claim.command.reworkPreview) {
+    let revisionResponse
+    try {
+      revisionResponse = await request(
+        `${config.controlApiUrl}/v1/video-runs/${encodeURIComponent(claim.runId)}/revise-preview`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `preview-revision-${claim.runId}-${claim.command.reworkPreviewRevision}`,
+            'X-Flaggenbande-Control-Token': config.controlToken,
+          },
+          body: JSON.stringify({
+            acknowledgement: 'REVISE_PRIVATE_QA_PREVIEW',
+            reason: 'dashboard_quality_rejection',
+          }),
+        },
+        config.requestTimeoutMs,
+      )
+    } catch {
+      return waitingStatus(claim, 'Lokale Vorschau-Nachbesserung ist vorübergehend nicht erreichbar.')
+    }
+    if (revisionResponse.status !== 200 && revisionResponse.status !== 202) {
+      return failedStatus(claim, 'LOCAL_PREVIEW_REVISION_REJECTED')
+    }
+  }
+
   let response
   try {
     response = await request(`${config.controlApiUrl}/v1/video-runs`, {

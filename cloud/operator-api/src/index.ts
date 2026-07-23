@@ -1193,6 +1193,12 @@ interface VideoApprovalInput {
   readonly idempotencyKey: string;
 }
 
+interface VideoRevisionInput {
+  readonly previewSha256: string;
+  readonly videoRevision: number;
+  readonly idempotencyKey: string;
+}
+
 const approvalKey = (value: unknown): string | null => {
   const key = safeText(value, 128);
   return key && /^[A-Za-z0-9._:-]{8,128}$/u.test(key) ? key : null;
@@ -1221,6 +1227,18 @@ const parseVideoApproval = (value: unknown): VideoApprovalInput => {
   const idempotencyKey = approvalKey(value.idempotencyKey);
   if (!previewSha256 || !idempotencyKey || !Number.isInteger(value.videoRevision) || Number(value.videoRevision) < 1) {
     throw new Error("INVALID_VIDEO_APPROVAL");
+  }
+  return { previewSha256, videoRevision: Number(value.videoRevision), idempotencyKey };
+};
+
+const parseVideoRevision = (value: unknown): VideoRevisionInput => {
+  if (!isRecord(value) || !exactKeys(value, ["previewSha256", "videoRevision", "idempotencyKey"])) {
+    throw new Error("INVALID_VIDEO_REVISION");
+  }
+  const previewSha256 = artifactHash(value.previewSha256);
+  const idempotencyKey = approvalKey(value.idempotencyKey);
+  if (!previewSha256 || !idempotencyKey || !Number.isInteger(value.videoRevision) || Number(value.videoRevision) < 1) {
+    throw new Error("INVALID_VIDEO_REVISION");
   }
   return { previewSha256, videoRevision: Number(value.videoRevision), idempotencyKey };
 };
@@ -1352,6 +1370,71 @@ const retryRun = async (
   const retried = await runById(env, runId);
   const projection = retried ? await completeRun(env, retried, "operator") : null;
   return projection ? json(projection, 200, origin) : errorResponse("RUN_NOT_FOUND", 404, origin);
+};
+
+const reviseVideo = async (
+  request: Request,
+  env: Env,
+  runId: string,
+  origin: string | null,
+): Promise<Response> => {
+  const input = parseVideoRevision(await readJson(request));
+  const [row, review, release] = await Promise.all([
+    runById(env, runId),
+    reviewByRunId(env, runId),
+    releaseByRunId(env, runId),
+  ]);
+  if (!row || !review) return errorResponse("RUN_NOT_FOUND", 404, origin);
+  if (review.preview_sha256 !== input.previewSha256 || review.video_revision !== input.videoRevision) {
+    return errorResponse("VIDEO_REVISION_CONFLICT", 409, origin);
+  }
+
+  const alreadyQueued =
+    ["queued", "claimed", "running", "waiting"].includes(row.status) &&
+    row.current_step === "preview_revision" &&
+    review.script_approval_status === "approved" &&
+    review.video_approval_status === "pending" &&
+    release === null;
+  if (alreadyQueued) {
+    const projection = await completeRun(env, row, "operator");
+    return projection ? json(projection, 200, origin) : errorResponse("RUN_REVIEW_NOT_FOUND", 500, origin);
+  }
+
+  const safelyRevisable =
+    row.status === "completed" &&
+    review.script_approval_status === "approved" &&
+    Boolean(review.preview_object_key) &&
+    review.video_approval_status === "pending" &&
+    review.quality_gate_passed === 1 &&
+    review.monetization_gate_passed === 1 &&
+    release === null;
+  if (!safelyRevisable) return errorResponse("VIDEO_REVISION_NOT_ALLOWED", 409, origin);
+
+  const timestamp = now();
+  const message = "Vorschau-Nachbesserung sicher eingeplant.";
+  const result = await env.DB.prepare(`UPDATE operator_production_runs SET
+    status = 'queued', current_step = 'preview_revision', message = ?, error_code = NULL,
+    lease_owner = NULL, lease_token_sha256 = NULL, lease_expires_at = NULL,
+    next_attempt_at = ?, updated_at = ?
+    WHERE run_id = ? AND status = 'completed'`).bind(
+    message, timestamp, timestamp, runId,
+  ).run();
+  if ((result.meta?.changes ?? 0) !== 1) {
+    return errorResponse("VIDEO_REVISION_CONFLICT", 409, origin);
+  }
+  await insertEventStatement(
+    env,
+    runId,
+    "queued",
+    row.progress,
+    "preview_revision",
+    message,
+    null,
+    timestamp,
+  ).run();
+  const revised = await runById(env, runId);
+  const projection = revised ? await completeRun(env, revised, "operator") : null;
+  return projection ? json(projection, 202, origin) : errorResponse("RUN_NOT_FOUND", 404, origin);
 };
 
 const approveVideo = async (
@@ -1508,7 +1591,12 @@ const claimRun = async (request: Request, env: Env): Promise<Response> => {
     await insertEventStatement(env, candidate.run_id, "claimed", candidate.progress, candidate.current_step, message, null, timestamp).run();
     const claimed = await runById(env, candidate.run_id);
     if (!claimed) return errorResponse("CLAIM_FAILED", 500, null);
-    const scriptManifest = await ensureRunScriptManifest(env, claimed, timestamp);
+    const [scriptManifest, review] = await Promise.all([
+      ensureRunScriptManifest(env, claimed, timestamp),
+      reviewByRunId(env, claimed.run_id),
+    ]);
+    if (!review) return errorResponse("RUN_REVIEW_NOT_FOUND", 500, null);
+    const reworkPreview = claimed.current_step === "preview_revision";
     return json({
       run: {
         runId: claimed.run_id,
@@ -1522,6 +1610,8 @@ const claimRun = async (request: Request, env: Env): Promise<Response> => {
         clientRequestId: claimed.client_request_id,
         roundCount: scriptManifest.manifest.round_count,
         phraseTimeline: scriptManifest.timeline,
+        reworkPreview,
+        reworkPreviewRevision: reworkPreview ? review.video_revision : null,
       },
       leaseToken,
     });
@@ -2672,6 +2762,10 @@ const handle = async (request: Request, env: Env): Promise<Response> => {
     ? url.pathname.match(/^\/v1\/runs\/(video-[a-f0-9]{24})\/retry$/u)
     : null;
   if (retryMatch) return retryRun(env, retryMatch[1], origin);
+  const videoRevisionMatch = request.method === "POST"
+    ? url.pathname.match(/^\/v1\/runs\/(video-[a-f0-9]{24})\/revise-video$/u)
+    : null;
+  if (videoRevisionMatch) return reviseVideo(request, env, videoRevisionMatch[1], origin);
   const videoApprovalMatch = request.method === "POST"
     ? url.pathname.match(/^\/v1\/runs\/(video-[a-f0-9]{24})\/approve-video$/u)
     : null;

@@ -1222,6 +1222,86 @@ test('operator rejects retry after a preview exists', async () => {
   )
 })
 
+test('operator safely requeues an unapproved preview revision and marks the runner command', async () => {
+  const schema = await readFile(schemaUrl, 'utf8')
+  const DB = new D1TestDatabase(schema)
+  const env = {
+    DB,
+    PREVIEWS: new PreviewBucket(),
+    OPERATOR_API_TOKEN: 'operator-token',
+    OPERATOR_RUNNER_TOKEN: 'runner-token',
+  }
+  const created = await approvedRetryRun(env, 'revision-0001')
+  const previewSha256 = 'a'.repeat(64)
+  DB.database.prepare(`UPDATE operator_production_runs SET
+    status = 'completed', progress = 100, current_step = 'preview_ready',
+    error_code = NULL
+    WHERE run_id = ?`).run(created.runId)
+  DB.database.prepare(`UPDATE operator_production_reviews SET
+    preview_object_key = 'previews/existing.mp4', preview_sha256 = ?,
+    preview_size_bytes = 123, preview_content_type = 'video/mp4',
+    quality_gate_passed = 1, monetization_gate_passed = 1,
+    video_revision = 37, video_approval_status = 'pending'
+    WHERE run_id = ?`).run(previewSha256, created.runId)
+
+  const wrongRevision = await worker.fetch(request(
+    `/v1/runs/${created.runId}/revise-video`,
+    'operator-token',
+    jsonBody({
+      previewSha256,
+      videoRevision: 36,
+      idempotencyKey: 'preview-revision-0001',
+    }),
+  ), env)
+  assert.equal(wrongRevision.status, 409)
+  assert.equal((await wrongRevision.json()).error, 'VIDEO_REVISION_CONFLICT')
+
+  const revisedResponse = await worker.fetch(request(
+    `/v1/runs/${created.runId}/revise-video`,
+    'operator-token',
+    jsonBody({
+      previewSha256,
+      videoRevision: 37,
+      idempotencyKey: 'preview-revision-0001',
+    }),
+  ), env)
+  assert.equal(revisedResponse.status, 202)
+  const revised = await revisedResponse.json()
+  assert.equal(revised.runId, created.runId)
+  assert.equal(revised.productionStatus, 'queued')
+  assert.equal(revised.currentStep, 'preview_revision')
+  assert.equal(revised.preview.sha256, previewSha256)
+  assert.equal(revised.videoApproval.status, 'pending')
+
+  const claimResponse = await worker.fetch(request(
+    '/v1/runner/claim',
+    'runner-token',
+    jsonBody({ runnerId: 'revision-runner', leaseSeconds: 60 }),
+  ), env)
+  assert.equal(claimResponse.status, 200)
+  const claim = await claimResponse.json()
+  assert.equal(claim.run.runId, created.runId)
+  assert.equal(claim.command.reworkPreview, true)
+
+  const repeated = await worker.fetch(request(
+    `/v1/runs/${created.runId}/revise-video`,
+    'operator-token',
+    jsonBody({
+      previewSha256,
+      videoRevision: 37,
+      idempotencyKey: 'preview-revision-0001',
+    }),
+  ), env)
+  assert.equal(repeated.status, 200)
+  assert.equal((await repeated.json()).currentStep, 'preview_revision')
+  assert.equal(
+    DB.database.prepare(
+      "SELECT COUNT(*) AS count FROM operator_production_events WHERE run_id = ? AND current_step = 'preview_revision' AND status = 'queued'",
+    ).get(created.runId).count,
+    1,
+  )
+})
+
 test('operator rejects retry for non-allowlisted and post-preview steps', async () => {
   for (const [index, currentStep] of ['voice_preparation', 'preview_ready', 'quality_check'].entries()) {
     const schema = await readFile(schemaUrl, 'utf8')
