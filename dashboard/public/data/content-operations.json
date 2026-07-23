@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-07-22T17:52:09.504Z",
+  "generatedAt": "2026-07-23T07:57:42.166Z",
   "status": "partial",
   "messages": [
     "Länderdaten 0.2.0-candidate.1 wurden deterministisch erzeugt: 193 Länder, 193 Flaggen und 193 offene Prüfungen.",
@@ -12,8 +12,9 @@
     "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "11 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
+    "12 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt.",
     "Produktions-Queue: 6 eindeutige Meta-Statusse übernommen; 0 fehlgeschlagen.",
-    "12 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt."
+    "15 öffentliche Plattformveröffentlichungen wurden eindeutig bestätigt."
   ],
   "system": [
     {
@@ -54,21 +55,21 @@
       "platform": "youtube",
       "label": "YouTube",
       "status": "published",
-      "uploads": 4,
-      "publications": 4,
+      "uploads": 6,
+      "publications": 5,
       "performanceAvailable": false,
-      "reason": "4 öffentliche Veröffentlichungen bestätigt.",
-      "updatedAt": "2026-07-22T12:30:11.000Z"
+      "reason": "5 öffentliche Veröffentlichungen bestätigt.",
+      "updatedAt": "2026-07-22T19:47:22.000Z"
     },
     {
       "platform": "instagram",
       "label": "Instagram",
       "status": "published",
-      "uploads": 4,
-      "publications": 4,
+      "uploads": 5,
+      "publications": 5,
       "performanceAvailable": false,
-      "reason": "4 öffentliche Veröffentlichungen bestätigt.",
-      "updatedAt": "2026-07-22T14:17:14.000Z"
+      "reason": "5 öffentliche Veröffentlichungen bestätigt.",
+      "updatedAt": "2026-07-22T20:46:14.000Z"
     },
     {
       "platform": "tiktok",
@@ -78,25 +79,34 @@
       "publications": 0,
       "performanceAvailable": false,
       "reason": "Keine öffentliche TikTok-Veröffentlichung nachgewiesen.",
-      "updatedAt": "2026-07-22T17:42:57.942Z"
+      "updatedAt": "2026-07-22T19:43:59.521Z"
     },
     {
       "platform": "facebook",
       "label": "Facebook",
       "status": "published",
-      "uploads": 4,
-      "publications": 4,
+      "uploads": 5,
+      "publications": 5,
       "performanceAvailable": false,
-      "reason": "4 öffentliche Veröffentlichungen bestätigt.",
-      "updatedAt": "2026-07-22T14:08:13.000Z"
+      "reason": "5 öffentliche Veröffentlichungen bestätigt.",
+      "updatedAt": "2026-07-22T20:45:14.000Z"
     }
   ],
   "runs": [
     {
+      "runId": "upload-video-cb9acc1e7b8f4de4f2ac0994-2207-07",
+      "contentId": "flaggenbande-c8308857c76af5d5fcd74cd726f7eb85a6940d84f20b31993cf739da6a9307ff",
+      "title": "7 Flaggen – wie weit kommst du wirklich? #Flaggenquiz #Geografie #Quiz #Flaggen #Shorts",
+      "status": "completed",
+      "qualityStatus": "passed",
+      "startedAt": "2026-07-22T19:43:59.521Z",
+      "completedAt": "2026-07-22T20:46:14.000Z"
+    },
+    {
       "runId": "upload-video-e5866d048c7f5cf134ccaaac-aligned-v3",
       "contentId": "flaggenbande-d5d58ed0a267906df92b71bdd913555f27f3a7be064765f5d6b4d3cd092dc67d",
       "title": null,
-      "status": "queued",
+      "status": "partial",
       "qualityStatus": "passed",
       "startedAt": "2026-07-22T17:42:30.000Z",
       "completedAt": null
@@ -140,12 +150,63 @@
   ],
   "publications": [
     {
+      "runId": "upload-video-cb9acc1e7b8f4de4f2ac0994-2207-07",
+      "contentId": "flaggenbande-c8308857c76af5d5fcd74cd726f7eb85a6940d84f20b31993cf739da6a9307ff",
+      "platform": "youtube",
+      "mode": "private",
+      "status": "published",
+      "updatedAt": "2026-07-22T19:47:22.000Z",
+      "title": "7 Flaggen – wie weit kommst du wirklich? #Flaggenquiz #Geografie #Quiz #Flaggen #Shorts",
+      "scheduledAt": null,
+      "publishedAt": "2026-07-22T19:47:22.000Z",
+      "publicUrl": "https://www.youtube.com/watch?v=N-loaj5W5O4",
+      "failureCode": null
+    },
+    {
+      "runId": "upload-video-cb9acc1e7b8f4de4f2ac0994-2207-07",
+      "contentId": "flaggenbande-c8308857c76af5d5fcd74cd726f7eb85a6940d84f20b31993cf739da6a9307ff",
+      "platform": "instagram",
+      "mode": "container_unpublished",
+      "status": "published",
+      "updatedAt": "2026-07-22T20:46:14.000Z",
+      "title": "Sieben Flaggen, steigende Schwierigkeit und ein Finale, das fast jeden rauswirft. Wie viele hast du erkannt? Schreib nur deinen Score – keine Spoiler. 👀",
+      "scheduledAt": null,
+      "publishedAt": "2026-07-22T20:46:14.000Z",
+      "publicUrl": "https://www.instagram.com/reel/DbG-sBrAOX_/",
+      "failureCode": null
+    },
+    {
+      "runId": "upload-video-cb9acc1e7b8f4de4f2ac0994-2207-07",
+      "contentId": "flaggenbande-c8308857c76af5d5fcd74cd726f7eb85a6940d84f20b31993cf739da6a9307ff",
+      "platform": "tiktok",
+      "mode": "manual_uploaded",
+      "status": "not_configured",
+      "updatedAt": "2026-07-22T19:43:59.521Z",
+      "title": null,
+      "scheduledAt": null,
+      "publishedAt": null,
+      "publicUrl": null
+    },
+    {
+      "runId": "upload-video-cb9acc1e7b8f4de4f2ac0994-2207-07",
+      "contentId": "flaggenbande-c8308857c76af5d5fcd74cd726f7eb85a6940d84f20b31993cf739da6a9307ff",
+      "platform": "facebook",
+      "mode": "draft",
+      "status": "published",
+      "updatedAt": "2026-07-22T20:45:14.000Z",
+      "title": "7 Flaggen – wie weit kommst du wirklich?",
+      "scheduledAt": null,
+      "publishedAt": "2026-07-22T20:45:14.000Z",
+      "publicUrl": "https://www.facebook.com/reel/900430175856644",
+      "failureCode": null
+    },
+    {
       "runId": "upload-video-e5866d048c7f5cf134ccaaac-aligned-v3",
       "contentId": "flaggenbande-d5d58ed0a267906df92b71bdd913555f27f3a7be064765f5d6b4d3cd092dc67d",
       "platform": "youtube",
       "mode": "private",
-      "status": "planned",
-      "updatedAt": "2026-07-22T17:42:57.942Z",
+      "status": "private",
+      "updatedAt": "2026-07-22T17:53:52.512Z",
       "title": null,
       "scheduledAt": null,
       "publishedAt": null,
