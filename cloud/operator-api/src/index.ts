@@ -1295,6 +1295,63 @@ const approveScript = async (
   return projection ? json(projection, 200, origin) : errorResponse("RUN_NOT_FOUND", 404, origin);
 };
 
+const retryRun = async (
+  env: Env,
+  runId: string,
+  origin: string | null,
+): Promise<Response> => {
+  const [row, review, release] = await Promise.all([
+    runById(env, runId),
+    reviewByRunId(env, runId),
+    releaseByRunId(env, runId),
+  ]);
+  if (!row || !review) return errorResponse("RUN_NOT_FOUND", 404, origin);
+  if (row.status !== "failed") {
+    if (["queued", "claimed", "running", "waiting"].includes(row.status)) {
+      const projection = await completeRun(env, row, "operator");
+      return projection ? json(projection, 200, origin) : errorResponse("RUN_REVIEW_NOT_FOUND", 500, origin);
+    }
+    return errorResponse("RUN_RETRY_NOT_ALLOWED", 409, origin);
+  }
+  const safelyRetryable =
+    row.current_step === "flag_selection" &&
+    review.script_approval_status === "approved" &&
+    review.preview_object_key === null &&
+    review.video_approval_status === "not_ready" &&
+    release === null;
+  if (!safelyRetryable) return errorResponse("RUN_RETRY_NOT_ALLOWED", 409, origin);
+
+  const timestamp = now();
+  const message = "Sicherer Vorstufenschritt erneut eingeplant.";
+  const update = await env.DB.prepare(`UPDATE operator_production_runs SET
+    status = 'queued', current_step = 'production_queue', message = ?, error_code = NULL,
+    lease_owner = NULL, lease_token_sha256 = NULL, lease_expires_at = NULL,
+    next_attempt_at = ?, updated_at = ?
+    WHERE run_id = ? AND status = 'failed' AND current_step = 'flag_selection'`).bind(
+    message, timestamp, timestamp, runId,
+  ).run();
+  if ((update.meta?.changes ?? 0) !== 1) {
+    const current = await runById(env, runId);
+    if (!current || !["queued", "claimed", "running", "waiting"].includes(current.status)) {
+      return errorResponse("RUN_RETRY_CONFLICT", 409, origin);
+    }
+  } else {
+    await insertEventStatement(
+      env,
+      runId,
+      "queued",
+      row.progress,
+      "production_queue",
+      message,
+      null,
+      timestamp,
+    ).run();
+  }
+  const retried = await runById(env, runId);
+  const projection = retried ? await completeRun(env, retried, "operator") : null;
+  return projection ? json(projection, 200, origin) : errorResponse("RUN_NOT_FOUND", 404, origin);
+};
+
 const approveVideo = async (
   request: Request,
   env: Env,
@@ -2593,6 +2650,10 @@ const handle = async (request: Request, env: Env): Promise<Response> => {
     ? url.pathname.match(/^\/v1\/runs\/(video-[a-f0-9]{24})\/approve-script$/u)
     : null;
   if (scriptApprovalMatch) return approveScript(request, env, scriptApprovalMatch[1], origin);
+  const retryMatch = request.method === "POST"
+    ? url.pathname.match(/^\/v1\/runs\/(video-[a-f0-9]{24})\/retry$/u)
+    : null;
+  if (retryMatch) return retryRun(env, retryMatch[1], origin);
   const videoApprovalMatch = request.method === "POST"
     ? url.pathname.match(/^\/v1\/runs\/(video-[a-f0-9]{24})\/approve-video$/u)
     : null;

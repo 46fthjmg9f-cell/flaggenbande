@@ -7,6 +7,7 @@ import {
   listOperatorRuns,
   operatorApiConfigured,
   operatorPreviewUrl,
+  retryOperatorRun,
   startOperatorRun,
   type OperatorRun,
   type OperatorRunStatus,
@@ -123,16 +124,20 @@ interface RunCardProps {
   busyAction: string | null
   onApproveScript: (run: OperatorRun) => Promise<void>
   onApproveVideo: (run: OperatorRun) => Promise<void>
+  onRetry: (run: OperatorRun) => Promise<void>
   initiallyOpen: boolean
 }
 
-function RunCard({ run, busyAction, onApproveScript, onApproveVideo, initiallyOpen }: RunCardProps) {
+function RunCard({ run, busyAction, onApproveScript, onApproveVideo, onRetry, initiallyOpen }: RunCardProps) {
   const previewUrl = operatorPreviewUrl(run)
   const approvingScript = busyAction === `script:${run.runId}`
   const approvingVideo = busyAction === `video:${run.runId}`
+  const retrying = busyAction === `retry:${run.runId}`
   const gatesPassed = run.preview.qualityPassed && run.preview.monetizationPassed
   const scriptPending = run.status === 'awaiting_script_approval' && run.script.status === 'pending'
   const videoPending = run.status === 'awaiting_video_approval' && run.videoApproval.status === 'pending'
+  const safelyRetryable = run.status === 'failed' && run.currentStep === 'flag_selection' &&
+    run.script.status === 'approved' && !run.preview.ready
   const release = releaseStatus(run)
 
   return <details className={`operator-run operator-review ${run.status}`} open={initiallyOpen || scriptPending || videoPending}>
@@ -188,6 +193,14 @@ function RunCard({ run, busyAction, onApproveScript, onApproveVideo, initiallyOp
         disabled={Boolean(busyAction) || !gatesPassed || !run.preview.sha256}
       >
         {approvingVideo ? 'Wird freigegeben …' : 'Video freigeben & Veröffentlichung starten'}
+      </button>}
+      {safelyRetryable && <button
+        className="secondary-action"
+        type="button"
+        onClick={() => void onRetry(run)}
+        disabled={Boolean(busyAction)}
+      >
+        {retrying ? 'Wird erneut eingeplant …' : 'Produktion erneut versuchen'}
       </button>}
     </section>
 
@@ -369,6 +382,18 @@ export default function VideoProductionControl() {
     }
   }
 
+  const retryRun = async (run: OperatorRun) => {
+    setBusyAction(`retry:${run.runId}`)
+    setError(null)
+    try {
+      updateRun(await retryOperatorRun(run))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   if (!operatorApiConfigured) {
     return <section className="operator-card">
       <div className="compact-heading"><h2>Neue Produktion</h2><span className="status-badge failed">Offline</span></div>
@@ -511,6 +536,7 @@ export default function VideoProductionControl() {
             busyAction={busyAction}
             onApproveScript={approveScript}
             onApproveVideo={approveVideo}
+            onRetry={retryRun}
             initiallyOpen={index === 0}
           />)
           : <p className="compact-empty">Keine Läufe</p>}
