@@ -49,10 +49,10 @@ test('research wording cards show evidence sample and only supplied deltas', asy
   assert.match(source, /Noch keine belastbare Formulierungsempfehlung/u)
 })
 
-test('production retry is visible only for allowlisted pre-preview steps', async () => {
+test('production retry is visible only for locally validated pre-preview steps', async () => {
   const source = await readFile(componentUrl, 'utf8')
 
-  assert.match(source, /new Set\(\['flag_selection', 'timeline_build'\]\)/u)
+  assert.match(source, /new Set\(\['flag_selection', 'timeline_build', 'render'\]\)/u)
   assert.match(source, /safelyRetryablePreviewSteps\.has\(run\.currentStep \?\? ''\)/u)
   assert.match(source, /run\.videoApproval\.status === 'not_ready'/u)
   assert.match(source, /run\.release\.requestId === null/u)

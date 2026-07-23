@@ -1141,6 +1141,37 @@ test('operator can retry a failed pre-preview timeline build without creating a 
   )
 })
 
+test('operator can queue a failed render for the local fail-closed recovery without creating a duplicate', async () => {
+  const schema = await readFile(schemaUrl, 'utf8')
+  const DB = new D1TestDatabase(schema)
+  const env = {
+    DB,
+    PREVIEWS: new PreviewBucket(),
+    OPERATOR_API_TOKEN: 'operator-token',
+  }
+  const created = await approvedRetryRun(env, 'render-0001')
+  DB.database.prepare(`UPDATE operator_production_runs SET
+    status = 'failed', progress = 68, current_step = 'render',
+    error_code = 'PRODUCTION_STEP_FAILED'
+    WHERE run_id = ?`).run(created.runId)
+
+  const response = await worker.fetch(request(
+    `/v1/runs/${created.runId}/retry`,
+    'operator-token',
+    { method: 'POST' },
+  ), env)
+  assert.equal(response.status, 200)
+  const retried = await response.json()
+  assert.equal(retried.runId, created.runId)
+  assert.equal(retried.productionStatus, 'queued')
+  assert.equal(retried.currentStep, 'production_queue')
+  assert.equal(retried.error, null)
+  assert.equal(
+    DB.database.prepare('SELECT COUNT(*) AS count FROM operator_production_runs').get().count,
+    1,
+  )
+})
+
 test('operator rejects retry after a preview exists', async () => {
   const schema = await readFile(schemaUrl, 'utf8')
   const DB = new D1TestDatabase(schema)
@@ -1171,8 +1202,8 @@ test('operator rejects retry after a preview exists', async () => {
   )
 })
 
-test('operator rejects retry for downstream and non-allowlisted steps', async () => {
-  for (const [index, currentStep] of ['voice_preparation', 'render', 'preview_ready'].entries()) {
+test('operator rejects retry for non-allowlisted and post-preview steps', async () => {
+  for (const [index, currentStep] of ['voice_preparation', 'preview_ready', 'quality_check'].entries()) {
     const schema = await readFile(schemaUrl, 'utf8')
     const DB = new D1TestDatabase(schema)
     const env = {
