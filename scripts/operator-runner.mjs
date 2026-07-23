@@ -546,7 +546,26 @@ const startLocal = async (config, claim) => {
       ? waitingStatus(claim)
       : failedStatus(claim, response.status === 400 ? 'LOCAL_INPUT_REJECTED' : 'LOCAL_CONTROL_REJECTED')
   }
-  return parsePublicRun(await readJson(response))
+  const local = parsePublicRun(await readJson(response))
+  if (local.status !== 'failed' || local.currentStep !== 'flag_selection') return local
+
+  let retryResponse
+  try {
+    retryResponse = await request(
+      `${config.controlApiUrl}/v1/video-runs/${encodeURIComponent(local.runId)}/retry`,
+      { method: 'POST' },
+      config.requestTimeoutMs,
+    )
+  } catch {
+    return local
+  }
+  if (retryResponse.status !== 202) return local
+  try {
+    const retried = parsePublicRun(await readJson(retryResponse))
+    return retried.runId === local.runId ? retried : local
+  } catch {
+    return local
+  }
 }
 
 const readLocal = async (config, runId) => {
