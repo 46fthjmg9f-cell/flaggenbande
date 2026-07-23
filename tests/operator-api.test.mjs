@@ -856,6 +856,7 @@ test('two-stage approvals are hash-bound, idempotent and release exactly once', 
 
   const videoBytes = Buffer.from('verified-private-preview')
   const previewSha256 = createHash('sha256').update(videoBytes).digest('hex')
+  const videoRevision = 37
   const uploadResponse = await worker.fetch(request(
     `/v1/runner/runs/${created.runId}/preview`,
     'runner-token',
@@ -867,7 +868,7 @@ test('two-stage approvals are hash-bound, idempotent and release exactly once', 
         'X-Runner-Id': 'test-runner',
         'X-Lease-Token': claim.leaseToken,
         'X-Preview-Sha256': previewSha256,
-        'X-Video-Revision': '1',
+        'X-Video-Revision': String(videoRevision),
         'X-Quality-Gate': 'passed',
         'X-Monetization-Gate': 'passed',
       },
@@ -875,6 +876,25 @@ test('two-stage approvals are hash-bound, idempotent and release exactly once', 
     },
   ), env)
   assert.equal(uploadResponse.status, 200)
+  const repeatedUploadResponse = await worker.fetch(request(
+    `/v1/runner/runs/${created.runId}/preview`,
+    'runner-token',
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'video/mp4',
+        'Content-Length': String(videoBytes.byteLength),
+        'X-Runner-Id': 'test-runner',
+        'X-Lease-Token': claim.leaseToken,
+        'X-Preview-Sha256': previewSha256,
+        'X-Video-Revision': String(videoRevision),
+        'X-Quality-Gate': 'passed',
+        'X-Monetization-Gate': 'passed',
+      },
+      body: videoBytes,
+    },
+  ), env)
+  assert.equal(repeatedUploadResponse.status, 200)
 
   const previewWithoutAuth = await worker.fetch(new Request(
     `https://operator.example.test/v1/runs/${created.runId}/preview`,
@@ -894,7 +914,7 @@ test('two-stage approvals are hash-bound, idempotent and release exactly once', 
     'operator-token',
     jsonBody({
       previewSha256,
-      videoRevision: 1,
+      videoRevision,
       idempotencyKey: 'video-approval-0001',
     }),
   ), env)
@@ -919,7 +939,7 @@ test('two-stage approvals are hash-bound, idempotent and release exactly once', 
 
   const videoApprovalPayload = {
     previewSha256,
-    videoRevision: 1,
+    videoRevision,
     idempotencyKey: 'video-approval-0001',
   }
   for (let attempt = 0; attempt < 2; attempt += 1) {

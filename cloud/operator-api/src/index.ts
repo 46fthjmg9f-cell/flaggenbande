@@ -1616,10 +1616,11 @@ const uploadPreview = async (
       monetizationPassed: review.monetization_gate_passed === 1,
     });
   }
-  if (videoRevision !== review.video_revision + 1 || review.video_approval_status === "approved") {
+  if (videoRevision <= review.video_revision || review.video_approval_status === "approved") {
     return errorResponse("VIDEO_REVISION_CONFLICT", 409, null);
   }
 
+  const previousVideoRevision = review.video_revision;
   const objectKey = `previews/${runId}/v${videoRevision}/${previewSha256}.mp4`;
   try {
     await env.PREVIEWS.put(objectKey, request.body, {
@@ -1644,7 +1645,7 @@ const uploadPreview = async (
     WHERE run_id = ? AND script_approval_status = 'approved'
       AND video_approval_status != 'approved' AND video_revision = ?`).bind(
     objectKey, previewSha256, sizeBytes, timestamp, videoRevision, timestamp,
-    runId, videoRevision - 1,
+    runId, previousVideoRevision,
   ).run();
   if ((result.meta?.changes ?? 0) !== 1) {
     await env.PREVIEWS.delete(objectKey);
