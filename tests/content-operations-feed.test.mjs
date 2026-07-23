@@ -98,6 +98,51 @@ test('staging feed is reduced to safe content-operation fields and confirmed non
   assert.doesNotMatch(JSON.stringify(normalized), /remoteObjectId|containerId|accountFingerprint|providerStatus|unveröffentlichter Titel|Brazil|private-id/)
 })
 
+test('release numbering and both approval stages are validated and inherited by every platform target', () => {
+  const payload = feed()
+  Object.assign(payload.runs[0], {
+    releaseLabel: '2307.04',
+    videoApproved: true,
+    finalReleaseApproved: true,
+  })
+  Object.assign(payload.publications[0], {
+    releaseLabel: '2307.04',
+    videoApproved: true,
+    finalReleaseApproved: true,
+  })
+
+  const normalized = normalizeStagingFeed(payload)
+
+  assert.deepEqual(
+    {
+      releaseLabel: normalized.runs[0].releaseLabel,
+      videoApproved: normalized.runs[0].videoApproved,
+      finalReleaseApproved: normalized.runs[0].finalReleaseApproved,
+    },
+    { releaseLabel: '2307.04', videoApproved: true, finalReleaseApproved: true },
+  )
+  assert.ok(normalized.publications.every(publication =>
+    publication.releaseLabel === '2307.04'
+    && publication.videoApproved === true
+    && publication.finalReleaseApproved === true))
+
+  for (const invalidLabel of ['2307.04X', '3207.04', '3002.04', '2307.4']) {
+    const invalid = feed()
+    invalid.runs[0].releaseLabel = invalidLabel
+    assert.throws(() => normalizeStagingFeed(invalid), /releaseLabel/)
+  }
+
+  const incompleteApproval = feed()
+  incompleteApproval.runs[0].releaseLabel = '2307.04'
+  incompleteApproval.runs[0].finalReleaseApproved = true
+  assert.throws(() => normalizeStagingFeed(incompleteApproval), /setzt videoApproved voraus/)
+
+  const mismatched = feed()
+  mismatched.runs[0].releaseLabel = '2307.04'
+  mismatched.publications[0].releaseLabel = '2307.05'
+  assert.throws(() => normalizeStagingFeed(mismatched), /widerspricht den Laufdaten/)
+})
+
 test('transport problems remain explicit and container_unpublished mode is preserved', () => {
   const payload = feed()
   payload.runs[0].status = 'reconcile_required'
@@ -116,6 +161,31 @@ test('transport problems remain explicit and container_unpublished mode is prese
     tiktok: 'expired',
     facebook: 'reconcile_required',
   })
+})
+
+test('run start uses the earliest trusted target timestamp when platform updates slightly lead the run record', () => {
+  const payload = feed()
+  payload.runs[0].startedAt = '2026-07-23T19:45:00Z'
+  payload.runs[0].completedAt = null
+  payload.publications.forEach((publication, index) => {
+    publication.runId = runId
+    publication.updatedAt = index < 2
+      ? '2026-07-23T19:43:59Z'
+      : '2026-07-23T19:44:06Z'
+  })
+
+  const normalized = normalizeStagingFeed(payload)
+
+  assert.equal(normalized.runs[0].startedAt, '2026-07-23T19:43:59.000Z')
+  assert.deepEqual(
+    normalized.publications.map(publication => publication.updatedAt),
+    [
+      '2026-07-23T19:43:59.000Z',
+      '2026-07-23T19:43:59.000Z',
+      '2026-07-23T19:44:06.000Z',
+      '2026-07-23T19:44:06.000Z',
+    ],
+  )
 })
 
 test('staging feed rejects public claims, authorization, mismatched modes, and incomplete runs', () => {
@@ -229,6 +299,24 @@ test('production queue failures override planned staging targets with safe failu
   assert.equal(overlaid.publications.find(entry => entry.platform === 'facebook').status, 'failed')
   assert.equal(overlaid.platforms.find(entry => entry.platform === 'facebook').status, 'failed')
   assert.doesNotMatch(JSON.stringify(overlaid), /OAuthException|Page-Token|access[_ -]?token/i)
+})
+
+test('an older queue failure cannot overwrite a newer retry-ready staging target', () => {
+  const payload = feed()
+  payload.runs[0].status = 'partial'
+  payload.runs[0].completedAt = null
+  const instagram = payload.publications.find(entry => entry.platform === 'instagram')
+  instagram.status = 'planned'
+  instagram.updatedAt = '2026-07-21T13:06:00Z'
+  const staged = mergeStagingFeed(previous(), normalizeStagingFeed(payload))
+  const staleFailure = publicationFeed([publicationFeed().publications[0]])
+
+  const overlaid = mergePublicationFeed(staged, normalizePublicationFeed(staleFailure))
+
+  assert.equal(overlaid.publications.find(entry => entry.platform === 'instagram').status, 'planned')
+  assert.equal(overlaid.publications.find(entry => entry.platform === 'instagram').updatedAt, '2026-07-21T13:06:00.000Z')
+  assert.equal(overlaid.platforms.find(entry => entry.platform === 'instagram').status, 'planned')
+  assert.equal(overlaid.runs[0].status, 'partial')
 })
 
 test('production queue association fails closed for duplicate runs or duplicate queue rows', () => {

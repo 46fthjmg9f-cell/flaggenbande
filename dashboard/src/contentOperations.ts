@@ -34,6 +34,9 @@ export interface PublicPlatformSummary {
 export interface PublicProductionRun {
   runId: string
   contentId: string
+  releaseLabel?: string | null
+  videoApproved?: boolean
+  finalReleaseApproved?: boolean
   title: string | null
   status: ProductionRunStatus
   qualityStatus: QualityStatus
@@ -44,6 +47,9 @@ export interface PublicProductionRun {
 export interface PublicPublication {
   runId: string
   contentId: string
+  releaseLabel?: string | null
+  videoApproved?: boolean
+  finalReleaseApproved?: boolean
   platform: PlatformId
   mode: 'private' | 'container_unpublished' | 'manual_uploaded' | 'draft'
   status: PublicationStatus
@@ -135,6 +141,14 @@ function requiredBoolean(value: unknown, path: string): boolean {
   return value
 }
 
+function optionalBoolean(value: unknown, path: string): boolean | undefined {
+  return value === undefined ? undefined : requiredBoolean(value, path)
+}
+
+function optionalNullableString(value: unknown, path: string): string | null | undefined {
+  return value === undefined ? undefined : nullableString(value, path)
+}
+
 function nullablePublicUrl(value: unknown, path: string): string | null {
   const text = nullableString(value, path)
   if (text === null) return null
@@ -186,6 +200,9 @@ function parseRun(value: unknown, index: number): PublicProductionRun {
   return {
     runId: requiredString(record.runId, `${path}.runId`),
     contentId: requiredString(record.contentId, `${path}.contentId`),
+    releaseLabel: optionalNullableString(record.releaseLabel, `${path}.releaseLabel`),
+    videoApproved: optionalBoolean(record.videoApproved, `${path}.videoApproved`),
+    finalReleaseApproved: optionalBoolean(record.finalReleaseApproved, `${path}.finalReleaseApproved`),
     title: nullableString(record.title, `${path}.title`),
     status: enumValue(record.status, runStatuses, `${path}.status`),
     qualityStatus: enumValue(record.qualityStatus, qualityStatuses, `${path}.qualityStatus`),
@@ -200,6 +217,9 @@ function parsePublication(value: unknown, index: number): PublicPublication {
   return {
     runId: requiredString(record.runId, `${path}.runId`),
     contentId: requiredString(record.contentId, `${path}.contentId`),
+    releaseLabel: optionalNullableString(record.releaseLabel, `${path}.releaseLabel`),
+    videoApproved: optionalBoolean(record.videoApproved, `${path}.videoApproved`),
+    finalReleaseApproved: optionalBoolean(record.finalReleaseApproved, `${path}.finalReleaseApproved`),
     platform: enumValue(record.platform, PLATFORM_IDS, `${path}.platform`),
     mode: enumValue(record.mode, ['private', 'container_unpublished', 'manual_uploaded', 'draft'] as const, `${path}.mode`),
     status: enumValue(record.status, publicationStatuses, `${path}.status`),

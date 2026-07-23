@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { EChartsOption, EChartsType } from 'echarts'
 import ContentSystemDashboard from './ContentSystemDashboard'
 import FinancePage from './FinancePage'
 import NewProductionPage from './NewProductionPage'
 import PublishingCalendar from './PublishingCalendar'
 import SocialStatsPage from './SocialStatsPage'
+import { useAdaptiveRefresh } from './useAdaptiveRefresh'
 import { DASHBOARD_SECTIONS, dashboardSectionFromHash, type DashboardSectionId } from './dashboardSections'
 import type { DashboardData, DailyMetric, Numeric } from './types'
 import { emptyDashboard } from './types'
@@ -82,7 +83,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
-  const refreshDashboard = async () => {
+  const refreshDashboard = useCallback(async () => {
     setRefreshing(true)
     setError(null)
     try {
@@ -106,11 +107,9 @@ export default function Dashboard() {
     } finally {
       setRefreshing(false)
     }
-  }
-
-  useEffect(() => {
-    void refreshDashboard()
   }, [])
+
+  useAdaptiveRefresh(refreshDashboard)
 
   useEffect(() => {
     const syncSection = () => setActiveView(dashboardSectionFromHash(window.location.hash))

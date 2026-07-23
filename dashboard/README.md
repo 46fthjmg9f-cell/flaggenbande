@@ -4,7 +4,27 @@ Die Übersicht ist ein statisches Vite/React-Frontend für GitHub Pages. Die Nav
 
 Die App-, Plattform- und Finanzauswertung liest `public/data/dashboard.json`. Diese Datei enthält nur zusammengefasste Kennzahlen und wird durch GitHub Actions erzeugt; weder API-Schlüssel noch CloudKit-Rohdaten noch Spieleridentitäten werden veröffentlicht.
 
-**Neue Produktion** enthält ausschließlich die sichere Produktionssteuerung. Der Bereich **Videos** liest zusätzlich den versionierten öffentlichen Vertrag `public/data/content-operations.json` und zeigt pro Video den Produktions-, Qualitäts- und Plattformstatus. Die Plattformleistung wird ausschließlich in **Stats**, Finanzwerte ausschließlich in **Finanzen** dargestellt. Unveröffentlichte Titel, lokale Pfade, Rohdaten und Zugangsdaten dürfen nicht in die öffentlichen Dateien geschrieben werden. Die serverseitige Datensammlung gleicht bestätigte öffentliche Plattformvideos mit alten Upload-Testläufen ab; unbestätigte Plattformen bleiben sichtbar und werden ausdrücklich als nicht verfügbar markiert.
+**Neue Produktion** enthält ausschließlich die sichere Produktionssteuerung. Jeder Lauf hat zwei getrennte, unveränderlich an Hash und Revision gebundene Freigaben:
+
+1. Skript speichern, im Dashboard lesen und freigeben.
+2. Gerendertes Video im Dashboard ansehen und erst nach bestandener Qualitäts- und Monetarisierungsprüfung freigeben.
+
+Erst die zweite Freigabe erzeugt genau einen Veröffentlichungsauftrag. Der Auftrag ist separat geleast, wiederholbar und schreibt für YouTube, Instagram, Facebook und TikTok jeweils einen echten Plattformstatus zurück. `Veröffentlicht` und das blaue Kalender-Signal werden erst gesetzt, wenn alle für den Auftrag ausgewählten Plattformen eine öffentliche URL bestätigt haben. Die Oberfläche enthält keinen Steuerungsschlüssel; der persönliche Browserzugriff wird durch Cloudflare Access geschützt. Produktions- und Plattform-Runner behalten getrennte serverseitige Bearer-Schlüssel.
+
+Der Bereich **Videos** liest zusätzlich den versionierten öffentlichen Vertrag `public/data/content-operations.json` und zeigt pro Video den Produktions-, Qualitäts- und Plattformstatus. Die Plattformleistung wird ausschließlich in **Stats**, Finanzwerte ausschließlich in **Finanzen** dargestellt. Unveröffentlichte Skripte, Preview-URLs, Hashes, lokale Pfade, Rohdaten und Zugangsdaten dürfen nicht in die öffentlichen Dateien geschrieben werden. Die serverseitige Datensammlung gleicht bestätigte öffentliche Plattformvideos mit alten Upload-Testläufen ab; unbestätigte Plattformen bleiben sichtbar und werden ausdrücklich als nicht verfügbar markiert.
+
+Die Release-Nummer wird serverseitig in Berliner Zeit als `DDMM.NN` vergeben. Nach der zweiten manuellen Freigabe zeigt das Dashboard ein `X`, zum Beispiel `2207.07X`; der unveränderliche interne Wert bleibt `2207.07`.
+
+## Einmalige Produktionssteuerung
+
+1. Privaten R2-Bucket `flaggenbande-operator-previews` aktivieren und im Operator-Worker als `PREVIEWS` binden.
+2. Die Migration `cloud/operator-api/schema.sql` auf der D1-Datenbank `flaggenbande-operator` ausführen.
+3. In Cloudflare Access eine Self-hosted Application für die Operator-Worker-Domain anlegen und nur das eigene Konto zulassen.
+4. `TEAM_DOMAIN` und `POLICY_AUD` am Worker setzen. `TEAM_DOMAIN` ist die Access-Team-Domain, `POLICY_AUD` die Audience-ID der Anwendung.
+5. `OPERATOR_RUNNER_TOKEN` und `OPERATOR_RELEASE_TOKEN` ausschließlich als Worker-Secrets und lokal in `.env.operator` hinterlegen.
+6. Den vorhandenen Plattform-Adapter an `/v1/release-runner/claim`, den privaten Preview-Abruf und den hashgebundenen Status-Rückkanal anschließen. Ohne laufenden Adapter bleibt der Auftrag ehrlich als eingeplant sichtbar und wird nicht als veröffentlicht ausgegeben.
+
+Ohne Access-Anmeldung bleiben die schreibenden Dashboard-Endpunkte gesperrt. Öffentliche Statusendpunkte enthalten weder Skript noch Preview-Adresse oder Prüfsummen.
 
 ## Lokale Prüfung
 

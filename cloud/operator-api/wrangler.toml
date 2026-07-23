@@ -6,8 +6,18 @@ compatibility_date = "2026-07-21"
 # Comma-separated, exact origins. Production must contain only the deployed
 # dashboard origin; localhost entries are for explicit local development.
 DASHBOARD_ORIGINS = "https://46fthjmg9f-cell.github.io"
+RELEASE_PLATFORMS = "youtube,instagram,facebook"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "flaggenbande-operator"
 database_id = "232b4aa9-ce77-4e4e-a885-df0028a15d35"
+
+[[r2_buckets]]
+binding = "PREVIEWS"
+bucket_name = "flaggenbande-operator-previews"
+
+[assets]
+directory = "../../dashboard/dist"
+binding = "ASSETS"
+run_worker_first = true

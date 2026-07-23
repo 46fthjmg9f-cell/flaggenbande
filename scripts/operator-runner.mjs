@@ -1,8 +1,25 @@
-import { hostname } from 'node:os'
+import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { homedir, hostname } from 'node:os'
+import { isAbsolute, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const RUN_ID_PATTERN = /^video-[a-f0-9]{24}$/u
 const LOCAL_STATUSES = new Set(['queued', 'running', 'waiting', 'completed', 'failed'])
+const LOCAL_STEP_IDS = [
+  'script_validation',
+  'flag_selection',
+  'voice_preparation',
+  'timeline_build',
+  'audio_design',
+  'render',
+  'quality_check',
+  'preview_ready',
+]
+const LOCAL_STEP_ID_SET = new Set(LOCAL_STEP_IDS)
+const LOCAL_STEP_STATUSES = new Set(['pending', 'running', 'waiting', 'completed', 'failed'])
+const MAX_PREVIEW_BYTES = 512 * 1024 * 1024
+const MAX_GATE_JSON_BYTES = 5 * 1024 * 1024
 
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 
@@ -42,13 +59,27 @@ const safeRunnerId = value => {
   return normalized
 }
 
+const absoluteDirectory = (value, name) => {
+  const expanded = value === '~'
+    ? homedir()
+    : value.startsWith('~/')
+      ? resolve(homedir(), value.slice(2))
+      : value
+  if (!isAbsolute(expanded)) throw new Error(`${name} muss ein absoluter Pfad sein.`)
+  const normalized = resolve(expanded)
+  if (normalized === sep) throw new Error(`${name} darf nicht auf das Dateisystem-Stammverzeichnis zeigen.`)
+  return normalized
+}
+
 export const loadRunnerConfig = (env = process.env) => ({
   operatorApiUrl: normalizedUrl(required(env, 'OPERATOR_API_URL'), 'OPERATOR_API_URL'),
   runnerToken: required(env, 'OPERATOR_RUNNER_TOKEN'),
   runnerId: safeRunnerId(env.OPERATOR_RUNNER_ID?.trim() || `mac-${hostname()}`),
   controlApiUrl: normalizedUrl(env.VIDEO_CONTROL_API_URL?.trim() || 'http://127.0.0.1:4317', 'VIDEO_CONTROL_API_URL'),
+  localRunsRoot: absoluteDirectory(required(env, 'OPERATOR_LOCAL_RUNS_ROOT'), 'OPERATOR_LOCAL_RUNS_ROOT'),
   pollIntervalMs: integerSetting(env, 'OPERATOR_POLL_INTERVAL_MS', 5_000, 1_000, 60_000),
   requestTimeoutMs: integerSetting(env, 'OPERATOR_REQUEST_TIMEOUT_MS', 15_000, 1_000, 120_000),
+  previewTimeoutMs: integerSetting(env, 'OPERATOR_PREVIEW_TIMEOUT_MS', 120_000, 30_000, 600_000),
   localPollIntervalMs: integerSetting(env, 'OPERATOR_LOCAL_POLL_INTERVAL_MS', 1_500, 500, 30_000),
   leaseSeconds: integerSetting(env, 'OPERATOR_LEASE_SECONDS', 60, 30, 300),
 })
@@ -82,6 +113,49 @@ const safeNullableText = (value, maxLength = 500) => {
   return value.trim()
 }
 
+const safeLocalPreviewUrl = value => {
+  if (typeof value !== 'string' || value.length > 2_048) return null
+  try {
+    const parsed = new URL(value)
+    if (
+      parsed.protocol !== 'http:' ||
+      !['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname) ||
+      parsed.username || parsed.password
+    ) return null
+    return parsed.href
+  } catch {
+    return null
+  }
+}
+
+const parseLocalSteps = value => {
+  if (!Array.isArray(value) || value.length !== LOCAL_STEP_IDS.length) {
+    throw new Error('Produktionsstatus enthält keine vollständigen Prüfschritte.')
+  }
+  const seen = new Set()
+  const steps = value.map(candidate => {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+      throw new Error('Produktionsstatus enthält einen ungültigen Prüfschritt.')
+    }
+    if (
+      typeof candidate.id !== 'string' || !LOCAL_STEP_ID_SET.has(candidate.id) || seen.has(candidate.id) ||
+      typeof candidate.status !== 'string' || !LOCAL_STEP_STATUSES.has(candidate.status) ||
+      typeof candidate.progress !== 'number' || !Number.isFinite(candidate.progress) ||
+      candidate.progress < 0 || candidate.progress > 100
+    ) throw new Error('Produktionsstatus enthält einen ungültigen Prüfschritt.')
+    seen.add(candidate.id)
+    return {
+      id: candidate.id,
+      status: candidate.status,
+      progress: candidate.progress,
+    }
+  })
+  if (LOCAL_STEP_IDS.some(id => !seen.has(id))) {
+    throw new Error('Produktionsstatus enthält keine vollständigen Prüfschritte.')
+  }
+  return steps
+}
+
 const parsePublicRun = value => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Produktionsstatus ist ungültig.')
   const run = value
@@ -90,6 +164,9 @@ const parsePublicRun = value => {
     typeof run.status !== 'string' || !LOCAL_STATUSES.has(run.status) ||
     typeof run.progress !== 'number' || !Number.isFinite(run.progress) || run.progress < 0 || run.progress > 100
   ) throw new Error('Produktionsstatus ist unvollständig.')
+  const completed = run.status === 'completed'
+  const previewUrl = completed ? safeLocalPreviewUrl(run.previewUrl) : null
+  const steps = parseLocalSteps(run.steps)
   return {
     runId: run.runId,
     status: run.status,
@@ -97,6 +174,8 @@ const parsePublicRun = value => {
     currentStep: safeNullableText(run.currentStep, 100),
     message: safeNullableText(run.message),
     error: safeNullableText(run.error, 100),
+    previewUrl,
+    steps,
   }
 }
 
@@ -150,7 +229,7 @@ const remoteStatus = async (config, claim, local) => {
       progress: local.progress,
       currentStep: local.currentStep,
       message: local.message,
-      error: failed ? 'LOCAL_PRODUCTION_FAILED' : null,
+      error: failed ? (local.error || 'LOCAL_PRODUCTION_FAILED') : null,
       providerRunId: local.runId,
     }),
   }, config.requestTimeoutMs)
@@ -173,9 +252,236 @@ const failedStatus = (claim, code) => ({
   status: 'failed',
   progress: 0,
   currentStep: 'script_validation',
-  message: 'Lokale Produktions-Engine hat den Auftrag abgelehnt.',
+  message: (
+    code === 'QUALITY_GATE_FAILED' ||
+    code === 'MONETIZATION_GATE_FAILED' ||
+    code === 'GATE_EVIDENCE_INVALID'
+  )
+    ? 'Die Vorschau hat eine verpflichtende Freigabeprüfung nicht bestanden.'
+    : 'Lokale Produktions-Engine hat den Auftrag abgelehnt.',
   error: code,
 })
+
+const record = value =>
+  value && typeof value === 'object' && !Array.isArray(value) ? value : null
+
+const pathInside = (parent, child) => child.startsWith(`${parent}${sep}`)
+
+const readGateJson = async filePath => {
+  let bytes
+  try {
+    bytes = await readFile(filePath)
+  } catch {
+    throw new Error('GATE_EVIDENCE_UNAVAILABLE')
+  }
+  if (bytes.byteLength < 2 || bytes.byteLength > MAX_GATE_JSON_BYTES) {
+    throw new Error('GATE_EVIDENCE_INVALID')
+  }
+  try {
+    return { value: JSON.parse(bytes.toString('utf8')), bytes }
+  } catch {
+    throw new Error('GATE_EVIDENCE_INVALID')
+  }
+}
+
+const privateArtifact = (status, kind, runDirectory) => {
+  if (!Array.isArray(status.privateArtifacts)) throw new Error('GATE_EVIDENCE_INVALID')
+  const candidates = status.privateArtifacts.filter(candidate =>
+    record(candidate)?.kind === kind
+  )
+  if (candidates.length !== 1) throw new Error('GATE_EVIDENCE_INVALID')
+  const artifact = candidates[0]
+  if (
+    typeof artifact.path !== 'string' ||
+    typeof artifact.sha256 !== 'string' ||
+    !/^[a-f0-9]{64}$/u.test(artifact.sha256)
+  ) throw new Error('GATE_EVIDENCE_INVALID')
+  const artifactPath = resolve(runDirectory, artifact.path)
+  if (!pathInside(runDirectory, artifactPath)) throw new Error('GATE_EVIDENCE_INVALID')
+  return { path: artifactPath, sha256: artifact.sha256 }
+}
+
+const privateQaReady = (status, runId) => {
+  if (
+    status.schemaVersion !== '1.0.0' ||
+    status.runId !== runId ||
+    status.status !== 'qa_ready' ||
+    status.currentStep !== 'preview_ready' ||
+    !Number.isInteger(status.revision) ||
+    status.revision < 1 ||
+    !Array.isArray(status.steps) ||
+    status.steps.some(step => record(step)?.status === 'failed')
+  ) throw new Error('QUALITY_GATE_FAILED')
+  const stepPassed = id => status.steps.some(step =>
+    record(step)?.id === id && step.status === 'passed' && step.progress === 100
+  )
+  if (!stepPassed('quality_gate') || !stepPassed('preview_ready')) {
+    throw new Error('QUALITY_GATE_FAILED')
+  }
+  return status.revision
+}
+
+const publicQaReady = local =>
+  local.status === 'completed' &&
+  local.currentStep === 'preview_ready' &&
+  Boolean(local.previewUrl) &&
+  local.steps.every(step => step.status === 'completed' && step.progress === 100)
+
+const passedLocalMonetizationGate = report => {
+  const explicitGate = record(report.monetizationGate)
+  if (explicitGate) {
+    return (
+      explicitGate.status === 'passed' &&
+      explicitGate.format === 'organic_flag_quiz' &&
+      explicitGate.directPromotionPresent === false &&
+      explicitGate.appBridgePresent === false &&
+      Array.isArray(explicitGate.issues) &&
+      explicitGate.issues.length === 0
+    )
+  }
+
+  const creatorRewards = record(report.tiktokCreatorRewards)
+  const checks = record(creatorRewards?.checks)
+  const requiredChecks = [
+    'durationAtLeast61Seconds',
+    'sufficientSpokenContent',
+    'fiveDistinctFlags',
+    'noDirectDownloadPromotion',
+    'originalMusic',
+    'originalSoundEffects',
+    'customVisualComposition',
+  ]
+  return (
+    creatorRewards?.schemaVersion === '1.0.0' &&
+    creatorRewards.program === 'tiktok_creator_rewards' &&
+    creatorRewards.localGateStatus === 'passed' &&
+    creatorRewards.platformEligibilityStatus === 'requires_tiktok_verification' &&
+    Array.isArray(creatorRewards.issues) &&
+    creatorRewards.issues.length === 0 &&
+    Boolean(checks) &&
+    requiredChecks.every(key => checks[key] === true)
+  )
+}
+
+const verifyGateEvidence = async (config, local, previewSha256, previewSizeBytes) => {
+  if (!publicQaReady(local)) throw new Error('QUALITY_GATE_FAILED')
+  const runDirectory = resolve(config.localRunsRoot, local.runId)
+  if (!pathInside(config.localRunsRoot, runDirectory)) throw new Error('GATE_EVIDENCE_INVALID')
+  const statusDocument = await readGateJson(resolve(runDirectory, 'status.json'))
+  const status = record(statusDocument.value)
+  if (!status) throw new Error('GATE_EVIDENCE_INVALID')
+  const revision = privateQaReady(status, local.runId)
+  const previewArtifact = privateArtifact(status, 'preview_video', runDirectory)
+  const reportArtifact = privateArtifact(status, 'quality_report', runDirectory)
+  if (previewArtifact.sha256 !== previewSha256) throw new Error('GATE_EVIDENCE_INVALID')
+
+  const qualityDocument = await readGateJson(reportArtifact.path)
+  const qualitySha256 = createHash('sha256').update(qualityDocument.bytes).digest('hex')
+  if (qualitySha256 !== reportArtifact.sha256) throw new Error('GATE_EVIDENCE_INVALID')
+  const report = record(qualityDocument.value)
+  const video = record(report?.video)
+  const blackFrames = record(report?.blackFrames)
+  const timing = record(report?.timing)
+  const flags = record(report?.flags)
+  const assets = record(report?.assets)
+  const textOverlays = record(report?.textOverlays)
+  const audio = record(report?.audio)
+  if (
+    !report ||
+    report.schemaVersion !== '1.0.0' ||
+    report.status !== 'passed' ||
+    report.publicationAuthorized !== false ||
+    report.visibleTestMarker !== false ||
+    video?.sha256 !== previewSha256 ||
+    video.sizeBytes !== previewSizeBytes ||
+    video.width !== 1080 ||
+    video.height !== 1920 ||
+    video.fps !== 30 ||
+    video.videoCodec !== 'h264' ||
+    video.audioCodec !== 'aac' ||
+    typeof video.durationSeconds !== 'number' ||
+    video.durationSeconds < 61 ||
+    video.durationSeconds > 70.2 ||
+    blackFrames?.status !== 'passed' ||
+    timing?.status !== 'passed' ||
+    flags?.status !== 'passed' ||
+    assets?.status !== 'passed' ||
+    textOverlays?.status !== 'passed' ||
+    audio?.present !== true ||
+    audio.clippingDetected !== false
+  ) throw new Error('QUALITY_GATE_FAILED')
+  if (!passedLocalMonetizationGate(report)) throw new Error('MONETIZATION_GATE_FAILED')
+  return { revision }
+}
+
+const uploadPreview = async (config, claim, local) => {
+  if (!local.previewUrl) throw new Error('PREVIEW_REQUIRED')
+  if (!publicQaReady(local)) throw new Error('QUALITY_GATE_FAILED')
+  const previewResponse = await request(local.previewUrl, {
+    headers: { Accept: 'video/mp4' },
+  }, config.previewTimeoutMs)
+  if (!previewResponse.ok) throw new Error('PREVIEW_DOWNLOAD_FAILED')
+  const contentType = previewResponse.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+  if (contentType !== 'video/mp4') throw new Error('PREVIEW_CONTENT_TYPE_INVALID')
+  const bytes = new Uint8Array(await previewResponse.arrayBuffer())
+  if (bytes.byteLength < 1 || bytes.byteLength > MAX_PREVIEW_BYTES) throw new Error('PREVIEW_SIZE_INVALID')
+  const previewSha256 = createHash('sha256').update(bytes).digest('hex')
+  const evidence = await verifyGateEvidence(config, local, previewSha256, bytes.byteLength)
+  const response = await request(`${config.operatorApiUrl}/v1/runner/runs/${claim.runId}/preview`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${config.runnerToken}`,
+      'Content-Type': 'video/mp4',
+      'Content-Length': String(bytes.byteLength),
+      'X-Runner-Id': config.runnerId,
+      'X-Lease-Token': claim.leaseToken,
+      'X-Preview-Sha256': previewSha256,
+      'X-Video-Revision': String(evidence.revision),
+      'X-Quality-Gate': 'passed',
+      'X-Monetization-Gate': 'passed',
+    },
+    body: bytes,
+  }, config.previewTimeoutMs)
+  if (!response.ok) throw new Error(`PREVIEW_UPLOAD_HTTP_${response.status}`)
+  const metadata = await readJson(response)
+  if (
+    !metadata || typeof metadata !== 'object' || Array.isArray(metadata) ||
+    metadata.sha256 !== previewSha256 || metadata.sizeBytes !== bytes.byteLength ||
+    metadata.revision !== evidence.revision ||
+    metadata.qualityPassed !== true ||
+    metadata.monetizationPassed !== true
+  ) throw new Error('PREVIEW_UPLOAD_RESPONSE_INVALID')
+}
+
+const prepareCompleted = async (config, claim, local) => {
+  if (local.status !== 'completed') return local
+  try {
+    await uploadPreview(config, claim, local)
+    return local
+  } catch (error) {
+    const code = error instanceof Error ? error.message : 'PREVIEW_UPLOAD_FAILED'
+    if (
+      code === 'QUALITY_GATE_FAILED' ||
+      code === 'MONETIZATION_GATE_FAILED' ||
+      code === 'GATE_EVIDENCE_INVALID' ||
+      code === 'PREVIEW_REQUIRED'
+    ) {
+      return failedStatus(claim, code)
+    }
+    if (code === 'GATE_EVIDENCE_UNAVAILABLE') {
+      return {
+        ...waitingStatus(claim, 'Lokaler QA- und Monetarisierungsbeleg ist noch nicht verfügbar.'),
+        progress: 99,
+        currentStep: 'gate_verification',
+      }
+    }
+    return {
+      ...waitingStatus(claim, 'Vorschau konnte noch nicht sicher in die Cloud übertragen werden.'),
+      progress: 99,
+      currentStep: 'preview_upload',
+    }
+  }
+}
 
 const startLocal = async (config, claim) => {
   let response
@@ -207,6 +513,7 @@ const readLocal = async (config, runId) => {
 export const processClaim = async (config, claim, options = {}) => {
   const singleStatus = options.singleStatus === true
   let local = await startLocal(config, claim)
+  local = await prepareCompleted(config, claim, local)
   if (!await remoteStatus(config, claim, local)) return 'lease-lost'
   if (singleStatus || ['waiting', 'completed', 'failed'].includes(local.status)) return local.status
 
@@ -217,6 +524,7 @@ export const processClaim = async (config, claim, options = {}) => {
     } catch {
       local = waitingStatus(claim, 'Lokaler Status ist vorübergehend nicht erreichbar.')
     }
+    local = await prepareCompleted(config, claim, local)
     if (!await remoteStatus(config, claim, local)) return 'lease-lost'
   }
   return local.status

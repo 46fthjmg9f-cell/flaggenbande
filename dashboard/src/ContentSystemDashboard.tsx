@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   emptyContentOperations,
   parseContentOperations,
@@ -7,6 +7,8 @@ import {
   type PublicationStatus,
   type ProductionRunStatus,
 } from './contentOperations'
+import { useAdaptiveRefresh } from './useAdaptiveRefresh'
+import { displayVideoName } from './videoDisplay'
 
 const runLabels: Record<ProductionRunStatus, string> = {
   queued: 'Wartet',
@@ -25,7 +27,7 @@ const corePlatforms: readonly PlatformId[] = ['youtube', 'instagram', 'facebook'
 
 function platformState(status: PublicationStatus): string {
   if (status === 'published') return 'published'
-  if (status === 'scheduled' || status === 'private' || status === 'draft' || status === 'container_unpublished' || status === 'upload_ready' || status === 'manual_uploaded') return 'ready'
+  if (status === 'planned' || status === 'scheduled' || status === 'private' || status === 'draft' || status === 'container_unpublished' || status === 'upload_ready' || status === 'manual_uploaded') return 'ready'
   if (status === 'uploading' || status === 'processing') return 'running'
   if (status === 'failed' || status === 'expired' || status === 'reconcile_required') return 'failed'
   return 'missing'
@@ -42,7 +44,7 @@ export default function ContentSystemDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setRefreshing(true)
     setError(null)
     try {
@@ -54,9 +56,9 @@ export default function ContentSystemDashboard() {
     } finally {
       setRefreshing(false)
     }
-  }
+  }, [])
 
-  useEffect(() => { void refresh() }, [])
+  useAdaptiveRefresh(refresh)
 
   const runs = useMemo(() => [...data.runs]
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
@@ -79,7 +81,7 @@ export default function ContentSystemDashboard() {
           const fullyPublished = run.status === 'completed' && corePlatforms.every(platform => run.publications.some(publication => publication.platform === platform && publication.status === 'published'))
           return <article className="recent-production-row" key={run.runId}>
           <div className="recent-production-main">
-            <strong>{run.title ?? 'Video'}</strong>
+            <strong>{displayVideoName(run)}</strong>
             <span>{formatTimestamp(run.completedAt ?? run.startedAt)}</span>
           </div>
           <span className={`status-badge ${run.status}`}>{fullyPublished ? 'Veröffentlicht' : runLabels[run.status]}</span>

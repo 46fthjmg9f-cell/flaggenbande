@@ -1,13 +1,59 @@
-export type OperatorRunStatus = 'queued' | 'claimed' | 'running' | 'waiting' | 'completed' | 'failed'
+export type OperatorProductionStatus = 'queued' | 'claimed' | 'running' | 'waiting' | 'completed' | 'failed'
+export type OperatorRunStatus =
+  | 'awaiting_script_approval'
+  | OperatorProductionStatus
+  | 'awaiting_video_approval'
+  | 'release_queued'
+  | 'published'
+
+export interface OperatorScriptReview {
+  text: string
+  sha256: string
+  revision: number
+  status: 'pending' | 'approved'
+  approvedAt: string | null
+}
+
+export interface OperatorPreview {
+  ready: boolean
+  url: string | null
+  sha256: string | null
+  revision: number
+  sizeBytes: number | null
+  contentType: string | null
+  qualityPassed: boolean
+  monetizationPassed: boolean
+  uploadedAt: string | null
+}
+
+export interface OperatorVideoApproval {
+  status: 'not_ready' | 'pending' | 'approved'
+  revision: number
+  approvedAt: string | null
+}
+
+export interface OperatorRelease {
+  requestId: string | null
+  status: 'pending' | 'queued' | 'claimed' | 'processing' | 'completed' | 'published' | 'failed' | null
+  platforms: Record<CalendarPlatform, CalendarPlatformState>
+  error: string | null
+  createdAt: string | null
+}
 
 export interface OperatorRun {
   runId: string
+  releaseLabel: string
   status: OperatorRunStatus
+  productionStatus: OperatorProductionStatus
   progress: number
   targetDurationSeconds: number
   currentStep: string | null
   message: string | null
   error: string | null
+  script: OperatorScriptReview
+  preview: OperatorPreview
+  videoApproval: OperatorVideoApproval
+  release: OperatorRelease
   createdAt: string
   updatedAt: string
 }
@@ -18,12 +64,17 @@ export type CalendarPlatformStatus = 'scheduled' | 'publishing' | 'published' | 
 export interface CalendarPlatformState {
   status: CalendarPlatformStatus
   publicUrl?: string
+  updatedAt?: string
 }
 
 export interface CalendarEntry {
   id: string
+  runId?: string
   contentId: string
   title: string
+  releaseLabel?: string | null
+  videoApproved?: boolean
+  finalReleaseApproved?: boolean
   scheduledAt: string
   platforms: Record<CalendarPlatform, CalendarPlatformState>
 }
@@ -33,12 +84,15 @@ interface StartRunInput {
   targetDurationSeconds: number
 }
 
-const TOKEN_KEY = 'flaggenbande-operator-token'
-
 function configuredBaseUrl(): string | null {
   const value = import.meta.env.VITE_OPERATOR_API_URL?.trim()
-  if (!value) return null
-  const url = new URL(value)
+  const sameWorkerOrigin = typeof window !== 'undefined' &&
+    window.location.protocol === 'https:' &&
+    !window.location.hostname.endsWith('.github.io')
+    ? window.location.origin
+    : null
+  if (!value && !sameWorkerOrigin) return null
+  const url = new URL(value || sameWorkerOrigin || '')
   const local = url.hostname === '127.0.0.1' || url.hostname === 'localhost'
   if (url.protocol !== 'https:' && !(import.meta.env.DEV && local)) {
     throw new Error('Die Steuer-API muss HTTPS verwenden.')
@@ -47,20 +101,6 @@ function configuredBaseUrl(): string | null {
 }
 
 export const operatorApiConfigured = configuredBaseUrl() !== null
-
-export function readOperatorToken(): string | null {
-  return sessionStorage.getItem(TOKEN_KEY)
-}
-
-export function saveOperatorToken(token: string): void {
-  const value = token.trim()
-  if (!value) throw new Error('Steuerungsschlüssel fehlt.')
-  sessionStorage.setItem(TOKEN_KEY, value)
-}
-
-export function clearOperatorToken(): void {
-  sessionStorage.removeItem(TOKEN_KEY)
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -75,26 +115,110 @@ function nullableString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null
 }
 
+function requiredNumber(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${field} fehlt.`)
+  return value
+}
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function requiredBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== 'boolean') throw new Error(`${field} fehlt.`)
+  return value
+}
+
+function enumValue<const T extends readonly string[]>(value: unknown, allowed: T, field: string): T[number] {
+  const text = requiredString(value, field)
+  if (!allowed.includes(text)) throw new Error(`${field} ist ungültig.`)
+  return text as T[number]
+}
+
+const productionStatuses = ['queued', 'claimed', 'running', 'waiting', 'completed', 'failed'] as const
+const runStatuses = [
+  'awaiting_script_approval',
+  ...productionStatuses,
+  'awaiting_video_approval',
+  'release_queued',
+  'published',
+] as const
+
 function parseRun(value: unknown): OperatorRun {
   if (!isRecord(value)) throw new Error('Ungültige Laufantwort.')
-  const status = requiredString(value.status, 'status')
-  if (!['queued', 'claimed', 'running', 'waiting', 'completed', 'failed'].includes(status)) {
-    throw new Error('Unbekannter Laufstatus.')
+  if (!isRecord(value.script) || !isRecord(value.preview) || !isRecord(value.videoApproval)) {
+    throw new Error('Unvollständige Freigabedaten.')
   }
+  const release = value.release === null || value.release === undefined ? null : value.release
+  if (release !== null && !isRecord(release)) throw new Error('Ungültige Veröffentlichungsdaten.')
   const progress = typeof value.progress === 'number' && Number.isFinite(value.progress)
     ? Math.min(100, Math.max(0, value.progress))
     : 0
-  const targetDurationSeconds = typeof value.targetDurationSeconds === 'number' && Number.isFinite(value.targetDurationSeconds)
-    ? value.targetDurationSeconds
-    : 65
   return {
     runId: requiredString(value.runId, 'runId'),
-    status: status as OperatorRunStatus,
+    releaseLabel: requiredString(value.releaseLabel, 'releaseLabel'),
+    status: enumValue(value.status, runStatuses, 'status'),
+    productionStatus: enumValue(value.productionStatus, productionStatuses, 'productionStatus'),
     progress,
-    targetDurationSeconds,
+    targetDurationSeconds: requiredNumber(value.targetDurationSeconds, 'targetDurationSeconds'),
     currentStep: nullableString(value.currentStep),
     message: nullableString(value.message),
     error: nullableString(value.error),
+    script: {
+      text: requiredString(value.script.text, 'script.text'),
+      sha256: requiredString(value.script.sha256, 'script.sha256'),
+      revision: requiredNumber(value.script.revision, 'script.revision'),
+      status: enumValue(value.script.status, ['pending', 'approved'] as const, 'script.status'),
+      approvedAt: nullableString(value.script.approvedAt),
+    },
+    preview: {
+      ready: requiredBoolean(value.preview.ready, 'preview.ready'),
+      url: nullableString(value.preview.url),
+      sha256: nullableString(value.preview.sha256),
+      revision: typeof value.preview.revision === 'number' && Number.isFinite(value.preview.revision)
+        ? value.preview.revision
+        : 1,
+      sizeBytes: nullableNumber(value.preview.sizeBytes),
+      contentType: nullableString(value.preview.contentType),
+      qualityPassed: requiredBoolean(value.preview.qualityPassed, 'preview.qualityPassed'),
+      monetizationPassed: requiredBoolean(value.preview.monetizationPassed, 'preview.monetizationPassed'),
+      uploadedAt: nullableString(value.preview.uploadedAt),
+    },
+    videoApproval: {
+      status: enumValue(value.videoApproval.status, ['not_ready', 'pending', 'approved'] as const, 'videoApproval.status'),
+      revision: requiredNumber(value.videoApproval.revision, 'videoApproval.revision'),
+      approvedAt: nullableString(value.videoApproval.approvedAt),
+    },
+    release: release === null ? {
+      requestId: null,
+      status: null,
+      platforms: {
+        youtube: { status: 'missing' },
+        instagram: { status: 'missing' },
+        facebook: { status: 'missing' },
+        tiktok: { status: 'missing' },
+      },
+      error: null,
+      createdAt: null,
+    } : {
+      requestId: nullableString(release.requestId),
+      status: release.status === null || release.status === undefined
+        ? null
+        : enumValue(release.status, ['pending', 'queued', 'claimed', 'processing', 'completed', 'published', 'failed'] as const, 'release.status'),
+      platforms: isRecord(release.platforms) ? {
+        youtube: parseCalendarState(release.platforms.youtube),
+        instagram: parseCalendarState(release.platforms.instagram),
+        facebook: parseCalendarState(release.platforms.facebook),
+        tiktok: parseCalendarState(release.platforms.tiktok),
+      } : {
+        youtube: { status: 'missing' },
+        instagram: { status: 'missing' },
+        facebook: { status: 'missing' },
+        tiktok: { status: 'missing' },
+      },
+      error: nullableString(release.error),
+      createdAt: nullableString(release.createdAt),
+    },
     createdAt: requiredString(value.createdAt, 'createdAt'),
     updatedAt: requiredString(value.updatedAt, 'updatedAt'),
   }
@@ -106,15 +230,22 @@ function parseCalendarState(value: unknown): CalendarPlatformState {
     ? value.status as CalendarPlatformStatus
     : 'missing'
   const publicUrl = typeof value.publicUrl === 'string' && value.publicUrl.startsWith('https://') ? value.publicUrl : undefined
-  return { status, ...(publicUrl ? { publicUrl } : {}) }
+  const updatedAt = typeof value.updatedAt === 'string' && Number.isFinite(Date.parse(value.updatedAt))
+    ? value.updatedAt
+    : undefined
+  return { status, ...(publicUrl ? { publicUrl } : {}), ...(updatedAt ? { updatedAt } : {}) }
 }
 
 function parseCalendarEntry(value: unknown): CalendarEntry {
   if (!isRecord(value) || !isRecord(value.platforms)) throw new Error('Ungültiger Kalendereintrag.')
   return {
     id: requiredString(value.id, 'id'),
+    runId: typeof value.runId === 'string' && value.runId.trim() ? value.runId : undefined,
     contentId: requiredString(value.contentId, 'contentId'),
     title: requiredString(value.title, 'title'),
+    releaseLabel: value.releaseLabel === null || typeof value.releaseLabel === 'string' ? value.releaseLabel : undefined,
+    videoApproved: typeof value.videoApproved === 'boolean' ? value.videoApproved : undefined,
+    finalReleaseApproved: typeof value.finalReleaseApproved === 'boolean' ? value.finalReleaseApproved : undefined,
     scheduledAt: requiredString(value.scheduledAt, 'scheduledAt'),
     platforms: {
       youtube: parseCalendarState(value.platforms.youtube),
@@ -128,28 +259,32 @@ function parseCalendarEntry(value: unknown): CalendarEntry {
 async function request(path: string, init: RequestInit = {}): Promise<unknown> {
   const baseUrl = configuredBaseUrl()
   if (!baseUrl) throw new Error('Steuer-API ist noch nicht konfiguriert.')
-  const token = readOperatorToken()
-  if (!token) throw new Error('Steuerung ist gesperrt.')
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
     cache: 'no-store',
+    credentials: 'include',
     headers: {
       Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...init.headers,
     },
   })
+  const contentType = response.headers.get('content-type') ?? ''
+  const payload: unknown = contentType.includes('application/json')
+    ? await response.json().catch(() => null)
+    : null
   if (response.status === 401 || response.status === 403) {
-    clearOperatorToken()
-    throw new Error('Steuerungsschlüssel ungültig.')
+    throw new Error('Anmeldung für die Produktionssteuerung erforderlich.')
   }
-  const payload: unknown = await response.json().catch(() => null)
   if (!response.ok) {
     const detail = isRecord(payload) && typeof payload.error === 'string' ? payload.error : `HTTP ${response.status}`
     throw new Error(detail)
   }
   return payload
+}
+
+function idempotencyKey(prefix: string, runId: string, revision: number): string {
+  return `${prefix}:${runId}:${revision}`
 }
 
 export async function listOperatorRuns(limit = 20): Promise<OperatorRun[]> {
@@ -162,9 +297,39 @@ export async function startOperatorRun(input: StartRunInput): Promise<OperatorRu
   return parseRun(await request('/v1/runs', { method: 'POST', body: JSON.stringify(input) }))
 }
 
+export async function approveOperatorScript(run: OperatorRun): Promise<OperatorRun> {
+  return parseRun(await request(`/v1/runs/${encodeURIComponent(run.runId)}/approve-script`, {
+    method: 'POST',
+    body: JSON.stringify({
+      scriptSha256: run.script.sha256,
+      scriptRevision: run.script.revision,
+      idempotencyKey: idempotencyKey('script', run.runId, run.script.revision),
+    }),
+  }))
+}
+
+export async function approveOperatorVideo(run: OperatorRun): Promise<OperatorRun> {
+  if (!run.preview.sha256) throw new Error('Video-Prüfsumme fehlt.')
+  return parseRun(await request(`/v1/runs/${encodeURIComponent(run.runId)}/approve-video`, {
+    method: 'POST',
+    body: JSON.stringify({
+      previewSha256: run.preview.sha256,
+      videoRevision: run.preview.revision,
+      idempotencyKey: idempotencyKey('video', run.runId, run.preview.revision),
+    }),
+  }))
+}
+
+export function operatorPreviewUrl(run: OperatorRun): string | null {
+  const baseUrl = configuredBaseUrl()
+  if (!baseUrl || !run.preview.ready) return null
+  if (!run.preview.url) return `${baseUrl}/v1/runs/${encodeURIComponent(run.runId)}/preview`
+  return new URL(run.preview.url, `${baseUrl}/`).toString()
+}
+
 export async function listCalendarEntries(from: string, to: string): Promise<CalendarEntry[]> {
   const query = new URLSearchParams({ from, to })
-  const payload = await request(`/v1/calendar?${query.toString()}`)
+  const payload = await request(`/v1/public/calendar?${query.toString()}`)
   if (!isRecord(payload) || !Array.isArray(payload.entries)) throw new Error('Ungültiger Kalender.')
   return payload.entries.map(parseCalendarEntry)
 }

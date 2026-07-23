@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   emptyContentOperations,
   parseContentOperations,
@@ -8,15 +8,39 @@ import {
 } from './contentOperations'
 import {
   listCalendarEntries,
-  readOperatorToken,
   type CalendarEntry,
   type CalendarPlatform,
-  type CalendarPlatformState,
 } from './operatorApi'
-import type { SocialPlatform, SocialVideo } from './types'
+import type { DashboardData, SocialPlatform, SocialVideo } from './types'
+import { useAdaptiveRefresh } from './useAdaptiveRefresh'
+import {
+  calendarVisualStatus,
+  chooseCalendarSlot,
+  displayVideoName,
+  mergeCalendarPlatformState,
+  mergeReleaseDisplayMetadata,
+  stableCalendarIdentity,
+  type CalendarPlatformMergeState,
+  type CalendarVisualStatus,
+} from './videoDisplay'
 
 const platforms: CalendarPlatform[] = ['youtube', 'instagram', 'facebook', 'tiktok']
 const platformLabels: Record<CalendarPlatform, string> = { youtube: 'YT', instagram: 'IG', facebook: 'FB', tiktok: 'TT' }
+
+type DisplayCalendarPlatformState = CalendarPlatformMergeState
+
+interface DisplayCalendarEntry {
+  id: string
+  runId?: string
+  contentId: string
+  title: string
+  releaseLabel?: string | null
+  videoApproved?: boolean
+  finalReleaseApproved?: boolean
+  scheduledAt: string
+  slotKind: 'scheduled' | 'published'
+  platforms: Record<CalendarPlatform, DisplayCalendarPlatformState>
+}
 
 function startOfDay(date: Date): Date {
   const value = new Date(date)
@@ -34,15 +58,11 @@ function localDayKey(date: Date): string {
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-')
 }
 
-function calendarStatus(status: PublicationStatus): CalendarPlatformState['status'] {
-  if (status === 'published') return 'published'
-  if (status === 'scheduled') return 'scheduled'
-  if (status === 'uploading' || status === 'processing') return 'publishing'
-  if (status === 'failed' || status === 'expired' || status === 'reconcile_required') return 'failed'
-  return 'missing'
+function calendarStatus(status: PublicationStatus): CalendarVisualStatus {
+  return calendarVisualStatus(status)
 }
 
-function blankPlatforms(): CalendarEntry['platforms'] {
+function blankPlatforms(): DisplayCalendarEntry['platforms'] {
   return {
     youtube: { status: 'missing' },
     instagram: { status: 'missing' },
@@ -51,27 +71,44 @@ function blankPlatforms(): CalendarEntry['platforms'] {
   }
 }
 
-function publicCalendarEntries(data: ContentOperationsData): CalendarEntry[] {
-  const runs = new Map(data.runs.map(run => [run.contentId, run]))
-  const grouped = new Map<string, CalendarEntry>()
+export function publicCalendarEntries(data: ContentOperationsData): DisplayCalendarEntry[] {
+  const runs = new Map(data.runs.map(run => [stableCalendarIdentity(run), run]))
+  const grouped = new Map<string, typeof data.publications>()
   for (const publication of data.publications) {
-    const scheduledAt = publication.publishedAt ?? publication.scheduledAt
-    if (!scheduledAt) continue
-    const key = `${publication.contentId}:${scheduledAt}`
-    const existing = grouped.get(key) ?? {
+    const key = stableCalendarIdentity(publication)
+    grouped.set(key, [...(grouped.get(key) ?? []), publication])
+  }
+  return [...grouped.entries()].flatMap(([key, publications]) => {
+    const slot = chooseCalendarSlot(
+      publications.map(entry => entry.scheduledAt),
+      publications.map(entry => entry.publishedAt),
+    )
+    if (!slot) return []
+    const run = runs.get(key)
+    const entry: DisplayCalendarEntry = {
       id: key,
-      contentId: publication.contentId,
-      title: publication.title ?? runs.get(publication.contentId)?.title ?? 'Video',
-      scheduledAt,
+      runId: publications[0]?.runId,
+      contentId: publications[0]?.contentId ?? run?.contentId ?? key,
+      title: publications.find(item => item.title)?.title ?? run?.title ?? 'Video',
+      releaseLabel: run?.releaseLabel ?? publications.find(item => item.releaseLabel !== undefined)?.releaseLabel,
+      videoApproved: run?.videoApproved ?? publications.some(item => item.videoApproved === true),
+      finalReleaseApproved: run?.finalReleaseApproved ?? publications.some(item => item.finalReleaseApproved === true),
+      scheduledAt: slot.scheduledAt,
+      slotKind: slot.slotKind,
       platforms: blankPlatforms(),
     }
-    existing.platforms[publication.platform as PlatformId] = {
-      status: calendarStatus(publication.status),
-      ...(publication.publicUrl ? { publicUrl: publication.publicUrl } : {}),
+    for (const publication of publications) {
+      const platform = publication.platform as PlatformId
+      const incoming: DisplayCalendarPlatformState = {
+        status: calendarStatus(publication.status),
+        updatedAt: publication.updatedAt,
+        ...(publication.publicUrl ? { publicUrl: publication.publicUrl } : {}),
+      }
+      const previous = entry.platforms[platform]
+      entry.platforms[platform] = mergeCalendarPlatformState(previous, incoming)
     }
-    grouped.set(key, existing)
-  }
-  return [...grouped.values()]
+    return [entry]
+  })
 }
 
 function normalizeContentText(value: string): string {
@@ -83,7 +120,7 @@ function cleanTitle(value: string): string {
   return title || 'Video'
 }
 
-function socialCalendarEntries(videos: readonly SocialVideo[]): CalendarEntry[] {
+function socialCalendarEntries(videos: readonly SocialVideo[]): DisplayCalendarEntry[] {
   const signature = (video: SocialVideo): string | null => {
     const description = normalizeContentText(video.description)
     if (description.length >= 40) return description
@@ -112,7 +149,7 @@ function socialCalendarEntries(videos: readonly SocialVideo[]): CalendarEntry[] 
   return [...groups.entries()].flatMap(([key, grouped]) => {
     const scheduledAt = grouped.map(video => video.publishedAt).filter((value): value is string => Boolean(value)).sort().at(-1)
     if (!scheduledAt) return []
-    const platforms = blankPlatforms()
+    const platformStates = blankPlatforms()
     for (const video of grouped) {
       let publicUrl: string | undefined
       try {
@@ -121,32 +158,73 @@ function socialCalendarEntries(videos: readonly SocialVideo[]): CalendarEntry[] 
       } catch {
         publicUrl = undefined
       }
-      platforms[video.platform] = { status: 'published', ...(publicUrl ? { publicUrl } : {}) }
+      platformStates[video.platform] = {
+        status: calendarVisualStatus(video.status === 'published' || video.publishedAt ? 'published' : video.status),
+        ...(video.publishedAt ? { updatedAt: video.publishedAt } : {}),
+        ...(publicUrl ? { publicUrl } : {}),
+      }
     }
     const preferred = grouped.find(video => video.platform === 'youtube') ?? grouped[0]
-    return [{ id: `social:${key}`, contentId: key, title: cleanTitle(preferred?.title ?? 'Video'), scheduledAt, platforms }]
+    return [{
+      id: `social:${key}`,
+      contentId: key,
+      title: cleanTitle(preferred?.title ?? 'Video'),
+      scheduledAt,
+      slotKind: 'published' as const,
+      platforms: platformStates,
+    }]
   })
 }
 
-function mergeEntries(primary: CalendarEntry[], fallback: CalendarEntry[]): CalendarEntry[] {
-  const byContent = new Map<string, CalendarEntry>()
-  for (const entry of [...fallback, ...primary]) {
-    const key = `${entry.contentId}:${entry.scheduledAt}`
-    const previous = byContent.get(key)
+function protectedCalendarEntries(entries: CalendarEntry[]): DisplayCalendarEntry[] {
+  return entries.map(entry => ({
+    ...entry,
+    slotKind: 'scheduled',
+    platforms: Object.fromEntries(platforms.map(platform => [
+      platform,
+      {
+        ...entry.platforms[platform],
+        status: calendarVisualStatus(entry.platforms[platform].status),
+      },
+    ])) as DisplayCalendarEntry['platforms'],
+  }))
+}
+
+export function mergeEntries(primary: DisplayCalendarEntry[], fallback: DisplayCalendarEntry[]): DisplayCalendarEntry[] {
+  const entries: DisplayCalendarEntry[] = []
+  const mergeEntry = (entry: DisplayCalendarEntry, preferIncoming: boolean) => {
+    const identity = stableCalendarIdentity(entry)
+    const index = entries.findIndex(candidate =>
+      stableCalendarIdentity(candidate) === identity ||
+      (candidate.contentId === entry.contentId && (!candidate.runId || !entry.runId)),
+    )
+    const previous = index >= 0 ? entries[index] : undefined
     if (!previous) {
-      byContent.set(key, entry)
-      continue
+      entries.push(entry)
+      return
     }
-    byContent.set(key, {
+    const scheduledAt = entry.slotKind === 'scheduled'
+      ? entry.scheduledAt
+      : previous.slotKind === 'scheduled'
+        ? previous.scheduledAt
+        : entry.scheduledAt
+    entries[index] = {
       ...previous,
       ...entry,
+      ...mergeReleaseDisplayMetadata(previous, entry),
+      scheduledAt,
+      slotKind: previous.slotKind === 'scheduled' || entry.slotKind === 'scheduled' ? 'scheduled' : 'published',
       platforms: Object.fromEntries(platforms.map(platform => {
-        const incoming = entry.platforms[platform]
-        return [platform, incoming.status === 'missing' ? previous.platforms[platform] : incoming]
-      })) as CalendarEntry['platforms'],
-    })
+        return [
+          platform,
+          mergeCalendarPlatformState(previous.platforms[platform], entry.platforms[platform], preferIncoming),
+        ]
+      })) as DisplayCalendarEntry['platforms'],
+    }
   }
-  return [...byContent.values()].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))
+  for (const entry of fallback) mergeEntry(entry, false)
+  for (const entry of primary) mergeEntry(entry, true)
+  return entries.sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))
 }
 
 function weekLabel(start: Date, end: Date): string {
@@ -156,7 +234,7 @@ function weekLabel(start: Date, end: Date): string {
 
 export default function PublishingCalendar({ socialVideos }: { readonly socialVideos: readonly SocialVideo[] }) {
   const [weekStart, setWeekStart] = useState(() => startOfDay(new Date()))
-  const [entries, setEntries] = useState<CalendarEntry[]>([])
+  const [entries, setEntries] = useState<DisplayCalendarEntry[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart])
@@ -165,17 +243,27 @@ export default function PublishingCalendar({ socialVideos }: { readonly socialVi
     setRefreshing(true)
     setError(null)
     try {
-      const publicResponse = await fetch(`./data/content-operations.json?refresh=${Date.now()}`, { cache: 'no-store' })
+      const refreshKey = Date.now()
+      const [publicResponse, dashboardResponse] = await Promise.all([
+        fetch(`./data/content-operations.json?refresh=${refreshKey}`, { cache: 'no-store' }),
+        fetch(`./data/dashboard.json?refresh=${refreshKey}`, { cache: 'no-store' }),
+      ])
       const publicData = publicResponse.ok ? parseContentOperations(await publicResponse.json()) : emptyContentOperations
-      let protectedEntries: CalendarEntry[] = []
-      if (readOperatorToken()) {
-        try {
-          protectedEntries = await listCalendarEntries(weekStart.toISOString(), weekEnd.toISOString())
-        } catch (reason) {
-          setError(reason instanceof Error ? reason.message : String(reason))
-        }
+      let currentSocialVideos = socialVideos
+      if (dashboardResponse.ok) {
+        const dashboardData = await dashboardResponse.json() as Partial<DashboardData>
+        if (Array.isArray(dashboardData.social?.videos)) currentSocialVideos = dashboardData.social.videos
       }
-      setEntries(mergeEntries(protectedEntries, [...publicCalendarEntries(publicData), ...socialCalendarEntries(socialVideos)]))
+      let protectedEntries: CalendarEntry[] = []
+      try {
+        protectedEntries = await listCalendarEntries(weekStart.toISOString(), weekEnd.toISOString())
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      }
+      setEntries(mergeEntries(
+        protectedCalendarEntries(protectedEntries),
+        [...publicCalendarEntries(publicData), ...socialCalendarEntries(currentSocialVideos)],
+      ))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -183,9 +271,7 @@ export default function PublishingCalendar({ socialVideos }: { readonly socialVi
     }
   }, [socialVideos, weekEnd, weekStart])
 
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
+  useAdaptiveRefresh(refresh)
 
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart])
 
@@ -212,7 +298,7 @@ export default function PublishingCalendar({ socialVideos }: { readonly socialVi
           <div className="calendar-day-list">
             {dayEntries.length > 0 ? dayEntries.map(entry => <article className="calendar-slot" key={entry.id}>
               <time dateTime={entry.scheduledAt}>{new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(new Date(entry.scheduledAt))}</time>
-              <strong title={entry.title}>{entry.title}</strong>
+              <strong title={displayVideoName(entry)}>{displayVideoName(entry)}</strong>
               <div className="calendar-platforms">
                 {platforms.map(platform => {
                   const state = entry.platforms[platform]
