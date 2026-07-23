@@ -676,6 +676,7 @@ const startLocal = async (config, claim) => {
             'Content-Type': 'application/json',
             'Idempotency-Key': `preview-revision-${claim.runId}-${claim.command.reworkPreviewRevision}`,
             'X-Flaggenbande-Control-Token': config.controlToken,
+            Origin: 'http://127.0.0.1:4173',
           },
           body: JSON.stringify({
             acknowledgement: 'REVISE_PRIVATE_QA_PREVIEW',
