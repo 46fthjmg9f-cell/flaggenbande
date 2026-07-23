@@ -381,14 +381,29 @@ async function collectYouTube(env, fetchImpl, previous = null) {
   let noDataRetentionCount = 0
   let deferredRetentionCount = 0
 
+  const previousRetentionStatus = previousEntry => {
+    const status = previousEntry?.retentionCheckStatus
+    if (
+      status === 'available' &&
+      (!Array.isArray(previousEntry?.retention) || previousEntry.retention.length === 0)
+    ) return 'pending'
+    return status
+  }
+
   const reusePreviousRetention = (id, previousEntry) => {
     if (Array.isArray(previousEntry?.retention)) retentionById.set(id, previousEntry.retention.slice(0, 100))
     const previousCheckedAt = normalizedDate(previousEntry?.retentionCheckedAt)
     if (previousCheckedAt) retentionCheckedAtById.set(id, previousCheckedAt)
-    if (['available', 'pending', 'no_data', 'error'].includes(previousEntry?.retentionCheckStatus)) {
-      retentionCheckStatusById.set(id, previousEntry.retentionCheckStatus)
+    const status = previousRetentionStatus(previousEntry)
+    if (['available', 'pending', 'no_data', 'error'].includes(status)) {
+      retentionCheckStatusById.set(id, status)
     }
-    if (['pending', 'no_data', 'error'].includes(previousEntry?.retentionCheckStatus) && previousEntry?.retentionCheckReason) {
+    if (status === 'pending' && previousEntry?.retentionCheckStatus === 'available') {
+      retentionCheckReasonById.set(
+        id,
+        'YouTube Analytics hat fuer dieses Video noch keine Retention-Daten geliefert.',
+      )
+    } else if (['pending', 'no_data', 'error'].includes(status) && previousEntry?.retentionCheckReason) {
       retentionCheckReasonById.set(id, sanitizedPublicReason(publicError('', previousEntry.retentionCheckReason)))
     }
   }
@@ -408,7 +423,7 @@ async function collectYouTube(env, fetchImpl, previous = null) {
       const previousCheckedAt = normalizedDate(previousEntry?.retentionCheckedAt)
       const previousCheckedAtMs = previousCheckedAt ? Date.parse(previousCheckedAt) : Number.NaN
       const cacheAge = checkedAtMs - previousCheckedAtMs
-      const previousStatus = previousEntry?.retentionCheckStatus
+      const previousStatus = previousRetentionStatus(previousEntry)
       const cacheTtl = previousStatus === 'available'
         ? YOUTUBE_RETENTION_CACHE_MS
         : YOUTUBE_RETENTION_RETRY_MS
