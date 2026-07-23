@@ -1410,7 +1410,10 @@ const reviseVideo = async (
   const failedLocalRevision =
     row.status === "failed" &&
     (row.current_step === "preview_revision" || row.current_step === "script_validation") &&
-    row.error_code === "LOCAL_PREVIEW_REVISION_REJECTED";
+    (
+      row.error_code === "LOCAL_PREVIEW_REVISION_REJECTED" ||
+      row.error_code === "LOCAL_INPUT_REJECTED"
+    );
   const safelyRevisable =
     (row.status === "completed" || failedLocalRevision) &&
     review.script_approval_status === "approved" &&
@@ -1430,7 +1433,7 @@ const reviseVideo = async (
     WHERE run_id = ? AND (
       status = 'completed' OR (
         status = 'failed' AND current_step IN ('preview_revision', 'script_validation')
-        AND error_code = 'LOCAL_PREVIEW_REVISION_REJECTED'
+        AND error_code IN ('LOCAL_PREVIEW_REVISION_REJECTED', 'LOCAL_INPUT_REJECTED')
       )
     )`).bind(
     message, timestamp, timestamp, runId,

@@ -74,7 +74,10 @@ test('a failed local preview revision keeps the safe dashboard revision action',
 
   assert.match(source, /run\.status === 'failed'/u)
   assert.match(source, /run\.currentStep === 'preview_revision' \|\| run\.currentStep === 'script_validation'/u)
-  assert.match(source, /run\.error === 'LOCAL_PREVIEW_REVISION_REJECTED'/u)
+  assert.match(
+    source,
+    /run\.error === 'LOCAL_PREVIEW_REVISION_REJECTED' \|\| run\.error === 'LOCAL_INPUT_REJECTED'/u,
+  )
   assert.match(source, /run\.script\.status === 'approved'/u)
   assert.match(source, /run\.preview\.ready/u)
   assert.match(source, /run\.videoApproval\.status === 'pending'/u)

@@ -1342,10 +1342,33 @@ test('operator safely requeues only exact failed local preview revision states',
     assert.equal(revised.videoApproval.status, 'pending')
   }
 
-  const rejected = await approvedRetryRun(env, 'failed-revision-unsafe')
+  const legacyInputFailure = await approvedRetryRun(env, 'failed-revision-legacy-input')
   DB.database.prepare(`UPDATE operator_production_runs SET
     status = 'failed', progress = 75, current_step = 'script_validation',
     error_code = 'LOCAL_INPUT_REJECTED'
+    WHERE run_id = ?`).run(legacyInputFailure.runId)
+  DB.database.prepare(`UPDATE operator_production_reviews SET
+    preview_object_key = 'previews/legacy-input.mp4', preview_sha256 = ?,
+    preview_size_bytes = 123, preview_content_type = 'video/mp4',
+    quality_gate_passed = 1, monetization_gate_passed = 1,
+    video_revision = 37, video_approval_status = 'pending'
+    WHERE run_id = ?`).run(previewSha256, legacyInputFailure.runId)
+  const legacyResponse = await worker.fetch(request(
+    `/v1/runs/${legacyInputFailure.runId}/revise-video`,
+    'operator-token',
+    jsonBody({
+      previewSha256,
+      videoRevision: 37,
+      idempotencyKey: 'failed-preview-revision-legacy-input',
+    }),
+  ), env)
+  assert.equal(legacyResponse.status, 202)
+  assert.equal((await legacyResponse.json()).currentStep, 'preview_revision')
+
+  const rejected = await approvedRetryRun(env, 'failed-revision-unsafe')
+  DB.database.prepare(`UPDATE operator_production_runs SET
+    status = 'failed', progress = 75, current_step = 'script_validation',
+    error_code = 'LOCAL_CONTROL_REJECTED'
     WHERE run_id = ?`).run(rejected.runId)
   DB.database.prepare(`UPDATE operator_production_reviews SET
     preview_object_key = 'previews/unsafe.mp4', preview_sha256 = ?,
@@ -1353,7 +1376,6 @@ test('operator safely requeues only exact failed local preview revision states',
     quality_gate_passed = 1, monetization_gate_passed = 1,
     video_revision = 37, video_approval_status = 'pending'
     WHERE run_id = ?`).run(previewSha256, rejected.runId)
-
   const rejectedResponse = await worker.fetch(request(
     `/v1/runs/${rejected.runId}/revise-video`,
     'operator-token',

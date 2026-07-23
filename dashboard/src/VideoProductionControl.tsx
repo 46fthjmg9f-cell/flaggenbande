@@ -143,7 +143,7 @@ function RunCard({ run, busyAction, onApproveScript, onApproveVideo, onReviseVid
   const videoPending = run.status === 'awaiting_video_approval' && run.videoApproval.status === 'pending'
   const safelyRevisableFailedPreview = run.status === 'failed' &&
     (run.currentStep === 'preview_revision' || run.currentStep === 'script_validation') &&
-    run.error === 'LOCAL_PREVIEW_REVISION_REJECTED' &&
+    (run.error === 'LOCAL_PREVIEW_REVISION_REJECTED' || run.error === 'LOCAL_INPUT_REJECTED') &&
     run.script.status === 'approved' &&
     run.preview.ready &&
     gatesPassed &&

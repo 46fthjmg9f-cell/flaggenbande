@@ -696,6 +696,11 @@ const startLocal = async (config, claim) => {
     if (revisionResponse.status !== 200 && revisionResponse.status !== 202) {
       return failedStatus(claim, 'LOCAL_PREVIEW_REVISION_REJECTED')
     }
+    try {
+      return parsePublicRun(await readJson(revisionResponse))
+    } catch {
+      return failedStatus(claim, 'LOCAL_PREVIEW_REVISION_RESPONSE_INVALID')
+    }
   }
 
   let response
