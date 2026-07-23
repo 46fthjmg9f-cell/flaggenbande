@@ -15,6 +15,10 @@ import {
   type SupportedRoundCount,
 } from './operatorApi'
 import { displayReleaseLabel } from './videoDisplay'
+import {
+  scriptProfileIssueMessage,
+  validateScriptProfile,
+} from '../../shared/scriptProfileValidation'
 
 const statusLabels: Record<OperatorRunStatus, string> = {
   awaiting_script_approval: 'Skript prüfen',
@@ -27,20 +31,6 @@ const statusLabels: Record<OperatorRunStatus, string> = {
   awaiting_video_approval: 'Video prüfen',
   release_queued: 'Veröffentlichung läuft',
   published: 'Veröffentlicht',
-}
-
-const markerPattern = /^\s*\(auflösung\)\s*$/gimu
-
-function markerCount(script: string): number {
-  return [...script.matchAll(markerPattern)].length
-}
-
-function spokenWordCount(script: string): number {
-  return script.replace(markerPattern, '').match(/[\p{L}\p{N}]+/gu)?.length ?? 0
-}
-
-function brandMentionCount(script: string): number {
-  return script.match(/\bflaggenbande\b/giu)?.length ?? 0
 }
 
 const targetDurationByRounds: Record<SupportedRoundCount, number> = {
@@ -181,15 +171,20 @@ export default function VideoProductionControl() {
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const markers = useMemo(() => markerCount(script), [script])
-  const words = useMemo(() => spokenWordCount(script), [script])
-  const brandMentions = useMemo(() => brandMentionCount(script), [script])
+  const validation = useMemo(
+    () => validateScriptProfile(script, roundCount, targetDurationSeconds),
+    [roundCount, script, targetDurationSeconds],
+  )
+  const markers = validation.revealCount
+  const words = validation.spokenWordCount
+  const brandMentions = validation.brandMentionCount
   const minimumWords = roundCount === 5 ? 90 : 70
   const brandValid = brandMentions === 0
-  const scriptValid = script.trim().length >= 80 &&
-    markers === roundCount &&
-    words >= minimumWords &&
-    brandValid
+  const scriptValid = validation.valid
+  const validationMessages = useMemo(
+    () => [...new Set(validation.details.map(scriptProfileIssueMessage))],
+    [validation.details],
+  )
   const activeRun = runs.some(run => !['published', 'completed', 'failed'].includes(run.status))
 
   const refresh = useCallback(async (silent = false) => {
@@ -382,6 +377,9 @@ export default function VideoProductionControl() {
           {saving ? 'Wird gespeichert …' : 'Skript zur Prüfung speichern'}
         </button>
       </div>
+      {script.trim() && !scriptValid && <ul className="operator-validation-errors">
+        {validationMessages.map(message => <li key={message}>{message}</li>)}
+      </ul>}
       {error && <p className="operator-error">{error}</p>}
 
       <section className="research-suggestions">

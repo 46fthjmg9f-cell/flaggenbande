@@ -1,3 +1,12 @@
+import {
+  scriptProfileIssueMessage,
+  type ScriptProfileIssue,
+  type ScriptProfileIssueCode,
+  type SupportedRoundCount,
+} from '../../shared/scriptProfileValidation'
+
+export type { SupportedRoundCount } from '../../shared/scriptProfileValidation'
+
 export type OperatorProductionStatus = 'queued' | 'claimed' | 'running' | 'waiting' | 'completed' | 'failed'
 export type OperatorRunStatus =
   | 'awaiting_script_approval'
@@ -79,8 +88,6 @@ export interface CalendarEntry {
   platforms: Record<CalendarPlatform, CalendarPlatformState>
 }
 
-export type SupportedRoundCount = 5 | 7
-
 export interface ScriptDraft {
   draftId: string
   script: string
@@ -149,6 +156,38 @@ export const operatorApiConfigured = configuredBaseUrl() !== null
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const scriptProfileIssueCodes = new Set<ScriptProfileIssueCode>([
+  'SCRIPT_LENGTH_TOO_LOW',
+  'SCRIPT_LENGTH_TOO_HIGH',
+  'ROUND_COUNT',
+  'QUESTION_TEXT_MISSING',
+  'QUESTION_PROMPT_MISSING',
+  'FINAL_REACTION_MISSING',
+  'SPOKEN_WORDS_TOO_LOW',
+  'BRAND_MENTION_FORBIDDEN',
+  'DIRECT_PROMOTION',
+  'GERMAN_LANGUAGE_SIGNAL',
+  'DURATION_PLAUSIBILITY',
+])
+
+function parseScriptProfileIssues(value: unknown): ScriptProfileIssue[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry): ScriptProfileIssue[] => {
+    if (!isRecord(entry) || typeof entry.code !== 'string' ||
+        !scriptProfileIssueCodes.has(entry.code as ScriptProfileIssueCode)) return []
+    const numeric = (key: string): number | undefined =>
+      typeof entry[key] === 'number' && Number.isFinite(entry[key]) ? entry[key] : undefined
+    return [{
+      code: entry.code as ScriptProfileIssueCode,
+      ...(numeric('roundIndex') === undefined ? {} : { roundIndex: numeric('roundIndex') }),
+      ...(numeric('actual') === undefined ? {} : { actual: numeric('actual') }),
+      ...(numeric('expected') === undefined ? {} : { expected: numeric('expected') }),
+      ...(numeric('minimum') === undefined ? {} : { minimum: numeric('minimum') }),
+      ...(numeric('maximum') === undefined ? {} : { maximum: numeric('maximum') }),
+    }]
+  })
 }
 
 function requiredString(value: unknown, field: string): string {
@@ -333,7 +372,13 @@ async function request(path: string, init: RequestInit = {}): Promise<unknown> {
     throw new Error('Anmeldung für die Produktionssteuerung erforderlich.')
   }
   if (!response.ok) {
-    const detail = isRecord(payload) && typeof payload.error === 'string' ? payload.error : `HTTP ${response.status}`
+    const errorCode = isRecord(payload) && typeof payload.error === 'string'
+      ? payload.error
+      : `HTTP ${response.status}`
+    const profileIssues = isRecord(payload) ? parseScriptProfileIssues(payload.issues) : []
+    const detail = errorCode === 'INVALID_VIDEO_RUN_INPUT' && profileIssues.length > 0
+      ? profileIssues.map(scriptProfileIssueMessage).join(' ')
+      : errorCode
     throw new Error(detail)
   }
   return payload
