@@ -816,7 +816,7 @@ test('runner performs an explicit local preview revision before resuming the sam
   const result = await runOnce(config(operator.url, local.url), { singleStatus: true })
   assert.equal(result, 'queued')
   assert.equal(revisionCount, 1)
-  assert.equal(startCount, 1)
+  assert.equal(startCount, 0)
   assert.equal(updates.length, 1)
   assert.equal(updates[0].status, 'running')
   assert.equal(updates[0].providerRunId, runId)
