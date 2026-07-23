@@ -18,7 +18,7 @@ const LOCAL_STEP_IDS = [
   'preview_ready',
 ]
 const LOCAL_STEP_ID_SET = new Set(LOCAL_STEP_IDS)
-const LOCALLY_RETRYABLE_PREVIEW_STEPS = new Set(['flag_selection', 'timeline_build'])
+const LOCALLY_RETRYABLE_PREVIEW_STEPS = new Set(['flag_selection', 'timeline_build', 'render'])
 const LOCAL_STEP_STATUSES = new Set(['pending', 'running', 'waiting', 'completed', 'failed'])
 const MAX_PREVIEW_BYTES = 512 * 1024 * 1024
 const MAX_GATE_JSON_BYTES = 5 * 1024 * 1024

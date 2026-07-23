@@ -802,7 +802,7 @@ test('runner never retries a local failure outside the safe pre-preview allowlis
         runId,
         status: 'failed',
         progress: 77,
-        currentStep: 'render',
+        currentStep: 'preview_ready',
         steps: publicSteps(),
         message: 'Render fehlgeschlagen.',
         error: 'PRODUCTION_STEP_FAILED',

@@ -1313,7 +1313,7 @@ const retryRun = async (
     }
     return errorResponse("RUN_RETRY_NOT_ALLOWED", 409, origin);
   }
-  const safelyRetryableSteps = new Set(["flag_selection", "timeline_build"]);
+  const safelyRetryableSteps = new Set(["flag_selection", "timeline_build", "render"]);
   const safelyRetryable =
     safelyRetryableSteps.has(row.current_step ?? "") &&
     review.script_approval_status === "approved" &&
@@ -1323,13 +1323,13 @@ const retryRun = async (
   if (!safelyRetryable) return errorResponse("RUN_RETRY_NOT_ALLOWED", 409, origin);
 
   const timestamp = now();
-  const message = "Sicherer Vorstufenschritt erneut eingeplant.";
+  const message = "Sicherer Produktionsschritt erneut eingeplant.";
   const update = await env.DB.prepare(`UPDATE operator_production_runs SET
     status = 'queued', current_step = 'production_queue', message = ?, error_code = NULL,
     lease_owner = NULL, lease_token_sha256 = NULL, lease_expires_at = NULL,
     next_attempt_at = ?, updated_at = ?
     WHERE run_id = ? AND status = 'failed'
-      AND current_step IN ('flag_selection', 'timeline_build')`).bind(
+      AND current_step IN ('flag_selection', 'timeline_build', 'render')`).bind(
     message, timestamp, timestamp, runId,
   ).run();
   if ((update.meta?.changes ?? 0) !== 1) {

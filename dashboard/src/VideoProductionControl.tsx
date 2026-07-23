@@ -119,7 +119,7 @@ function releaseStatus(run: OperatorRun): string | null {
   return null
 }
 
-const safelyRetryablePreviewSteps = new Set(['flag_selection', 'timeline_build'])
+const safelyRetryablePreviewSteps = new Set(['flag_selection', 'timeline_build', 'render'])
 
 interface RunCardProps {
   run: OperatorRun
