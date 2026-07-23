@@ -655,6 +655,12 @@ export async function approveOperatorScript(run: OperatorRun): Promise<OperatorR
   }))
 }
 
+export async function retryOperatorRun(run: OperatorRun): Promise<OperatorRun> {
+  return parseRun(await request(`/v1/runs/${encodeURIComponent(run.runId)}/retry`, {
+    method: 'POST',
+  }))
+}
+
 export async function approveOperatorVideo(run: OperatorRun): Promise<OperatorRun> {
   if (!run.preview.sha256) throw new Error('Video-Prüfsumme fehlt.')
   return parseRun(await request(`/v1/runs/${encodeURIComponent(run.runId)}/approve-video`, {

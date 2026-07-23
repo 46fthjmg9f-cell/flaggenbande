@@ -994,3 +994,62 @@ test('two-stage approvals are hash-bound, idempotent and release exactly once', 
   assert.equal(calendar.entries[0].finalReleaseApproved, true)
   assert.deepEqual(calendar.entries[0].platforms, publishedPlatforms)
 })
+
+test('operator can retry a failed flag-selection run without creating a duplicate', async () => {
+  const schema = await readFile(schemaUrl, 'utf8')
+  const DB = new D1TestDatabase(schema)
+  const env = {
+    DB,
+    PREVIEWS: new PreviewBucket(),
+    OPERATOR_API_TOKEN: 'operator-token',
+  }
+  const draftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
+    roundCount: 5,
+    targetDurationSeconds: 64,
+    recommendationId: null,
+    clientRequestId: 'retry-draft-0001',
+  })), env)
+  assert.equal(draftResponse.status, 201)
+  const draft = await draftResponse.json()
+  const createdResponse = await worker.fetch(request('/v1/runs', 'operator-token', jsonBody({
+    script: draft.script,
+    targetDurationSeconds: 64,
+    roundCount: 5,
+    draftId: draft.draftId,
+    clientRequestId: 'retry-run-0001',
+  })), env)
+  assert.equal(createdResponse.status, 202)
+  const created = await createdResponse.json()
+  const approvedResponse = await worker.fetch(request(
+    `/v1/runs/${created.runId}/approve-script`,
+    'operator-token',
+    jsonBody({
+      scriptSha256: created.script.sha256,
+      scriptRevision: created.script.revision,
+      idempotencyKey: 'retry-script-approval-0001',
+    }),
+  ), env)
+  assert.equal(approvedResponse.status, 200)
+  DB.database.prepare(`UPDATE operator_production_runs SET
+    status = 'failed', progress = 23, current_step = 'flag_selection',
+    error_code = 'PRODUCTION_STEP_FAILED'
+    WHERE run_id = ?`).run(created.runId)
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const retryResponse = await worker.fetch(request(
+      `/v1/runs/${created.runId}/retry`,
+      'operator-token',
+      { method: 'POST' },
+    ), env)
+    assert.equal(retryResponse.status, 200)
+    const retried = await retryResponse.json()
+    assert.equal(retried.runId, created.runId)
+    assert.equal(retried.productionStatus, 'queued')
+    assert.equal(retried.currentStep, 'production_queue')
+    assert.equal(retried.error, null)
+  }
+  assert.equal(
+    DB.database.prepare('SELECT COUNT(*) AS count FROM operator_production_runs').get().count,
+    1,
+  )
+})
