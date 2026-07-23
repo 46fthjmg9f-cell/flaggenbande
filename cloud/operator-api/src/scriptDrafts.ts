@@ -1,4 +1,16 @@
-export type SupportedRoundCount = 5 | 7;
+import {
+  normalizeQuizScript,
+  validateScriptProfile,
+  type SupportedRoundCount,
+} from "../../../shared/scriptProfileValidation.ts";
+
+export {
+  validateScriptProfile,
+  type ScriptProfileIssue,
+  type ScriptProfileIssueCode,
+  type ScriptProfileValidation,
+  type SupportedRoundCount,
+} from "../../../shared/scriptProfileValidation.ts";
 
 export interface ScriptDraftRequest {
   readonly roundCount: SupportedRoundCount;
@@ -106,76 +118,7 @@ const learnedStyleSignals = (examples: readonly string[]): readonly string[] => 
   ].filter(([, pattern]) => (pattern as RegExp).test(corpus)).map(([signal]) => signal as string);
 };
 
-const directPromotionPatterns = [
-  /https?:\/\//iu,
-  /\bapps\.apple\.com\b/iu,
-  /\b(?:app\s*store|play\s*store)\b/iu,
-  /\b(?:download|herunterladen|runterladen)\b/iu,
-  /\blad(?:e)?\b[^\n.!?]{0,100}\brunter\b/iu,
-  /\b(?:kauf|kaufe|abonnier|bestell)(?:e|en|st)?\b/iu,
-] as const;
-
-const germanSignals = new Set([
-  "aber", "alle", "das", "der", "die", "du", "flagge", "flaggen", "hier", "jetzt",
-  "junge", "letzte", "nicht", "schaffst", "welche", "welches", "welcher", "weißt",
-  "wird", "wissen", "läuft", "schwere", "schwerer",
-]);
-
-const normalizeScript = (script: string): string => script
-  .normalize("NFC")
-  .replace(/\r\n?/gu, "\n")
-  .split("\n")
-  .map((line) => line.trim())
-  .filter(Boolean)
-  .map((line) => /^\(auflösung\)$/iu.test(line) ? "(auflösung)" : line)
-  .join("\n");
-
-export interface ScriptProfileValidation {
-  readonly valid: boolean;
-  readonly issues: readonly string[];
-  readonly spokenWordCount: number;
-}
-
-export const validateScriptProfile = (
-  scriptInput: string,
-  roundCount: SupportedRoundCount,
-  targetDurationSeconds: number,
-): ScriptProfileValidation => {
-  const script = normalizeScript(scriptInput);
-  const lines = script.split("\n");
-  const markerIndexes = lines.flatMap((line, index) => line === "(auflösung)" ? [index] : []);
-  const issues: string[] = [];
-  if (markerIndexes.length !== roundCount) issues.push("ROUND_COUNT");
-  let segmentStart = 0;
-  for (const markerIndex of markerIndexes) {
-    if (markerIndex === 0 || lines[markerIndex - 1] === "(auflösung)") issues.push("QUESTION_TEXT_MISSING");
-    if (!lines.slice(segmentStart, markerIndex).some((line) => line.includes("?"))) {
-      issues.push("QUESTION_MARK_MISSING");
-    }
-    segmentStart = markerIndex + 1;
-  }
-  if (markerIndexes.at(-1) === lines.length - 1) issues.push("FINAL_REACTION_MISSING");
-  const words = script.replaceAll("(auflösung)", "").match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
-  const minimumWords = roundCount === 5 ? 90 : 70;
-  if (words < minimumWords) issues.push("SPOKEN_WORDS_TOO_LOW");
-  const brandMentions = script.match(/\bflaggenbande\b/giu)?.length ?? 0;
-  if (brandMentions > 0) issues.push("BRAND_MENTION_FORBIDDEN");
-  if (directPromotionPatterns.some((pattern) => pattern.test(script))) issues.push("DIRECT_PROMOTION");
-  const foundGermanSignals = new Set(
-    (script.toLocaleLowerCase("de").match(/[\p{L}]+/gu) ?? []).filter((token) => germanSignals.has(token)),
-  );
-  if (foundGermanSignals.size < 2) issues.push("GERMAN_LANGUAGE_SIGNAL");
-  const plausibleMinimumSeconds = words / 4 + roundCount * 3;
-  const plausibleMaximumSeconds = words / 1.5 + roundCount * 7;
-  if (
-    !Number.isFinite(targetDurationSeconds) ||
-    targetDurationSeconds < 61 ||
-    targetDurationSeconds > 70 ||
-    targetDurationSeconds < plausibleMinimumSeconds ||
-    targetDurationSeconds > plausibleMaximumSeconds
-  ) issues.push("DURATION_PLAUSIBILITY");
-  return { valid: issues.length === 0, issues: [...new Set(issues)], spokenWordCount: words };
-};
+const normalizeScript = (script: string): string => normalizeQuizScript(script);
 
 const styleSegments = (
   script: string,

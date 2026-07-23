@@ -3,6 +3,7 @@ import {
   DEFAULT_TARGET_DURATION,
   generateScriptDraft,
   validateScriptProfile,
+  type ScriptProfileValidation,
   type SupportedRoundCount,
 } from "./scriptDrafts.ts";
 
@@ -490,11 +491,21 @@ interface NewRunInput {
   readonly clientRequestId?: string;
 }
 
+class InvalidVideoRunInputError extends Error {
+  readonly validation?: ScriptProfileValidation;
+
+  constructor(validation?: ScriptProfileValidation) {
+    super("INVALID_VIDEO_RUN_INPUT");
+    this.name = "InvalidVideoRunInputError";
+    this.validation = validation;
+  }
+}
+
 const parseNewRun = (value: unknown): NewRunInput => {
   if (!isRecord(value) || !exactKeys(value, [
     "script", "targetDurationSeconds", "roundCount", "draftId", "clientRequestId",
   ])) {
-    throw new Error("INVALID_VIDEO_RUN_INPUT");
+    throw new InvalidVideoRunInputError();
   }
   const script = typeof value.script === "string" ? normalizeScript(value.script) : "";
   const target = typeof value.targetDurationSeconds === "number"
@@ -505,14 +516,15 @@ const parseNewRun = (value: unknown): NewRunInput => {
   const revealCount = script.split("\n").filter((line) => line === "(auflösung)").length;
   const roundCount = value.roundCount === undefined ? revealCount : Number(value.roundCount);
   if (
-    script.length < 80 || script.length > 20_000 ||
+    typeof value.script !== "string" ||
     (roundCount !== 5 && roundCount !== 7) || revealCount !== roundCount ||
     !Number.isFinite(target) || target < 61 || target > 70 ||
     (value.draftId !== undefined && (!draftId || !/^draft-[a-f0-9]{24}$/u.test(draftId))) ||
     (value.clientRequestId !== undefined && (!clientRequestId || !/^[A-Za-z0-9._:-]{8,128}$/u.test(clientRequestId)))
-  ) throw new Error("INVALID_VIDEO_RUN_INPUT");
-  if (!validateScriptProfile(script, roundCount, target).valid) {
-    throw new Error("INVALID_VIDEO_RUN_INPUT");
+  ) throw new InvalidVideoRunInputError();
+  const validation = validateScriptProfile(script, roundCount, target);
+  if (!validation.valid) {
+    throw new InvalidVideoRunInputError(validation);
   }
   return {
     script,
@@ -843,7 +855,7 @@ const insertEventStatement = (
 const createRun = async (request: Request, env: Env, origin: string | null): Promise<Response> => {
   const input = parseNewRun(await readJson(request));
   const linkedDraft = input.draftId ? await draftById(env, input.draftId) : null;
-  if (input.draftId && (!linkedDraft || linkedDraft.round_count !== input.roundCount)) {
+  if (linkedDraft && linkedDraft.round_count !== input.roundCount) {
     return errorResponse("SCRIPT_DRAFT_NOT_FOUND", 404, origin);
   }
   const canonical = JSON.stringify({
@@ -2082,6 +2094,18 @@ export default {
         origin = candidate || null;
       } catch {
         return errorResponse("SERVER_CONFIGURATION_ERROR", 500, null);
+      }
+      if (error instanceof InvalidVideoRunInputError && error.validation) {
+        return json({
+          error: code,
+          issues: error.validation.details,
+          metrics: {
+            spokenWordCount: error.validation.spokenWordCount,
+            revealCount: error.validation.revealCount,
+            plausibleMinimumSeconds: error.validation.plausibleMinimumSeconds,
+            plausibleMaximumSeconds: error.validation.plausibleMaximumSeconds,
+          },
+        }, 400, origin);
       }
       return status
         ? errorResponse(code, status, origin)

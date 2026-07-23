@@ -320,7 +320,55 @@ test('script drafts are editable, do not start production and only approved huma
     clientRequestId: 'draft-contract-test-0007',
   })), env)
   const sevenDraft = await sevenDraftResponse.json()
+  assert.equal(sevenDraftResponse.status, 201)
   assert.equal(sevenDraft.script.match(/^\(auflösung\)$/gmu)?.length, 7)
+  const uneditedSevenRunResponse = await worker.fetch(request('/v1/runs', 'operator-token', jsonBody({
+    script: sevenDraft.script,
+    targetDurationSeconds: 69,
+    roundCount: 7,
+    draftId: sevenDraft.draftId,
+    clientRequestId: 'draft-run-contract-0007',
+  })), env)
+  assert.equal(uneditedSevenRunResponse.status, 202)
+  const uneditedSevenRun = await uneditedSevenRunResponse.json()
+  assert.equal(
+    DB.database.prepare('SELECT origin FROM operator_script_origins WHERE run_id = ?').get(uneditedSevenRun.runId).origin,
+    'auto_unedited',
+  )
+
+  const imperativeSegments = sevenDraft.script.split('\n(auflösung)\n')
+  imperativeSegments[1] = 'Sauber Meister, die nächste wissen wenige, sprich frei.'
+  const imperativeScript = imperativeSegments.join('\n(auflösung)\n')
+  const imperativeRunResponse = await worker.fetch(request('/v1/runs', 'operator-token', jsonBody({
+    script: imperativeScript,
+    targetDurationSeconds: 69,
+    roundCount: 7,
+    draftId: 'draft-aaaaaaaaaaaaaaaaaaaaaaaa',
+    clientRequestId: 'stale-draft-run-contract-0007',
+  })), env)
+  assert.equal(imperativeRunResponse.status, 202)
+  const imperativeRun = await imperativeRunResponse.json()
+  assert.equal(
+    DB.database.prepare('SELECT origin FROM operator_script_origins WHERE run_id = ?').get(imperativeRun.runId).origin,
+    'manual',
+  )
+
+  const invalidPromptSegments = [...imperativeSegments]
+  invalidPromptSegments[1] = 'Sauber Meister, die nächste Runde wird schwierig und startet jetzt.'
+  const invalidPromptResponse = await worker.fetch(request('/v1/runs', 'operator-token', jsonBody({
+    script: invalidPromptSegments.join('\n(auflösung)\n'),
+    targetDurationSeconds: 69,
+    roundCount: 7,
+    clientRequestId: 'invalid-prompt-contract-0007',
+  })), env)
+  assert.equal(invalidPromptResponse.status, 400)
+  const invalidPrompt = await invalidPromptResponse.json()
+  assert.equal(invalidPrompt.error, 'INVALID_VIDEO_RUN_INPUT')
+  assert.ok(invalidPrompt.issues.some(issue =>
+    issue.code === 'QUESTION_PROMPT_MISSING' && issue.roundIndex === 2))
+  assert.equal(typeof invalidPrompt.metrics.spokenWordCount, 'number')
+  assert.equal('script' in invalidPrompt, false)
+
   const manualSevenScript = sevenDraft.script.replace(
     '(auflösung)\n',
     '(auflösung)\nGurkenminister-Modus, genau mein Tempo. ',

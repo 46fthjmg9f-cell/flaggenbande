@@ -256,6 +256,7 @@ input, textarea { font: inherit; }
 .primary-action:disabled { cursor: not-allowed; opacity: .42; }
 .text-button { border: 0; background: transparent; color: #75c7ff; cursor: pointer; padding: 4px; font-size: .72rem; font-weight: 750; }
 .operator-error { margin: 12px 0 0; border-left: 3px solid #ff7181; border-radius: 6px; background: rgba(255,113,129,.08); color: #ffb0b9; padding: 9px 11px; font-size: .75rem; }
+.operator-validation-errors { display: grid; gap: 4px; margin: 10px 0 0; border-left: 3px solid #f4ca7e; border-radius: 6px; background: rgba(247,185,85,.07); color: #f4ca7e; padding: 9px 11px 9px 27px; font-size: .72rem; }
 .operator-run-list { display: grid; gap: 8px; margin-top: 14px; max-height: 760px; overflow: auto; }
 .operator-run { padding: 11px; border: 1px solid #21364f; border-radius: 10px; background: rgba(8,20,35,.58); }
 .operator-run.completed { border-color: rgba(65,214,162,.4); }
