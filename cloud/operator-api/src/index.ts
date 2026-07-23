@@ -1313,8 +1313,9 @@ const retryRun = async (
     }
     return errorResponse("RUN_RETRY_NOT_ALLOWED", 409, origin);
   }
+  const safelyRetryableSteps = new Set(["flag_selection", "timeline_build"]);
   const safelyRetryable =
-    row.current_step === "flag_selection" &&
+    safelyRetryableSteps.has(row.current_step ?? "") &&
     review.script_approval_status === "approved" &&
     review.preview_object_key === null &&
     review.video_approval_status === "not_ready" &&
@@ -1327,7 +1328,8 @@ const retryRun = async (
     status = 'queued', current_step = 'production_queue', message = ?, error_code = NULL,
     lease_owner = NULL, lease_token_sha256 = NULL, lease_expires_at = NULL,
     next_attempt_at = ?, updated_at = ?
-    WHERE run_id = ? AND status = 'failed' AND current_step = 'flag_selection'`).bind(
+    WHERE run_id = ? AND status = 'failed'
+      AND current_step IN ('flag_selection', 'timeline_build')`).bind(
     message, timestamp, timestamp, runId,
   ).run();
   if ((update.meta?.changes ?? 0) !== 1) {

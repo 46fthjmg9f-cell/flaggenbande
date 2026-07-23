@@ -1070,3 +1070,132 @@ test('operator can retry a failed flag-selection run without creating a duplicat
     1,
   )
 })
+
+const approvedRetryRun = async (env, suffix) => {
+  const draftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
+    roundCount: 5,
+    targetDurationSeconds: 64,
+    recommendationId: null,
+    clientRequestId: `retry-draft-${suffix}`,
+  })), env)
+  assert.equal(draftResponse.status, 201)
+  const draft = await draftResponse.json()
+  const createdResponse = await worker.fetch(request('/v1/runs', 'operator-token', jsonBody({
+    script: draft.script,
+    targetDurationSeconds: 64,
+    roundCount: 5,
+    draftId: draft.draftId,
+    clientRequestId: `retry-run-${suffix}`,
+  })), env)
+  assert.equal(createdResponse.status, 202)
+  const created = await createdResponse.json()
+  const approvedResponse = await worker.fetch(request(
+    `/v1/runs/${created.runId}/approve-script`,
+    'operator-token',
+    jsonBody({
+      scriptSha256: created.script.sha256,
+      scriptRevision: created.script.revision,
+      idempotencyKey: `retry-approval-${suffix}`,
+    }),
+  ), env)
+  assert.equal(approvedResponse.status, 200)
+  return created
+}
+
+test('operator can retry a failed pre-preview timeline build without creating a duplicate', async () => {
+  const schema = await readFile(schemaUrl, 'utf8')
+  const DB = new D1TestDatabase(schema)
+  const env = {
+    DB,
+    PREVIEWS: new PreviewBucket(),
+    OPERATOR_API_TOKEN: 'operator-token',
+  }
+  const created = await approvedRetryRun(env, 'timeline-0001')
+  DB.database.prepare(`UPDATE operator_production_runs SET
+    status = 'failed', progress = 45, current_step = 'timeline_build',
+    error_code = 'PRODUCTION_STEP_FAILED'
+    WHERE run_id = ?`).run(created.runId)
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt > 0) {
+      DB.database.prepare(`UPDATE operator_production_runs SET
+        status = 'failed', progress = 45, current_step = 'timeline_build',
+        error_code = 'PRODUCTION_STEP_FAILED'
+        WHERE run_id = ?`).run(created.runId)
+    }
+    const response = await worker.fetch(request(
+      `/v1/runs/${created.runId}/retry`,
+      'operator-token',
+      { method: 'POST' },
+    ), env)
+    assert.equal(response.status, 200)
+    const retried = await response.json()
+    assert.equal(retried.runId, created.runId)
+    assert.equal(retried.productionStatus, 'queued')
+    assert.equal(retried.currentStep, 'production_queue')
+    assert.equal(retried.error, null)
+  }
+  assert.equal(
+    DB.database.prepare('SELECT COUNT(*) AS count FROM operator_production_runs').get().count,
+    1,
+  )
+})
+
+test('operator rejects retry after a preview exists', async () => {
+  const schema = await readFile(schemaUrl, 'utf8')
+  const DB = new D1TestDatabase(schema)
+  const env = {
+    DB,
+    PREVIEWS: new PreviewBucket(),
+    OPERATOR_API_TOKEN: 'operator-token',
+  }
+  const created = await approvedRetryRun(env, 'preview-0001')
+  DB.database.prepare(`UPDATE operator_production_runs SET
+    status = 'failed', progress = 45, current_step = 'timeline_build',
+    error_code = 'PRODUCTION_STEP_FAILED'
+    WHERE run_id = ?`).run(created.runId)
+  DB.database.prepare(`UPDATE operator_production_reviews SET
+    preview_object_key = 'previews/existing.mp4'
+    WHERE run_id = ?`).run(created.runId)
+
+  const response = await worker.fetch(request(
+    `/v1/runs/${created.runId}/retry`,
+    'operator-token',
+    { method: 'POST' },
+  ), env)
+  assert.equal(response.status, 409)
+  assert.equal((await response.json()).error, 'RUN_RETRY_NOT_ALLOWED')
+  assert.equal(
+    DB.database.prepare('SELECT status FROM operator_production_runs WHERE run_id = ?').get(created.runId).status,
+    'failed',
+  )
+})
+
+test('operator rejects retry for downstream and non-allowlisted steps', async () => {
+  for (const [index, currentStep] of ['voice_preparation', 'render', 'preview_ready'].entries()) {
+    const schema = await readFile(schemaUrl, 'utf8')
+    const DB = new D1TestDatabase(schema)
+    const env = {
+      DB,
+      PREVIEWS: new PreviewBucket(),
+      OPERATOR_API_TOKEN: 'operator-token',
+    }
+    const created = await approvedRetryRun(env, `unsafe-${index + 1}`)
+    DB.database.prepare(`UPDATE operator_production_runs SET
+      status = 'failed', progress = 77, current_step = ?,
+      error_code = 'PRODUCTION_STEP_FAILED'
+      WHERE run_id = ?`).run(currentStep, created.runId)
+
+    const response = await worker.fetch(request(
+      `/v1/runs/${created.runId}/retry`,
+      'operator-token',
+      { method: 'POST' },
+    ), env)
+    assert.equal(response.status, 409, currentStep)
+    assert.equal((await response.json()).error, 'RUN_RETRY_NOT_ALLOWED')
+    assert.equal(
+      DB.database.prepare('SELECT status FROM operator_production_runs WHERE run_id = ?').get(created.runId).status,
+      'failed',
+    )
+  }
+})
