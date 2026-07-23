@@ -26,6 +26,7 @@ const platformForFinalStatus = {
 const stagingMessagePrefix = 'Nichtöffentlicher Testlauf zum Hochladen:'
 const legacyStagingMessagePrefix = 'Nichtöffentlicher Upload-Testlauf:'
 const identifierPattern = /^[a-z0-9][a-z0-9._-]{2,199}$/i
+const releaseLabelPattern = /^(?:0[1-9]|[12]\d|3[01])(?:0[1-9]|1[0-2])\.\d{2}$/
 const publishedSocialStatuses = new Set(['public', 'published'])
 const corePlatforms = ['youtube', 'instagram', 'facebook']
 const productionPlatforms = new Set(['instagram', 'facebook'])
@@ -77,6 +78,57 @@ const requiredIso = (value, path) => {
 
 const nullableIso = (value, path) => value === null ? null : requiredIso(value, path)
 
+const optionalReleaseMetadata = (record, path) => {
+  const metadata = {}
+  if ('releaseLabel' in record) {
+    if (record.releaseLabel === null) {
+      metadata.releaseLabel = null
+    } else {
+      const releaseLabel = requiredString(record.releaseLabel, `${path}.releaseLabel`, 7)
+      if (!releaseLabelPattern.test(releaseLabel)) {
+        throw new Error(`${path}.releaseLabel muss dem Format DDMM.NN entsprechen.`)
+      }
+      const day = Number.parseInt(releaseLabel.slice(0, 2), 10)
+      const month = Number.parseInt(releaseLabel.slice(2, 4), 10)
+      const calendarDate = new Date(Date.UTC(2000, month - 1, day))
+      if (calendarDate.getUTCDate() !== day || calendarDate.getUTCMonth() !== month - 1) {
+        throw new Error(`${path}.releaseLabel enthält kein gültiges Datum.`)
+      }
+      metadata.releaseLabel = releaseLabel
+    }
+  }
+  for (const key of ['videoApproved', 'finalReleaseApproved']) {
+    if (!(key in record)) continue
+    if (typeof record[key] !== 'boolean') throw new Error(`${path}.${key} muss true oder false sein.`)
+    metadata[key] = record[key]
+  }
+  return metadata
+}
+
+const assertReleaseMetadata = (metadata, path) => {
+  if ((metadata.videoApproved === true || metadata.finalReleaseApproved === true) && !metadata.releaseLabel) {
+    throw new Error(`${path}.releaseLabel fehlt für die Freigabe.`)
+  }
+  if (metadata.finalReleaseApproved === true && metadata.videoApproved !== true) {
+    throw new Error(`${path}.finalReleaseApproved setzt videoApproved voraus.`)
+  }
+}
+
+const mergeReleaseMetadata = (primary, fallback, path) => {
+  const merged = {}
+  for (const key of ['releaseLabel', 'videoApproved', 'finalReleaseApproved']) {
+    const primaryValue = primary[key]
+    const fallbackValue = fallback[key]
+    if (primaryValue !== undefined && fallbackValue !== undefined && primaryValue !== fallbackValue) {
+      throw new Error(`${path}.${key} widerspricht den Laufdaten.`)
+    }
+    const value = primaryValue ?? fallbackValue
+    if (value !== undefined) merged[key] = value
+  }
+  assertReleaseMetadata(merged, path)
+  return merged
+}
+
 const requireNullWhenPresent = (record, key, path) => {
   if (key in record && record[key] !== null) throw new Error(`${path}.${key} muss für den nichtöffentlichen Testlauf null sein.`)
 }
@@ -126,9 +178,12 @@ const normalizeRun = (value, index) => {
   if (completedAt !== null && completedAt < startedAt) throw new Error(`${path}.completedAt liegt vor dem Start.`)
   const qualityStatus = requiredString(record.qualityStatus, `${path}.qualityStatus`, 20).toLowerCase()
   if (!qualityStatuses.has(qualityStatus)) throw new Error(`${path}.qualityStatus enthält einen unbekannten Status.`)
+  const releaseMetadata = optionalReleaseMetadata(record, path)
+  assertReleaseMetadata(releaseMetadata, path)
   return {
     runId: requiredIdentifier(record.runId, `${path}.runId`),
     contentId: requiredIdentifier(record.contentId, `${path}.contentId`),
+    ...releaseMetadata,
     title: null,
     status: normalizeRunStatus(record.status, `${path}.status`),
     qualityStatus,
@@ -162,13 +217,22 @@ const normalizePublication = (value, index, runs, runsByContentId) => {
   const updatedAt = 'updatedAt' in record
     ? requiredIso(record.updatedAt, `${path}.updatedAt`)
     : run.startedAt
-  if (updatedAt < run.startedAt) throw new Error(`${path}.updatedAt liegt vor dem Start des Laufs.`)
+  const releaseMetadata = mergeReleaseMetadata(
+    optionalReleaseMetadata(record, path),
+    {
+      releaseLabel: run.releaseLabel,
+      videoApproved: run.videoApproved,
+      finalReleaseApproved: run.finalReleaseApproved,
+    },
+    path,
+  )
 
   return {
     runId,
     publicValue: {
       runId,
       contentId,
+      ...releaseMetadata,
       platform,
       mode,
       status: normalizePublicationStatus(record, platform, path),
@@ -219,18 +283,62 @@ export function normalizeStagingFeed(value) {
     }
   }
 
-  const runOrder = new Map([...runs]
+  // A platform target can be persisted a few moments before the run record.
+  // Only after exact run/content association, duplicate checks and the complete
+  // four-platform contract have succeeded is its timestamp trusted as evidence
+  // for the effective start of that run.
+  const metadataByRun = new Map()
+  for (const run of runs) {
+    const matching = normalizedPublications.filter(publication => publication.runId === run.runId)
+    const releaseMetadata = {}
+    for (const key of ['releaseLabel', 'videoApproved', 'finalReleaseApproved']) {
+      const values = [
+        run[key],
+        ...matching.map(publication => publication.publicValue[key]),
+      ].filter(value => value !== undefined)
+      const distinct = new Set(values)
+      if (distinct.size > 1) throw new Error(`Lauf ${run.runId}.${key} ist widersprüchlich.`)
+      if (values.length > 0) releaseMetadata[key] = values[0]
+    }
+    assertReleaseMetadata(releaseMetadata, `Lauf ${run.runId}`)
+    metadataByRun.set(run.runId, releaseMetadata)
+  }
+  const runsWithReleaseMetadata = runs.map(run => ({
+    ...run,
+    ...(metadataByRun.get(run.runId) ?? {}),
+  }))
+  const publicationsWithReleaseMetadata = normalizedPublications.map(publication => ({
+    ...publication,
+    publicValue: {
+      ...publication.publicValue,
+      ...(metadataByRun.get(publication.runId) ?? {}),
+    },
+  }))
+
+  const earliestStartByRun = new Map(runsWithReleaseMetadata.map(run => [run.runId, run.startedAt]))
+  for (const publication of publicationsWithReleaseMetadata) {
+    const current = earliestStartByRun.get(publication.runId)
+    if (current === undefined || publication.publicValue.updatedAt < current) {
+      earliestStartByRun.set(publication.runId, publication.publicValue.updatedAt)
+    }
+  }
+  const normalizedRuns = runsWithReleaseMetadata.map(run => ({
+    ...run,
+    startedAt: earliestStartByRun.get(run.runId) ?? run.startedAt,
+  }))
+
+  const runOrder = new Map([...normalizedRuns]
     .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
     .map((run, index) => [run.runId, index]))
   const platformOrder = new Map(platforms.map((platform, index) => [platform, index]))
-  const publications = normalizedPublications
+  const publications = publicationsWithReleaseMetadata
     .sort((left, right) => (runOrder.get(left.runId) ?? 0) - (runOrder.get(right.runId) ?? 0)
       || (platformOrder.get(left.publicValue.platform) ?? 0) - (platformOrder.get(right.publicValue.platform) ?? 0))
     .map(entry => entry.publicValue)
 
   return {
     generatedAt,
-    runs: [...runs].sort((left, right) => right.startedAt.localeCompare(left.startedAt)),
+    runs: [...normalizedRuns].sort((left, right) => right.startedAt.localeCompare(left.startedAt)),
     publications,
   }
 }
@@ -631,7 +739,12 @@ export function mergePublicationFeed(contentOperations, production) {
     if (matchingRuns.length !== 1) continue
     const run = matchingRuns[0]
     const targetKey = `${run.runId}:${queue.platform}`
-    if ((targetsByRunAndPlatform.get(targetKey) ?? []).length !== 1) continue
+    const targets = targetsByRunAndPlatform.get(targetKey) ?? []
+    if (targets.length !== 1) continue
+    // A retry updates the staging target before the earlier failed queue row is
+    // necessarily removed. Never let that older failure overwrite the newer
+    // ready state.
+    if (queue.updatedAt < targets[0].updatedAt) continue
     acceptedByRunAndPlatform.set(targetKey, queue)
   }
 

@@ -1,22 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  clearOperatorToken,
+  approveOperatorScript,
+  approveOperatorVideo,
   listOperatorRuns,
   operatorApiConfigured,
-  readOperatorToken,
-  saveOperatorToken,
+  operatorPreviewUrl,
   startOperatorRun,
   type OperatorRun,
   type OperatorRunStatus,
 } from './operatorApi'
+import { displayReleaseLabel } from './videoDisplay'
 
 const statusLabels: Record<OperatorRunStatus, string> = {
+  awaiting_script_approval: 'Skript prüfen',
   queued: 'Warteschlange',
   claimed: 'Wird gestartet',
   running: 'Produktion läuft',
-  waiting: 'Wartet auf Stimme',
-  completed: 'Fertig',
+  waiting: 'Produktion wartet',
+  completed: 'Video fertig',
   failed: 'Fehler',
+  awaiting_video_approval: 'Video prüfen',
+  release_queued: 'Veröffentlichung läuft',
+  published: 'Veröffentlicht',
 }
 
 const markerPattern = /^\s*\(auflösung\)\s*$/gimu
@@ -27,132 +32,214 @@ function markerCount(script: string): number {
 
 function formatTime(value: string): string {
   const date = new Date(value)
-  return Number.isNaN(date.valueOf()) ? '—' : new Intl.DateTimeFormat('de-DE', { dateStyle: 'short', timeStyle: 'short' }).format(date)
+  return Number.isNaN(date.valueOf())
+    ? '—'
+    : new Intl.DateTimeFormat('de-DE', { dateStyle: 'short', timeStyle: 'short' }).format(date)
 }
 
-function RunRow({ run }: { run: OperatorRun }) {
-  return <article className={`operator-run ${run.status}`}>
-    <div className="operator-run-top">
+function runDisplayLabel(run: OperatorRun): string {
+  return displayReleaseLabel({
+    releaseLabel: run.releaseLabel,
+    videoApproved: run.videoApproval.status === 'approved',
+    finalReleaseApproved: run.release.status === 'published',
+  }) ?? run.releaseLabel
+}
+
+function releaseStatus(run: OperatorRun): string | null {
+  if (run.status === 'published' || run.release.status === 'published' || run.release.status === 'completed') {
+    return 'Auf allen ausgewählten Plattformen veröffentlicht'
+  }
+  if (run.release.status === 'failed') return 'Veröffentlichung fehlgeschlagen'
+  if (run.release.status === 'claimed' || run.release.status === 'processing') return 'Wird veröffentlicht'
+  if (run.release.status === 'queued') return 'Zur Veröffentlichung eingeplant'
+  if (run.videoApproval.status === 'approved') return 'Video freigegeben'
+  return null
+}
+
+interface RunCardProps {
+  run: OperatorRun
+  busyAction: string | null
+  onApproveScript: (run: OperatorRun) => Promise<void>
+  onApproveVideo: (run: OperatorRun) => Promise<void>
+  initiallyOpen: boolean
+}
+
+function RunCard({ run, busyAction, onApproveScript, onApproveVideo, initiallyOpen }: RunCardProps) {
+  const previewUrl = operatorPreviewUrl(run)
+  const approvingScript = busyAction === `script:${run.runId}`
+  const approvingVideo = busyAction === `video:${run.runId}`
+  const gatesPassed = run.preview.qualityPassed && run.preview.monetizationPassed
+  const scriptPending = run.status === 'awaiting_script_approval' && run.script.status === 'pending'
+  const videoPending = run.status === 'awaiting_video_approval' && run.videoApproval.status === 'pending'
+  const release = releaseStatus(run)
+
+  return <details className={`operator-run operator-review ${run.status}`} open={initiallyOpen || scriptPending || videoPending}>
+    <summary>
+      <span className="operator-run-label">{runDisplayLabel(run)}</span>
       <strong>{statusLabels[run.status]}</strong>
       <span>{Math.round(run.progress)} %</span>
-    </div>
+    </summary>
+
     <div className="operator-progress" aria-label={`${Math.round(run.progress)} Prozent`}>
       <span style={{ width: `${run.progress}%` }} />
     </div>
+
     <div className="operator-run-detail">
-      <span>{run.currentStep ?? run.message ?? 'Eingereiht'}</span>
+      <span>{run.currentStep ?? run.message ?? statusLabels[run.status]}</span>
       <time dateTime={run.updatedAt}>{formatTime(run.updatedAt)}</time>
     </div>
+
+    <section className="operator-review-stage">
+      <div className="operator-stage-heading">
+        <strong>1 · Skript</strong>
+        <span className={`review-state ${run.script.status}`}>{run.script.status === 'approved' ? 'Freigegeben' : 'Offen'}</span>
+      </div>
+      <pre className="operator-script">{run.script.text}</pre>
+      {scriptPending && <button
+        className="primary-action"
+        type="button"
+        onClick={() => void onApproveScript(run)}
+        disabled={Boolean(busyAction)}
+      >
+        {approvingScript ? 'Wird freigegeben …' : 'Skript freigeben'}
+      </button>}
+    </section>
+
+    <section className="operator-review-stage">
+      <div className="operator-stage-heading">
+        <strong>2 · Video</strong>
+        <span className={`review-state ${run.videoApproval.status}`}>
+          {run.videoApproval.status === 'approved' ? 'Freigegeben' : run.preview.ready ? 'Offen' : 'Noch nicht fertig'}
+        </span>
+      </div>
+      {previewUrl
+        ? <video className="operator-preview" controls crossOrigin="use-credentials" playsInline preload="metadata" src={previewUrl} />
+        : <div className="operator-preview-empty">Video wird nach der Skriptfreigabe erzeugt.</div>}
+      {run.preview.ready && <div className="operator-gates" aria-label="Freigabeprüfungen">
+        <span className={run.preview.qualityPassed ? 'passed' : 'failed'}>Qualität</span>
+        <span className={run.preview.monetizationPassed ? 'passed' : 'failed'}>Monetarisierung</span>
+      </div>}
+      {videoPending && <button
+        className="primary-action"
+        type="button"
+        onClick={() => void onApproveVideo(run)}
+        disabled={Boolean(busyAction) || !gatesPassed || !run.preview.sha256}
+      >
+        {approvingVideo ? 'Wird freigegeben …' : 'Video freigeben & Veröffentlichung starten'}
+      </button>}
+    </section>
+
+    {release && <div className={`operator-release-state ${run.release.status ?? 'approved'}`}>
+      <strong>{release}</strong>
+      {run.release.requestId && <div className="operator-release-platforms">
+        {([
+          ['youtube', 'YT'],
+          ['instagram', 'IG'],
+          ['facebook', 'FB'],
+          ['tiktok', 'TT'],
+        ] as const).map(([platform, label]) =>
+          <span className={run.release.platforms[platform].status} key={platform}>
+            {label} · {run.release.platforms[platform].status}
+          </span>)}
+      </div>}
+      {run.release.error && <small>{run.release.error}</small>}
+    </div>}
     {run.error && <p className="operator-error">{run.error}</p>}
-  </article>
+  </details>
 }
 
 export default function VideoProductionControl() {
-  const [unlocked, setUnlocked] = useState(() => Boolean(readOperatorToken()))
-  const [token, setToken] = useState('')
   const [script, setScript] = useState('')
   const [targetDurationSeconds, setTargetDurationSeconds] = useState(65)
   const [runs, setRuns] = useState<OperatorRun[]>([])
-  const [busy, setBusy] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const markers = useMemo(() => markerCount(script), [script])
   const scriptValid = script.trim().length >= 80 && markers === 5
+  const activeRun = runs.some(run => !['published', 'completed', 'failed'].includes(run.status))
 
   const refresh = useCallback(async (silent = false) => {
-    if (!readOperatorToken()) return
-    if (!silent) setBusy(true)
+    if (!operatorApiConfigured) return
+    if (!silent) setSaving(true)
     try {
       setRuns(await listOperatorRuns())
       setError(null)
-      setUnlocked(true)
     } catch (reason) {
-      const message = reason instanceof Error ? reason.message : String(reason)
-      setError(message)
-      if (!readOperatorToken()) setUnlocked(false)
+      setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
-      if (!silent) setBusy(false)
+      if (!silent) setSaving(false)
     }
   }, [])
 
   useEffect(() => {
-    if (!unlocked) return
     void refresh(true)
-    const timer = window.setInterval(() => void refresh(true), 4_000)
-    return () => window.clearInterval(timer)
-  }, [refresh, unlocked])
-
-  const unlock = async () => {
-    setBusy(true)
-    setError(null)
-    try {
-      saveOperatorToken(token)
-      const nextRuns = await listOperatorRuns()
-      setRuns(nextRuns)
-      setToken('')
-      setUnlocked(true)
-    } catch (reason) {
-      clearOperatorToken()
-      setUnlocked(false)
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setBusy(false)
+    const timer = window.setInterval(() => void refresh(true), activeRun ? 4_000 : 15_000)
+    const onFocus = () => void refresh(true)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
     }
+  }, [activeRun, refresh])
+
+  const updateRun = (run: OperatorRun) => {
+    setRuns(previous => [run, ...previous.filter(entry => entry.runId !== run.runId)])
   }
 
-  const lock = () => {
-    clearOperatorToken()
-    setUnlocked(false)
-    setRuns([])
-    setError(null)
-  }
-
-  const start = async () => {
+  const saveScript = async () => {
     if (!scriptValid) return
-    setBusy(true)
+    setSaving(true)
     setError(null)
     try {
-      const run = await startOperatorRun({ script: script.trim(), targetDurationSeconds })
-      setRuns(previous => [run, ...previous.filter(entry => entry.runId !== run.runId)])
+      updateRun(await startOperatorRun({ script: script.trim(), targetDurationSeconds }))
       setScript('')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
-      setBusy(false)
+      setSaving(false)
+    }
+  }
+
+  const approveScript = async (run: OperatorRun) => {
+    setBusyAction(`script:${run.runId}`)
+    setError(null)
+    try {
+      updateRun(await approveOperatorScript(run))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  const approveVideo = async (run: OperatorRun) => {
+    setBusyAction(`video:${run.runId}`)
+    setError(null)
+    try {
+      updateRun(await approveOperatorVideo(run))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusyAction(null)
     }
   }
 
   if (!operatorApiConfigured) {
-    return <section className="operator-card"><div className="compact-heading"><h2>Neue Produktion</h2><span className="status-badge failed">Offline</span></div></section>
-  }
-
-  if (!unlocked) {
     return <section className="operator-card">
-      <div className="compact-heading"><h2>Neue Produktion</h2><span className="status-badge planned">Gesperrt</span></div>
-      <div className="operator-unlock">
-        <input
-          aria-label="Steuerungsschlüssel"
-          autoComplete="current-password"
-          onChange={event => setToken(event.target.value)}
-          onKeyDown={event => { if (event.key === 'Enter') void unlock() }}
-          placeholder="Steuerungsschlüssel"
-          type="password"
-          value={token}
-        />
-        <button type="button" onClick={() => void unlock()} disabled={busy || !token.trim()}>Öffnen</button>
-      </div>
-      {error && <p className="operator-error">{error}</p>}
+      <div className="compact-heading"><h2>Neue Produktion</h2><span className="status-badge failed">Offline</span></div>
     </section>
   }
 
   return <section className="operator-layout">
     <article className="operator-card">
-      <div className="compact-heading"><h2>Neue Produktion</h2><button className="text-button" type="button" onClick={lock}>Sperren</button></div>
+      <div className="compact-heading"><h2>Neues Skript</h2></div>
       <textarea
         aria-label="Videoskript"
         onChange={event => setScript(event.target.value)}
         placeholder="Skript einfügen …"
-        rows={12}
+        rows={14}
         value={script}
       />
       <div className="operator-controls">
@@ -162,15 +249,29 @@ export default function VideoProductionControl() {
           </select>
         </label>
         <span className={markers === 5 ? 'marker-count valid' : 'marker-count'}>{markers}/5 Auflösungen</span>
-        <button className="primary-action" type="button" onClick={() => void start()} disabled={busy || !scriptValid}>{busy ? 'Bitte warten …' : 'Video starten'}</button>
+        <button className="primary-action" type="button" onClick={() => void saveScript()} disabled={saving || !scriptValid}>
+          {saving ? 'Wird gespeichert …' : 'Skript zur Prüfung speichern'}
+        </button>
       </div>
       {error && <p className="operator-error">{error}</p>}
     </article>
 
     <aside className="operator-card operator-runs">
-      <div className="compact-heading"><h2>Läufe</h2><button className="text-button" type="button" onClick={() => void refresh()} disabled={busy}>↻</button></div>
+      <div className="compact-heading">
+        <h2>Freigaben</h2>
+        <button className="text-button" type="button" onClick={() => void refresh()} disabled={saving}>↻</button>
+      </div>
       <div className="operator-run-list">
-        {runs.length > 0 ? runs.slice(0, 8).map(run => <RunRow key={run.runId} run={run} />) : <p className="compact-empty">Keine Läufe</p>}
+        {runs.length > 0
+          ? runs.slice(0, 8).map((run, index) => <RunCard
+            key={run.runId}
+            run={run}
+            busyAction={busyAction}
+            onApproveScript={approveScript}
+            onApproveVideo={approveVideo}
+            initiallyOpen={index === 0}
+          />)
+          : <p className="compact-empty">Keine Läufe</p>}
       </div>
     </aside>
   </section>
