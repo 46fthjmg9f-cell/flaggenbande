@@ -823,6 +823,59 @@ test('runner performs an explicit local preview revision before resuming the sam
   assert.equal(updates[0].error, null)
 })
 
+test('runner reports a rejected local preview revision at the preview revision step', async t => {
+  const runId = 'video-cdcdcdcdcdcdcdcdcdcdcdcd'
+  let revisionCount = 0
+  let startCount = 0
+  const updates = []
+
+  const local = await listen(async (request, response) => {
+    if (request.method === 'POST' && request.url === `/v1/video-runs/${runId}/revise-preview`) {
+      revisionCount += 1
+      for await (const _chunk of request) {
+        // Drain the request before replying.
+      }
+      response.writeHead(409, { 'content-type': 'application/json' })
+        .end('{"error":"RUN_REVISION_NOT_ALLOWED"}')
+      return
+    }
+    if (request.method === 'POST' && request.url === '/v1/video-runs') startCount += 1
+    response.writeHead(404).end()
+  })
+  t.after(() => local.close())
+
+  const operator = await listen(async (request, response) => {
+    if (request.url === '/v1/runner/claim') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        run: { runId },
+        command: {
+          script,
+          targetDurationSeconds: 65,
+          clientRequestId: 'request-preview-revision-rejected-0001',
+          reworkPreview: true,
+          reworkPreviewRevision: 37,
+        },
+        leaseToken: 'lease-token-cdcdcdcdcdcdcdcdcdcdcdcd',
+      }))
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    updates.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    response.writeHead(200, { 'content-type': 'application/json' }).end('{}')
+  })
+  t.after(() => operator.close())
+
+  const result = await runOnce(config(operator.url, local.url), { singleStatus: true })
+  assert.equal(result, 'failed')
+  assert.equal(revisionCount, 1)
+  assert.equal(startCount, 0)
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].status, 'failed')
+  assert.equal(updates[0].currentStep, 'preview_revision')
+  assert.equal(updates[0].error, 'LOCAL_PREVIEW_REVISION_REJECTED')
+})
+
 test('runner preserves the failed status when the one local retry is rejected', async t => {
   const cloudRunId = 'video-111111111111111111111111'
   const localRunId = 'video-222222222222222222222222'

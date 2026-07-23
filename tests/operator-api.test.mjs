@@ -1302,6 +1302,71 @@ test('operator safely requeues an unapproved preview revision and marks the runn
   )
 })
 
+test('operator safely requeues only exact failed local preview revision states', async () => {
+  const schema = await readFile(schemaUrl, 'utf8')
+  const DB = new D1TestDatabase(schema)
+  const env = {
+    DB,
+    PREVIEWS: new PreviewBucket(),
+    OPERATOR_API_TOKEN: 'operator-token',
+  }
+  const previewSha256 = 'b'.repeat(64)
+
+  for (const [index, currentStep] of ['preview_revision', 'script_validation'].entries()) {
+    const created = await approvedRetryRun(env, `failed-revision-${index + 1}`)
+    DB.database.prepare(`UPDATE operator_production_runs SET
+      status = 'failed', progress = 75, current_step = ?,
+      error_code = 'LOCAL_PREVIEW_REVISION_REJECTED'
+      WHERE run_id = ?`).run(currentStep, created.runId)
+    DB.database.prepare(`UPDATE operator_production_reviews SET
+      preview_object_key = ?, preview_sha256 = ?,
+      preview_size_bytes = 123, preview_content_type = 'video/mp4',
+      quality_gate_passed = 1, monetization_gate_passed = 1,
+      video_revision = 37, video_approval_status = 'pending'
+      WHERE run_id = ?`).run(`previews/failed-${index + 1}.mp4`, previewSha256, created.runId)
+
+    const revisedResponse = await worker.fetch(request(
+      `/v1/runs/${created.runId}/revise-video`,
+      'operator-token',
+      jsonBody({
+        previewSha256,
+        videoRevision: 37,
+        idempotencyKey: `failed-preview-revision-${index + 1}`,
+      }),
+    ), env)
+    assert.equal(revisedResponse.status, 202, currentStep)
+    const revised = await revisedResponse.json()
+    assert.equal(revised.productionStatus, 'queued')
+    assert.equal(revised.currentStep, 'preview_revision')
+    assert.equal(revised.error, null)
+    assert.equal(revised.videoApproval.status, 'pending')
+  }
+
+  const rejected = await approvedRetryRun(env, 'failed-revision-unsafe')
+  DB.database.prepare(`UPDATE operator_production_runs SET
+    status = 'failed', progress = 75, current_step = 'script_validation',
+    error_code = 'LOCAL_INPUT_REJECTED'
+    WHERE run_id = ?`).run(rejected.runId)
+  DB.database.prepare(`UPDATE operator_production_reviews SET
+    preview_object_key = 'previews/unsafe.mp4', preview_sha256 = ?,
+    preview_size_bytes = 123, preview_content_type = 'video/mp4',
+    quality_gate_passed = 1, monetization_gate_passed = 1,
+    video_revision = 37, video_approval_status = 'pending'
+    WHERE run_id = ?`).run(previewSha256, rejected.runId)
+
+  const rejectedResponse = await worker.fetch(request(
+    `/v1/runs/${rejected.runId}/revise-video`,
+    'operator-token',
+    jsonBody({
+      previewSha256,
+      videoRevision: 37,
+      idempotencyKey: 'failed-preview-revision-unsafe',
+    }),
+  ), env)
+  assert.equal(rejectedResponse.status, 409)
+  assert.equal((await rejectedResponse.json()).error, 'VIDEO_REVISION_NOT_ALLOWED')
+})
+
 test('operator rejects retry for non-allowlisted and post-preview steps', async () => {
   for (const [index, currentStep] of ['voice_preparation', 'preview_ready', 'quality_check'].entries()) {
     const schema = await readFile(schemaUrl, 'utf8')

@@ -141,6 +141,16 @@ function RunCard({ run, busyAction, onApproveScript, onApproveVideo, onReviseVid
   const gatesPassed = run.preview.qualityPassed && run.preview.monetizationPassed
   const scriptPending = run.status === 'awaiting_script_approval' && run.script.status === 'pending'
   const videoPending = run.status === 'awaiting_video_approval' && run.videoApproval.status === 'pending'
+  const safelyRevisableFailedPreview = run.status === 'failed' &&
+    (run.currentStep === 'preview_revision' || run.currentStep === 'script_validation') &&
+    run.error === 'LOCAL_PREVIEW_REVISION_REJECTED' &&
+    run.script.status === 'approved' &&
+    run.preview.ready &&
+    gatesPassed &&
+    run.videoApproval.status === 'pending' &&
+    run.release.requestId === null &&
+    run.release.status === null
+  const canReviseVideo = videoPending || safelyRevisableFailedPreview
   const safelyRetryable = run.status === 'failed' &&
     safelyRetryablePreviewSteps.has(run.currentStep ?? '') &&
     run.script.status === 'approved' &&
@@ -150,7 +160,7 @@ function RunCard({ run, busyAction, onApproveScript, onApproveVideo, onReviseVid
     run.release.status === null
   const release = releaseStatus(run)
 
-  return <details className={`operator-run operator-review ${run.status}`} open={initiallyOpen || scriptPending || videoPending}>
+  return <details className={`operator-run operator-review ${run.status}`} open={initiallyOpen || scriptPending || canReviseVideo}>
     <summary>
       <span className="operator-run-label">{runDisplayLabel(run)}</span>
       <strong>{statusLabels[run.status]}</strong>
@@ -204,7 +214,7 @@ function RunCard({ run, busyAction, onApproveScript, onApproveVideo, onReviseVid
       >
         {approvingVideo ? 'Wird freigegeben …' : 'Video freigeben & Veröffentlichung starten'}
       </button>}
-      {videoPending && <button
+      {canReviseVideo && <button
         className="secondary-action"
         type="button"
         onClick={() => void onReviseVideo(run)}
