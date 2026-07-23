@@ -119,6 +119,8 @@ function releaseStatus(run: OperatorRun): string | null {
   return null
 }
 
+const safelyRetryablePreviewSteps = new Set(['flag_selection', 'timeline_build'])
+
 interface RunCardProps {
   run: OperatorRun
   busyAction: string | null
@@ -136,8 +138,13 @@ function RunCard({ run, busyAction, onApproveScript, onApproveVideo, onRetry, in
   const gatesPassed = run.preview.qualityPassed && run.preview.monetizationPassed
   const scriptPending = run.status === 'awaiting_script_approval' && run.script.status === 'pending'
   const videoPending = run.status === 'awaiting_video_approval' && run.videoApproval.status === 'pending'
-  const safelyRetryable = run.status === 'failed' && run.currentStep === 'flag_selection' &&
-    run.script.status === 'approved' && !run.preview.ready
+  const safelyRetryable = run.status === 'failed' &&
+    safelyRetryablePreviewSteps.has(run.currentStep ?? '') &&
+    run.script.status === 'approved' &&
+    !run.preview.ready &&
+    run.videoApproval.status === 'not_ready' &&
+    run.release.requestId === null &&
+    run.release.status === null
   const release = releaseStatus(run)
 
   return <details className={`operator-run operator-review ${run.status}`} open={initiallyOpen || scriptPending || videoPending}>
