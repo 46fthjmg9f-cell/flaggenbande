@@ -458,3 +458,164 @@ test('unreachable local engine leaves the cloud job waiting instead of failing o
   assert.equal(updates[0].status, 'waiting')
   assert.equal(updates[0].error, null)
 })
+
+test('runner retries one matching local flag-selection failure without creating a new run', async t => {
+  const cloudRunId = 'video-dddddddddddddddddddddddd'
+  const localRunId = 'video-eeeeeeeeeeeeeeeeeeeeeeee'
+  let startCount = 0
+  let retryCount = 0
+  const updates = []
+  const failedRun = {
+    runId: localRunId,
+    status: 'failed',
+    progress: 23,
+    currentStep: 'flag_selection',
+    steps: publicSteps(),
+    message: 'Flaggenauswahl fehlgeschlagen.',
+    error: 'PRODUCTION_STEP_FAILED',
+    previewUrl: null,
+  }
+
+  const local = await listen((request, response) => {
+    if (request.method === 'POST' && request.url === '/v1/video-runs') {
+      startCount += 1
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(failedRun))
+      return
+    }
+    if (request.method === 'POST' && request.url === `/v1/video-runs/${localRunId}/retry`) {
+      retryCount += 1
+      response.writeHead(202, { 'content-type': 'application/json' }).end(JSON.stringify({
+        ...failedRun,
+        status: 'queued',
+        message: 'Sicher erneut eingeplant.',
+        error: null,
+      }))
+      return
+    }
+    response.writeHead(404).end()
+  })
+  t.after(() => local.close())
+
+  const operator = await listen(async (request, response) => {
+    if (request.url === '/v1/runner/claim') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        run: { runId: cloudRunId },
+        command: { script, targetDurationSeconds: 65, clientRequestId: 'request-local-retry-0001' },
+        leaseToken: 'lease-token-dddddddddddddddddddddddd',
+      }))
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    updates.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    response.writeHead(200, { 'content-type': 'application/json' }).end('{}')
+  })
+  t.after(() => operator.close())
+
+  const result = await runOnce(config(operator.url, local.url), { singleStatus: true })
+  assert.equal(result, 'queued')
+  assert.equal(startCount, 1)
+  assert.equal(retryCount, 1)
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].status, 'running')
+  assert.equal(updates[0].providerRunId, localRunId)
+  assert.equal(updates[0].error, null)
+})
+
+test('runner preserves the failed status when the one local retry is rejected', async t => {
+  const cloudRunId = 'video-111111111111111111111111'
+  const localRunId = 'video-222222222222222222222222'
+  let retryCount = 0
+  const updates = []
+  const failedRun = {
+    runId: localRunId,
+    status: 'failed',
+    progress: 23,
+    currentStep: 'flag_selection',
+    steps: publicSteps(),
+    message: 'Flaggenauswahl fehlgeschlagen.',
+    error: 'PRODUCTION_STEP_FAILED',
+    previewUrl: null,
+  }
+
+  const local = await listen((request, response) => {
+    if (request.method === 'POST' && request.url === '/v1/video-runs') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(failedRun))
+      return
+    }
+    if (request.method === 'POST' && request.url === `/v1/video-runs/${localRunId}/retry`) {
+      retryCount += 1
+      response.writeHead(409, { 'content-type': 'application/json' }).end('{"error":"RUN_RETRY_NOT_ALLOWED"}')
+      return
+    }
+    response.writeHead(404).end()
+  })
+  t.after(() => local.close())
+
+  const operator = await listen(async (request, response) => {
+    if (request.url === '/v1/runner/claim') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        run: { runId: cloudRunId },
+        command: { script, targetDurationSeconds: 65, clientRequestId: 'request-local-retry-0002' },
+        leaseToken: 'lease-token-111111111111111111111111',
+      }))
+      return
+    }
+    const chunks = []
+    for await (const chunk of request) chunks.push(chunk)
+    updates.push(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    response.writeHead(200, { 'content-type': 'application/json' }).end('{}')
+  })
+  t.after(() => operator.close())
+
+  const result = await runOnce(config(operator.url, local.url), { singleStatus: true })
+  assert.equal(result, 'failed')
+  assert.equal(retryCount, 1)
+  assert.equal(updates.length, 1)
+  assert.equal(updates[0].status, 'failed')
+  assert.equal(updates[0].providerRunId, localRunId)
+  assert.equal(updates[0].error, 'PRODUCTION_STEP_FAILED')
+})
+
+test('runner never retries a local failure outside the safe flag-selection step', async t => {
+  const runId = 'video-333333333333333333333333'
+  let retryCount = 0
+  const local = await listen((request, response) => {
+    if (request.method === 'POST' && request.url === '/v1/video-runs') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        runId,
+        status: 'failed',
+        progress: 77,
+        currentStep: 'render',
+        steps: publicSteps(),
+        message: 'Render fehlgeschlagen.',
+        error: 'PRODUCTION_STEP_FAILED',
+        previewUrl: null,
+      }))
+      return
+    }
+    if (request.method === 'POST' && request.url.includes('/retry')) retryCount += 1
+    response.writeHead(404).end()
+  })
+  t.after(() => local.close())
+
+  const operator = await listen(async (request, response) => {
+    if (request.url === '/v1/runner/claim') {
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        run: { runId },
+        command: { script, targetDurationSeconds: 65, clientRequestId: 'request-local-retry-0003' },
+        leaseToken: 'lease-token-333333333333333333333333',
+      }))
+      return
+    }
+    for await (const _chunk of request) {
+      // Drain the request before replying.
+    }
+    response.writeHead(200, { 'content-type': 'application/json' }).end('{}')
+  })
+  t.after(() => operator.close())
+
+  const result = await runOnce(config(operator.url, local.url), { singleStatus: true })
+  assert.equal(result, 'failed')
+  assert.equal(retryCount, 0)
+})
