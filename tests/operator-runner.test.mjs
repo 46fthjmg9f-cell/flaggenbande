@@ -128,7 +128,7 @@ const script = [
   '(auflösung)',
   'okay hier geht was, welches land ist hier?',
   '(auflösung)',
-  'crazy, lad dir flink die flaggenbande app runter, sag an?',
+  'crazy, ab hier trennt sich glück von echter ahnung, sag an?',
   '(auflösung)',
   'ready fürs große finale, welche flagge ist das?',
   '(auflösung)',

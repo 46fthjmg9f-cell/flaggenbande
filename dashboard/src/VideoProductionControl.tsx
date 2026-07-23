@@ -185,7 +185,7 @@ export default function VideoProductionControl() {
   const words = useMemo(() => spokenWordCount(script), [script])
   const brandMentions = useMemo(() => brandMentionCount(script), [script])
   const minimumWords = roundCount === 5 ? 90 : 70
-  const brandValid = roundCount === 5 ? brandMentions === 1 : brandMentions === 0
+  const brandValid = brandMentions === 0
   const scriptValid = script.trim().length >= 80 &&
     markers === roundCount &&
     words >= minimumWords &&
@@ -376,7 +376,7 @@ export default function VideoProductionControl() {
         <span className={markers === roundCount ? 'marker-count valid' : 'marker-count'}>{markers}/{roundCount} Auflösungen</span>
         <span className={words >= minimumWords ? 'marker-count valid' : 'marker-count'}>{words}/{minimumWords} Wörter</span>
         <span className={brandValid ? 'marker-count valid' : 'marker-count'}>
-          {roundCount === 5 ? `${brandMentions}/1 Flaggenbande` : brandMentions === 0 ? 'organisch' : 'ohne App-Nennung'}
+          {brandValid ? 'keine App-Nennung' : 'App-Nennung entfernen'}
         </span>
         <button className="primary-action" type="button" onClick={() => void saveScript()} disabled={saving || !scriptValid}>
           {saving ? 'Wird gespeichert …' : 'Skript zur Prüfung speichern'}

@@ -279,6 +279,13 @@ test('script drafts are editable, do not start production and only approved huma
   assert.equal(draft.suggestedDurationSeconds, 64)
   assert.equal(draft.styleExampleCount, 1)
   assert.equal(draft.script.match(/^\(auflösung\)$/gmu)?.length, 5)
+  assert.doesNotMatch(draft.script, /\bflaggenbande\b/iu)
+  assert.equal(
+    DB.database.prepare(
+      "SELECT COUNT(*) AS count FROM operator_script_style_examples WHERE instr(lower(script), 'flaggenbande') > 0",
+    ).get().count,
+    0,
+  )
   assert.equal(DB.database.prepare('SELECT COUNT(*) AS count FROM operator_production_runs').get().count, 0)
 
   const generatedRunResponse = await worker.fetch(request('/v1/runs', 'operator-token', jsonBody({
@@ -381,7 +388,7 @@ test('one learned style example still produces hundreds of valid distinct drafts
     '(auflösung)',
     'crazy, der bre hat ahnung. jetzt wird es knifflig: welches land gehört zu dieser flagge?',
     '(auflösung)',
-    'drei von drei wäre stark. kurzer zwischenstand: mit Flaggenbande trainierst du genau solche flaggenrunden. bereit fürs halbfinale, welches land ist das?',
+    'drei von drei wäre stark. ab hier trennt sich glück von echter ahnung. bereit fürs halbfinale, welches land ist das?',
     '(auflösung)',
     'junge, vielleicht ist hier wirklich der flaggenboss am start. letzte runde, mann oder maus: welche flagge siehst du?',
     '(auflösung)',
@@ -396,9 +403,13 @@ test('one learned style example still produces hundreds of valid distinct drafts
       requestSeed: `scale-contract-${String(index).padStart(4, '0')}`,
     }, [approvedStyle])
     assert.equal(validateScriptProfile(generated.script, 5, 64).valid, true)
+    assert.doesNotMatch(generated.script, /\bflaggenbande\b/iu)
     scripts.add(generated.script)
   }
   assert.ok(scripts.size >= 240, `only ${scripts.size} distinct drafts generated`)
+  const forbiddenBrand = validateScriptProfile(`${approvedStyle}\nFlaggenbande`, 5, 64)
+  assert.equal(forbiddenBrand.valid, false)
+  assert.ok(forbiddenBrand.issues.includes('BRAND_MENTION_FORBIDDEN'))
 })
 
 test('research recommendations expose coverage and only use linked retention when sample size is sufficient', async () => {
@@ -489,7 +500,7 @@ test('two-stage approvals are hash-bound, idempotent and release exactly once', 
     '(auflösung)',
     'crazy, der bre hat ahnung. jetzt wird es knifflig: welches land gehört zu dieser flagge?',
     '(auflösung)',
-    'drei von drei wäre stark. kurzer zwischenstand: mit Flaggenbande trainierst du genau solche flaggenrunden. bereit fürs halbfinale, welches land ist das?',
+    'drei von drei wäre stark. ab hier trennt sich glück von echter ahnung. bereit fürs halbfinale, welches land ist das?',
     '(auflösung)',
     'junge, vielleicht ist hier wirklich der flaggenboss am start. letzte runde, mann oder maus: welche flagge siehst du?',
     '(auflösung)',
