@@ -2594,6 +2594,21 @@ const preflight = (origin: string): Response => {
   return new Response(null, { status: 204, headers });
 };
 
+const serveDashboardAsset = async (request: Request, env: Env): Promise<Response | null> => {
+  if (!env.ASSETS) return null;
+  const response = await env.ASSETS.fetch(request);
+  const contentType = response.headers.get("content-type")?.toLocaleLowerCase("en") ?? "";
+  if (!contentType.includes("text/html")) return response;
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "no-store, max-age=0, must-revalidate");
+  headers.set("pragma", "no-cache");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+};
+
 const operatorAuthorized = async (request: Request, env: Env): Promise<boolean> =>
   await hasBearer(request, [env.OPERATOR_API_TOKEN, env.OPERATOR_API_TOKEN_SECONDARY]) ||
   await hasCloudflareAccessJwt(request, env);
@@ -2693,7 +2708,7 @@ const handle = async (request: Request, env: Env): Promise<Response> => {
   const dashboardData = await serveCurrentDashboardData(request, env, origin);
   if (dashboardData) return dashboardData;
   if (request.method === "GET" && env.ASSETS && !url.pathname.startsWith("/v1/")) {
-    return env.ASSETS.fetch(request);
+    return await serveDashboardAsset(request, env) ?? errorResponse("NOT_FOUND", 404, origin);
   }
   return errorResponse("NOT_FOUND", 404, origin);
 };

@@ -125,6 +125,23 @@ test('worker serves current hourly dashboard data and keeps a static fallback', 
   assert.deepEqual(await fallback.json(), { generatedAt: 'static' })
 })
 
+test('worker never lets the dashboard HTML remain stale after a deployment', async () => {
+  const response = await worker.fetch(request('/', 'operator-token'), {
+    OPERATOR_API_TOKEN: 'operator-token',
+    ASSETS: {
+      fetch: async () => new Response('<!doctype html><title>Dashboard</title>', {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'public, max-age=14400',
+        },
+      }),
+    },
+  })
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('cache-control'), 'no-store, max-age=0, must-revalidate')
+  assert.equal(response.headers.get('pragma'), 'no-cache')
+})
+
 test('worker rejects invalid or incomplete live dashboard data and uses the static fallback', async () => {
   const staticAsset = new Response('{"generatedAt":"safe-static"}\n', {
     status: 200,
