@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import test from 'node:test'
+
+const componentUrl = new URL('../src/VideoProductionControl.tsx', import.meta.url)
+const stylesUrl = new URL('../src/styles.css', import.meta.url)
+
+test('production control exposes five through ten resolutions with adaptive targets', async () => {
+  const source = await readFile(componentUrl, 'utf8')
+
+  assert.match(source, /supportedRoundCounts\.map/u)
+  assert.match(source, /recommendedTargetDuration\(value/u)
+  assert.match(source, /minimumSpokenWordsForRounds\(roundCount/u)
+  assert.match(source, /durationOptionsForRounds\(roundCount/u)
+  assert.match(source, /brandValid = brandMentions === 0/u)
+  assert.doesNotMatch(source, /brandMentions === 1/u)
+  assert.doesNotMatch(source, /function markerCount/u)
+  assert.match(source, /validateScriptProfile\(script, roundCount, targetDurationSeconds\)/u)
+  assert.match(source, /isProductionRoundCount\(roundCount\)/u)
+  assert.match(source, /Produktion aktuell nur 5 oder 7/u)
+  assert.match(source, /!scriptValid \|\| !productionRoundCountSupported/u)
+})
+
+test('retention status never claims a measured curve without measurement points', async () => {
+  const [source, styles] = await Promise.all([
+    readFile(componentUrl, 'utf8'),
+    readFile(stylesUrl, 'utf8'),
+  ])
+
+  for (const status of ['measured', 'aggregate_only', 'pending', 'unavailable']) {
+    assert.match(source, new RegExp(`['"]${status}['"]`, 'u'))
+  }
+  assert.match(source, /if \(readiness\.retentionVideos > 0\)/u)
+  assert.match(source, /if \(readiness\.averageViewPercentageVideos > 0\)/u)
+  assert.match(source, /ohne Retention-Kurve/u)
+  assert.doesNotMatch(source, />available</iu)
+  assert.match(styles, /\.retention-status\.measured/u)
+  assert.match(styles, /\.retention-status\.aggregate_only/u)
+  assert.match(styles, /\.retention-status\.pending/u)
+  assert.match(styles, /\.retention-status\.unavailable/u)
+})
+
+test('research wording cards show evidence sample and only supplied deltas', async () => {
+  const source = await readFile(componentUrl, 'utf8')
+
+  assert.match(source, /n=\{recommendation\.sampleSize\}/u)
+  assert.match(source, /Δ \{delta \?\? '—'\}/u)
+  assert.match(source, /recommendation\.action/u)
+  assert.match(source, /Noch keine belastbare Formulierungsempfehlung/u)
+})

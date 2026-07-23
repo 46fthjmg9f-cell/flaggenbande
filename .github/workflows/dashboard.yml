@@ -10,11 +10,13 @@ on:
       - 'dashboard/**'
       - 'cloud/operator-api/**'
       - 'scripts/operator-runner.mjs'
+      - 'scripts/operator-analysis-manifest.mjs'
       - 'scripts/collect-dashboard-data.mjs'
       - 'scripts/collect-content-operations.mjs'
       - 'scripts/social-platforms.mjs'
       - 'tests/content-operations-feed.test.mjs'
       - 'tests/social-platforms.test.mjs'
+      - 'tests/operator-analysis-manifest.test.mjs'
       - 'tests/apple-sales.test.mjs'
       - '.github/workflows/dashboard.yml'
 
@@ -37,7 +39,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: dashboard/package-lock.json }
       - name: Verify dashboard collectors
-        run: node --test tests/social-platforms.test.mjs tests/content-operations-feed.test.mjs tests/apple-sales.test.mjs
+        run: node --test tests/social-platforms.test.mjs tests/content-operations-feed.test.mjs tests/apple-sales.test.mjs tests/operator-analysis-manifest.test.mjs
+      - name: Verify operator and research contracts
+        run: npm run operator:test
       - name: Collect and aggregate private source data
         env:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}

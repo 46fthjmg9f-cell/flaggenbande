@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  durationOptionsForRounds,
   hasQuizPrompt,
+  minimumSpokenWordsForRounds,
+  isProductionRoundCount,
+  productionRoundCounts,
+  recommendedTargetDuration,
   scriptProfileIssueMessage,
+  supportedRoundCounts,
   validateScriptProfile,
 } from '../../shared/scriptProfileValidation.ts'
 
@@ -39,4 +45,34 @@ test('script profile reports the exact round with a missing prompt', () => {
   const issue = validation.details.find(entry => entry.code === 'QUESTION_PROMPT_MISSING')
   assert.equal(issue?.roundIndex, 2)
   assert.match(scriptProfileIssueMessage(issue), /Runde 2/u)
+})
+
+test('shared profile supports every production round count from five through ten', () => {
+  assert.deepEqual(supportedRoundCounts, [5, 6, 7, 8, 9, 10])
+
+  for (const roundCount of supportedRoundCounts) {
+    const questions = Array.from(
+      { length: roundCount },
+      (_, index) => `Runde ${index + 1}: Welche Flagge ist das? Weißt du die Antwort wirklich sicher?`,
+    )
+    const ending = [
+      'Stark gespielt, du warst bis zum Ende dabei und hast jede Runde konzentriert beantwortet.',
+      'Schreib ehrlich in die Kommentare, wie viele Flaggen du wirklich erkannt hast.',
+      'Welche Runde war für dich am schwersten?',
+    ].join(' ')
+    const script = `${questions.join('\n(auflösung)\n')}\n(auflösung)\n${ending}`
+    const validation = validateScriptProfile(script, roundCount, recommendedTargetDuration(roundCount))
+
+    assert.equal(validation.revealCount, roundCount)
+    assert.ok(validation.spokenWordCount >= minimumSpokenWordsForRounds(roundCount))
+    assert.equal(validation.valid, true, `${roundCount}: ${validation.issues.join(', ')}`)
+    assert.ok(durationOptionsForRounds(roundCount).includes(recommendedTargetDuration(roundCount)))
+  }
+})
+
+test('production adapters stay explicitly limited to five and seven rounds', () => {
+  assert.deepEqual(productionRoundCounts, [5, 7])
+  for (const roundCount of supportedRoundCounts) {
+    assert.equal(isProductionRoundCount(roundCount), roundCount === 5 || roundCount === 7)
+  }
 })

@@ -1,4 +1,5 @@
 import {
+  hasQuizPrompt,
   normalizeQuizScript,
   validateScriptProfile,
   type SupportedRoundCount,
@@ -12,6 +13,45 @@ export {
   type SupportedRoundCount,
 } from "../../../shared/scriptProfileValidation.ts";
 
+export type ScriptPhraseType =
+  | "hook"
+  | "question"
+  | "reveal"
+  | "reaction"
+  | "transition"
+  | "cta";
+
+export interface ScriptPhrase {
+  readonly phraseId: string;
+  readonly formulationKey: string;
+  readonly type: ScriptPhraseType;
+  readonly text: string;
+  readonly round: number | null;
+  readonly position: number;
+  readonly startSeconds: number | null;
+  readonly endSeconds: number | null;
+  readonly solutionCountry: string | null;
+  readonly solutionCountryCode: string | null;
+}
+
+export interface ScriptRound {
+  readonly round: number;
+  readonly phraseIds: readonly string[];
+  readonly questionPhraseId: string | null;
+  readonly revealPhraseId: string;
+  readonly solutionCountry: string | null;
+  readonly solutionCountryCode: string | null;
+  readonly flagShownAtSeconds: number | null;
+  readonly revealAtSeconds: number | null;
+}
+
+export interface ScriptPhraseTimeline {
+  readonly schemaVersion: "1.0.0";
+  readonly roundCount: SupportedRoundCount;
+  readonly phrases: readonly ScriptPhrase[];
+  readonly rounds: readonly ScriptRound[];
+}
+
 export interface ScriptDraftRequest {
   readonly roundCount: SupportedRoundCount;
   readonly targetDurationSeconds: number;
@@ -23,6 +63,7 @@ export interface ScriptDraftResult {
   readonly script: string;
   readonly learnedSignals: readonly string[];
   readonly generatorVersion: string;
+  readonly phrases: ScriptPhraseTimeline;
 }
 
 export interface ResearchRecommendation {
@@ -38,26 +79,57 @@ export interface ResearchRecommendation {
   readonly autoApplicable: false;
 }
 
+export type RetentionDataStatus =
+  | "measured"
+  | "aggregate_only"
+  | "pending"
+  | "unavailable";
+
+export interface ResearchPhraseEvaluation {
+  readonly formulationKey: string;
+  readonly phraseType: ScriptPhraseType;
+  readonly formulation: string;
+  readonly sampleSize: number;
+  readonly videoCount: number;
+  readonly medianEntryRetention: number;
+  readonly medianExitRetention: number;
+  readonly medianDeltaPercentagePoints: number;
+  readonly evidenceLevel: "measured";
+  readonly confidence: "low" | "medium" | "high";
+  readonly causalInference: false;
+}
+
 export interface ResearchRecommendationFeed {
-  readonly schemaVersion: "1.0.0";
+  readonly schemaVersion: "1.1.0";
   readonly generatedAt: string;
   readonly dataReadiness: {
     readonly status: "ready" | "insufficient";
+    readonly retentionStatus: RetentionDataStatus;
     readonly platformVideoCount: number;
     readonly linkedYoutubeVideos: number;
     readonly retentionVideos: number;
     readonly averageViewPercentageVideos: number;
+    readonly phraseTimelineVideos: number;
+    readonly phraseRetentionVideos: number;
     readonly minimumComparableVideos: number;
     readonly message: string;
   };
   readonly recommendations: readonly ResearchRecommendation[];
+  readonly phraseEvaluations: readonly ResearchPhraseEvaluation[];
 }
 
-export const SCRIPT_GENERATOR_VERSION = "creator-style-organic-v5";
+export const SCRIPT_GENERATOR_VERSION = "creator-style-organic-v6";
 export const DEFAULT_TARGET_DURATION: Readonly<Record<SupportedRoundCount, number>> = {
   5: 64,
+  6: 66,
   7: 69,
+  8: 69,
+  9: 70,
+  10: 70,
 };
+
+export const isSupportedRoundCount = (value: number): value is SupportedRoundCount =>
+  Number.isInteger(value) && value >= 5 && value <= 10;
 
 const hashSeed = (value: string): number => {
   let hash = 2_166_136_261;
@@ -120,6 +192,160 @@ const learnedStyleSignals = (examples: readonly string[]): readonly string[] => 
 
 const normalizeScript = (script: string): string => normalizeQuizScript(script);
 
+const normalizeFormulation = (text: string): string => text
+  .normalize("NFC")
+  .toLocaleLowerCase("de")
+  .replace(/[^\p{L}\p{N}]+/gu, " ")
+  .trim();
+
+const formulationKey = (type: ScriptPhraseType, text: string): string => {
+  const source = `${type}:${normalizeFormulation(text)}`;
+  const first = hashSeed(source).toString(16).padStart(8, "0");
+  const second = hashSeed(`formulation:${source}`).toString(16).padStart(8, "0");
+  return `formulation-${first}${second}`;
+};
+
+const splitQuestionSuffix = (text: string): readonly string[] => {
+  if (!text.endsWith("?")) return [text];
+  const match = text.match(
+    /(?:^|[,:;]\s+)((?:welche|welcher|welches|welchem|was|wie|wer|wo|zu welchem|name|sag|wei(?:ß|ss)t)[^?]*\?)$/iu,
+  );
+  if (!match || match.index === undefined || match.index === 0) return [text];
+  const question = match[1]?.trim() ?? "";
+  const prefix = text.slice(0, match.index + (text[match.index] === "," ||
+      text[match.index] === ":" || text[match.index] === ";" ? 1 : 0)).trim();
+  return prefix && question ? [prefix, question] : [text];
+};
+
+const splitSpokenPhrases = (text: string): readonly string[] =>
+  (text.match(/[^.!?]+[.!?]+|[^.!?]+$/gu) ?? [])
+    .map((phrase) => phrase.trim())
+    .filter(Boolean)
+    .flatMap(splitQuestionSuffix);
+
+const ctaPattern =
+  /\b(?:kommentar|kommis|schreib|score|punktzahl|like|liken|folge|folgen)\b/iu;
+
+const phraseSlotId = (
+  round: number | null,
+  type: ScriptPhraseType,
+  ordinal: number,
+  text: string,
+): string => {
+  const roundSlot = round === null ? "global" : `r${String(round).padStart(2, "0")}`;
+  const textKey = formulationKey(type, text).slice(-6);
+  return `phrase-${roundSlot}-${type}-${String(ordinal).padStart(2, "0")}-${textKey}`;
+};
+
+/**
+ * Converts the human-readable script into deterministic phrase and round slots.
+ *
+ * Timings and solutions intentionally start as null. The production worker can
+ * fill them from word timestamps and the selected flag without changing phrase
+ * identity. formulationKey stays identical when the same wording is reused in
+ * another video, enabling cross-video retention comparisons.
+ */
+export const extractScriptPhrases = (
+  scriptInput: string,
+  roundCount: SupportedRoundCount,
+): ScriptPhraseTimeline => {
+  if (!isSupportedRoundCount(roundCount)) {
+    throw new Error("UNSUPPORTED_ROUND_COUNT");
+  }
+  const lines = normalizeScript(scriptInput).split("\n");
+  const revealCount = lines.filter((line) => line === "(auflösung)").length;
+  if (revealCount !== roundCount) {
+    throw new Error("ROUND_COUNT_MISMATCH");
+  }
+
+  const phrases: ScriptPhrase[] = [];
+  const phraseOrdinals = new Map<string, number>();
+  let nextRound = 1;
+  let lastRevealRound: number | null = null;
+  let hasQuestion = false;
+
+  const append = (
+    type: ScriptPhraseType,
+    text: string,
+    round: number | null,
+  ): ScriptPhrase => {
+    const slot = `${round ?? "global"}:${type}`;
+    const ordinal = (phraseOrdinals.get(slot) ?? 0) + 1;
+    phraseOrdinals.set(slot, ordinal);
+    const phrase: ScriptPhrase = {
+      phraseId: phraseSlotId(round, type, ordinal, text),
+      formulationKey: formulationKey(type, text),
+      type,
+      text,
+      round,
+      position: phrases.length,
+      startSeconds: null,
+      endSeconds: null,
+      solutionCountry: null,
+      solutionCountryCode: null,
+    };
+    phrases.push(phrase);
+    return phrase;
+  };
+
+  for (const line of lines) {
+    if (line === "(auflösung)") {
+      append("reveal", line, nextRound);
+      lastRevealRound = nextRound;
+      nextRound += 1;
+      continue;
+    }
+    for (const text of splitSpokenPhrases(line)) {
+      const question = hasQuizPrompt(text);
+      if (question) {
+        append("question", text, Math.min(nextRound, roundCount));
+        hasQuestion = true;
+        lastRevealRound = null;
+        continue;
+      }
+      if (ctaPattern.test(text)) {
+        append("cta", text, Math.min(lastRevealRound ?? nextRound, roundCount));
+        lastRevealRound = null;
+        continue;
+      }
+      if (!hasQuestion && nextRound === 1) {
+        append("hook", text, 1);
+        continue;
+      }
+      if (lastRevealRound !== null) {
+        append("reaction", text, lastRevealRound);
+        lastRevealRound = null;
+        continue;
+      }
+      append("transition", text, Math.min(nextRound, roundCount));
+    }
+  }
+
+  const rounds: ScriptRound[] = Array.from({ length: roundCount }, (_, index) => {
+    const round = index + 1;
+    const roundPhrases = phrases.filter((phrase) => phrase.round === round);
+    const reveal = roundPhrases.find((phrase) => phrase.type === "reveal");
+    if (!reveal) throw new Error("REVEAL_PHRASE_MISSING");
+    return {
+      round,
+      phraseIds: roundPhrases.map((phrase) => phrase.phraseId),
+      questionPhraseId: roundPhrases.find((phrase) => phrase.type === "question")?.phraseId ?? null,
+      revealPhraseId: reveal.phraseId,
+      solutionCountry: null,
+      solutionCountryCode: null,
+      flagShownAtSeconds: null,
+      revealAtSeconds: null,
+    };
+  });
+
+  return {
+    schemaVersion: "1.0.0",
+    roundCount,
+    phrases,
+    rounds,
+  };
+};
+
 const styleSegments = (
   script: string,
   roundCount: SupportedRoundCount,
@@ -153,7 +379,9 @@ const remixApprovedStyle = (
     const candidates = templates
       .map((template) => template[index] as string)
       .filter((candidate) => !/\bflaggenbande\b/iu.test(candidate));
-    return candidates.length > 0 ? choose(candidates, seed, index + 1) : segment;
+    return candidates.length > 0
+      ? choose(candidates, seed, index + 1)
+      : fallback[index] as string;
   });
   // Mindestens ein Segment stammt bewusst aus dem validierten Generator.
   // So bleibt der freigegebene Creator-Stil klar erkennbar, ohne ein einzelnes
@@ -285,6 +513,60 @@ const generateSevenRoundScript = (
   ].join("\n");
 };
 
+const generateVariableRoundScript = (
+  roundCount: SupportedRoundCount,
+  seed: number,
+  signals: readonly string[],
+  recommendationId: string | null,
+): string => {
+  const hype = interjection(signals, ["crazy", "stabil", "sauber"], seed, 1);
+  const address = signals.includes("bre") ? "bre" : signals.includes("junge") ? "junge" : "Chef";
+  const questions = [
+    "Fängt noch locker an: Welches Land ist das?",
+    "Nicht zu früh feiern. Wie schaut es bei dieser Flagge aus?",
+    "Ab jetzt wird es knifflig: Welches Land gehört zu dieser Flagge?",
+    "Bleib fokussiert: Welche Flagge siehst du?",
+    "Jetzt zählt Ahnung. Zu welchem Land gehört diese Flagge?",
+    "Die Runde wird kernig: Wie lautet deine Antwort?",
+    "Fast niemand bleibt hier sauber: Welches Land ist das?",
+    "Boss-Modus: Welche Flagge siehst du?",
+    "Kein Raten mehr: Zu welchem Land gehört diese Flagge?",
+    "Finale, Mann oder Maus: Welches Land ist das?",
+  ] as const;
+  const reactions = [
+    `${hype}! Eins von eins.`,
+    `Okay ${address}, hier geht was.`,
+    "Sauber, aber die Schwierigkeit zieht jetzt an.",
+    "Stark geblieben, die nächste wirft viele raus.",
+    `${hype}, noch bist du perfekt unterwegs.`,
+    "Nicht schlecht, ab hier zählt echte Flaggenahnung.",
+    `Okay ${address}, jetzt kommt Druck.`,
+    "Komplett wild, nur noch zwei.",
+    "Eine einzige Flagge fehlt noch.",
+    "Ansage! Schreib ehrlich in die Kommentare, wie viele du erkannt hast.",
+  ] as const;
+  const opener = recommendationId === "first-reveal-delay-v1"
+    ? `SCHNELLE FLAGGENRUNDE! ${questions[0]}`
+    : choose([
+        `BINGOBANGOFLAGGENQUIZ! ${roundCount} Flaggen, eine davon wird komplett wild. ${questions[0]}`,
+        `CHECK DAS MAL AUS, schnelle Flaggenrunde! ${roundCount} Flaggen bis zum Boss-Level. ${questions[0]}`,
+        `WAS LÄUFT WAS LÄUFT, ${roundCount} Flaggen und kein Zurück. ${questions[0]}`,
+      ], seed, 0);
+  const lines = [opener, "(auflösung)"];
+  for (let index = 0; index < roundCount; index += 1) {
+    const finalRound = index === roundCount - 1;
+    if (finalRound) {
+      lines.push(reactions.at(-1) as string);
+      break;
+    }
+    const transition = recommendationId === "difficulty-ladder-visibility-v1"
+      ? `Stufe ${String(index + 2)}.`
+      : reactions[index] ?? reactions[reactions.length - 2];
+    lines.push(`${transition} ${questions[index + 1]}`, "(auflösung)");
+  }
+  return lines.join("\n");
+};
+
 export const generateScriptDraft = (
   request: ScriptDraftRequest,
   styleExamples: readonly string[],
@@ -293,10 +575,22 @@ export const generateScriptDraft = (
   const seed = hashSeed(`${request.requestSeed}:${request.roundCount}:${request.recommendationId ?? "baseline"}`);
   const fallback = request.roundCount === 5
     ? generateFiveRoundScript(seed, learnedSignals, request.recommendationId)
-    : generateSevenRoundScript(seed, learnedSignals, request.recommendationId);
+    : request.roundCount === 7
+      ? generateSevenRoundScript(seed, learnedSignals, request.recommendationId)
+      : generateVariableRoundScript(
+          request.roundCount,
+          seed,
+          learnedSignals,
+          request.recommendationId,
+        );
   const remixed = remixApprovedStyle(styleExamples, fallback, request, seed);
   const script = addCreatorStyleVariation(remixed ?? fallback, request, seed);
-  return { script, learnedSignals, generatorVersion: SCRIPT_GENERATOR_VERSION };
+  return {
+    script,
+    learnedSignals,
+    generatorVersion: SCRIPT_GENERATOR_VERSION,
+    phrases: extractScriptPhrases(script, request.roundCount),
+  };
 };
 
 const record = (value: unknown): Record<string, unknown> | null =>
@@ -366,18 +660,37 @@ const retentionAt = (
   durationSeconds: number,
   elapsedSeconds: number,
 ): number | null => {
-  if (durationSeconds <= 0 || retention.length === 0) return null;
-  const target = Math.min(1, elapsedSeconds / durationSeconds);
+  if (
+    durationSeconds <= 0 ||
+    elapsedSeconds < 0 ||
+    elapsedSeconds > durationSeconds ||
+    retention.length === 0
+  ) return null;
+  const target = elapsedSeconds / durationSeconds;
   const points = retention.flatMap((entry) => {
     const point = record(entry);
     const elapsed = finiteNumber(point?.elapsedVideoTimeRatio);
     const ratio = finiteNumber(point?.audienceWatchRatio);
-    return elapsed === null || ratio === null ? [] : [{ elapsed, ratio }];
-  });
+    return (
+      elapsed === null ||
+      ratio === null ||
+      elapsed < 0 ||
+      elapsed > 1 ||
+      ratio < 0
+    ) ? [] : [{ elapsed, ratio }];
+  }).sort((left, right) => left.elapsed - right.elapsed);
   if (points.length === 0) return null;
-  return points.reduce((closest, point) =>
-    Math.abs(point.elapsed - target) < Math.abs(closest.elapsed - target) ? point : closest
-  ).ratio;
+  const exact = points.find((point) => point.elapsed === target);
+  if (exact) return exact.ratio;
+  const rightIndex = points.findIndex((point) => point.elapsed > target);
+  // A point outside the measured interval is unknown. Returning the nearest
+  // endpoint here would turn a partial curve into invented 3-second retention.
+  if (rightIndex <= 0) return null;
+  const left = points[rightIndex - 1];
+  const right = points[rightIndex];
+  if (!left || !right || right.elapsed === left.elapsed) return null;
+  const fraction = (target - left.elapsed) / (right.elapsed - left.elapsed);
+  return left.ratio + (right.ratio - left.ratio) * fraction;
 };
 
 const median = (values: readonly number[]): number | null => {
@@ -389,10 +702,183 @@ const median = (values: readonly number[]): number | null => {
     : ordered[middle] as number;
 };
 
+const roundedMetric = (value: number, decimals = 6): number => {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+};
+
+interface PhraseTimelineEntry {
+  readonly contentId: string;
+  readonly phrases: readonly Record<string, unknown>[];
+}
+
+const supportedPhraseTypes = new Set<ScriptPhraseType>([
+  "hook",
+  "question",
+  "reveal",
+  "reaction",
+  "transition",
+  "cta",
+]);
+
+const phraseTimelineEntries = (value: unknown): readonly PhraseTimelineEntry[] => {
+  const root = record(value);
+  const candidates = Array.isArray(value)
+    ? value
+    : Array.isArray(root?.timelines)
+      ? root.timelines
+      : Array.isArray(root?.items)
+        ? root.items
+        : Array.isArray(root?.videos)
+          ? root.videos
+          : [];
+  return candidates.flatMap((candidate) => {
+    const entry = record(candidate);
+    const contentId = typeof entry?.contentId === "string" ? entry.contentId.trim() : "";
+    const nestedTimeline = record(entry?.timeline);
+    const phrases = Array.isArray(entry?.phrases)
+      ? entry.phrases
+      : Array.isArray(nestedTimeline?.phrases)
+        ? nestedTimeline.phrases
+        : [];
+    if (!/^flaggenbande-[a-f0-9]{64}$/u.test(contentId) || phrases.length === 0) return [];
+    return [{
+      contentId,
+      phrases: phrases.flatMap((phrase) => {
+        const parsed = record(phrase);
+        return parsed ? [parsed] : [];
+      }),
+    }];
+  });
+};
+
+interface PhraseRetentionObservation {
+  readonly formulationKey: string;
+  readonly phraseType: ScriptPhraseType;
+  readonly formulation: string;
+  readonly contentId: string;
+  readonly entryRetention: number;
+  readonly exitRetention: number;
+  readonly deltaPercentagePoints: number;
+}
+
+const phraseRetentionObservations = (
+  linkedVideos: readonly Record<string, unknown>[],
+  phraseTimelines: unknown,
+): readonly PhraseRetentionObservation[] => {
+  const videosByContentId = new Map(
+    linkedVideos.flatMap((video) => {
+      const contentId = typeof video.contentId === "string" ? video.contentId.trim() : "";
+      const durationSeconds = finiteNumber(video.durationSeconds);
+      const retention = Array.isArray(video.retention) ? video.retention : [];
+      return (
+        /^flaggenbande-[a-f0-9]{64}$/u.test(contentId) &&
+        durationSeconds !== null &&
+        durationSeconds > 0 &&
+        retention.length > 0
+      ) ? [[contentId, { durationSeconds, retention }] as const] : [];
+    }),
+  );
+  return phraseTimelineEntries(phraseTimelines).flatMap((timeline) => {
+    const video = videosByContentId.get(timeline.contentId);
+    if (!video) return [];
+    return timeline.phrases.flatMap((phrase) => {
+      const formulationKey = typeof phrase.formulationKey === "string"
+        ? phrase.formulationKey.trim()
+        : "";
+      const formulation = typeof phrase.text === "string" ? phrase.text.trim() : "";
+      const phraseType = typeof phrase.type === "string" && supportedPhraseTypes.has(
+          phrase.type as ScriptPhraseType,
+        )
+        ? phrase.type as ScriptPhraseType
+        : null;
+      const startSeconds = finiteNumber(phrase.startSeconds);
+      const endSeconds = finiteNumber(phrase.endSeconds);
+      if (
+        formulationKey === "" ||
+        formulation === "" ||
+        phraseType === null ||
+        startSeconds === null ||
+        endSeconds === null ||
+        startSeconds < 0 ||
+        endSeconds <= startSeconds ||
+        endSeconds > video.durationSeconds
+      ) return [];
+      const entryRetention = retentionAt(video.retention, video.durationSeconds, startSeconds);
+      const exitRetention = retentionAt(video.retention, video.durationSeconds, endSeconds);
+      if (entryRetention === null || exitRetention === null) return [];
+      return [{
+        formulationKey,
+        phraseType,
+        formulation,
+        contentId: timeline.contentId,
+        entryRetention,
+        exitRetention,
+        deltaPercentagePoints: (exitRetention - entryRetention) * 100,
+      }];
+    });
+  });
+};
+
+const evaluatePhraseRetention = (
+  observations: readonly PhraseRetentionObservation[],
+): readonly ResearchPhraseEvaluation[] => {
+  const grouped = new Map<string, PhraseRetentionObservation[]>();
+  for (const observation of observations) {
+    const existing = grouped.get(observation.formulationKey) ?? [];
+    existing.push(observation);
+    grouped.set(observation.formulationKey, existing);
+  }
+  return [...grouped.values()].flatMap((entries) => {
+    const representative = entries[0];
+    if (!representative) return [];
+    const videoCount = new Set(entries.map((entry) => entry.contentId)).size;
+    const medianEntryRetention = median(entries.map((entry) => entry.entryRetention));
+    const medianExitRetention = median(entries.map((entry) => entry.exitRetention));
+    const medianDeltaPercentagePoints = median(
+      entries.map((entry) => entry.deltaPercentagePoints),
+    );
+    if (
+      medianEntryRetention === null ||
+      medianExitRetention === null ||
+      medianDeltaPercentagePoints === null
+    ) return [];
+    return [{
+      formulationKey: representative.formulationKey,
+      phraseType: representative.phraseType,
+      formulation: representative.formulation,
+      sampleSize: entries.length,
+      videoCount,
+      medianEntryRetention: roundedMetric(medianEntryRetention),
+      medianExitRetention: roundedMetric(medianExitRetention),
+      medianDeltaPercentagePoints: roundedMetric(medianDeltaPercentagePoints),
+      evidenceLevel: "measured" as const,
+      confidence: videoCount >= 30 ? "high" as const : videoCount >= 10 ? "medium" as const : "low" as const,
+      causalInference: false as const,
+    }];
+  }).sort((left, right) =>
+    right.videoCount - left.videoCount ||
+    right.sampleSize - left.sampleSize ||
+    left.formulationKey.localeCompare(right.formulationKey)
+  );
+};
+
+const retentionDataStatus = (
+  linkedVideos: readonly Record<string, unknown>[],
+  retentionVideoCount: number,
+  aggregateVideoCount: number,
+): RetentionDataStatus => {
+  if (retentionVideoCount > 0) return "measured";
+  if (aggregateVideoCount > 0) return "aggregate_only";
+  if (linkedVideos.length > 0) return "pending";
+  return "unavailable";
+};
+
 export const buildResearchRecommendationFeed = (
   dashboard: unknown,
   generatedAt: string,
   contentOperations: unknown = null,
+  phraseTimelines: unknown = null,
 ): ResearchRecommendationFeed => {
   const root = record(dashboard);
   const social = record(root?.social);
@@ -422,6 +908,27 @@ export const buildResearchRecommendationFeed = (
   const minimumComparableVideos = 5;
   const retentionCoverage = linked.length === 0 ? 0 : retentionVideos.length / linked.length;
   const ready = retentionVideos.length >= minimumComparableVideos && retentionCoverage >= 0.8;
+  const retentionStatus = retentionDataStatus(
+    linked,
+    retentionVideos.length,
+    withAveragePercentage.length,
+  );
+  const timelines = phraseTimelineEntries(phraseTimelines);
+  const linkedContentIds = new Set(
+    linked.flatMap((video) =>
+      typeof video.contentId === "string" ? [video.contentId.trim()] : []
+    ),
+  );
+  const linkedTimelineContentIds = new Set(
+    timelines
+      .map((timeline) => timeline.contentId)
+      .filter((contentId) => linkedContentIds.has(contentId)),
+  );
+  const phraseObservations = phraseRetentionObservations(linked, timelines);
+  const phraseEvaluations = evaluatePhraseRetention(phraseObservations);
+  const phraseRetentionContentIds = new Set(
+    phraseObservations.map((observation) => observation.contentId),
+  );
   const measuredRecommendations: ResearchRecommendation[] = [];
   if (ready) {
     const threeSecondMedian = median(retentionVideos.map((video) => video.atThree));
@@ -440,20 +947,31 @@ export const buildResearchRecommendationFeed = (
       });
     }
   }
+  const message = ready
+    ? "Retention-Kurven reichen für vorsichtige, kontrollierte Hypothesen."
+    : retentionStatus === "measured"
+      ? "Echte Retention-Kurven liegen vor, aber die Vergleichsmenge ist noch zu klein."
+      : retentionStatus === "aggregate_only"
+        ? "Nur aggregierte Wiedergabewerte liegen vor; Kurven- und Formulierungsvergleiche warten."
+        : retentionStatus === "pending"
+          ? "Verknüpfte Videos sind vorhanden; der Retention-Abruf liefert noch keine Kurven."
+          : "Keine verknüpften, vergleichbaren YouTube-Videos für die Retention-Auswertung.";
   return {
-    schemaVersion: "1.0.0",
+    schemaVersion: "1.1.0",
     generatedAt,
     dataReadiness: {
       status: ready ? "ready" : "insufficient",
+      retentionStatus,
       platformVideoCount: videos.length,
       linkedYoutubeVideos: linked.length,
       retentionVideos: retentionVideos.length,
       averageViewPercentageVideos: withAveragePercentage.length,
+      phraseTimelineVideos: linkedTimelineContentIds.size,
+      phraseRetentionVideos: phraseRetentionContentIds.size,
       minimumComparableVideos,
-      message: ready
-        ? "Retention-Daten reichen für vorsichtige, kontrollierte Hypothesen."
-        : "Retention noch nicht belastbar; Research-Vorschläge bleiben gekennzeichnete Hypothesen.",
+      message,
     },
     recommendations: measuredRecommendations.slice(0, 5),
+    phraseEvaluations,
   };
 };

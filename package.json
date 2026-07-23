@@ -6,9 +6,9 @@
   "scripts": {
     "operator:runner": "node --env-file-if-exists=.env.operator scripts/operator-runner.mjs",
     "operator:runner:once": "node --env-file-if-exists=.env.operator scripts/operator-runner.mjs --once",
-    "operator:test": "node --test tests/operator-api.test.mjs tests/operator-runner.test.mjs",
-    "operator:worker:dry-run": "npx --yes wrangler@4.112.0 deploy --dry-run --config cloud/operator-api/wrangler.toml",
-    "operator:worker:deploy": "npm --prefix dashboard run build && npx --yes wrangler@4.112.0 deploy --config cloud/operator-api/wrangler.toml",
+    "operator:test": "node --test tests/operator-api.test.mjs tests/operator-runner.test.mjs tests/operator-analysis-manifest.test.mjs tests/operator-schema-migration.test.mjs tests/script-drafts-model.test.mjs",
+    "operator:worker:dry-run": "npm --prefix dashboard run build && node scripts/deploy-operator-worker.mjs --dry-run",
+    "operator:worker:deploy": "npm --prefix dashboard run build && node scripts/deploy-operator-worker.mjs",
     "youtube:auth": "node --env-file-if-exists=.env.platforms scripts/youtube-auth.mjs",
     "upload:test": "node scripts/upload-staging.mjs",
     "test:oauth": "node --test tests/youtube-auth.test.mjs",

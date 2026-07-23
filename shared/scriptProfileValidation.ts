@@ -1,4 +1,31 @@
-export type SupportedRoundCount = 5 | 7;
+export type SupportedRoundCount = 5 | 6 | 7 | 8 | 9 | 10;
+export type ProductionRoundCount = 5 | 7;
+
+export const supportedRoundCounts: readonly SupportedRoundCount[] = [5, 6, 7, 8, 9, 10];
+export const productionRoundCounts: readonly ProductionRoundCount[] = [5, 7];
+
+export const isSupportedRoundCount = (value: number): value is SupportedRoundCount =>
+  Number.isInteger(value) && value >= 5 && value <= 10;
+
+export const isProductionRoundCount = (value: number): value is ProductionRoundCount =>
+  value === 5 || value === 7;
+
+export const recommendedTargetDuration = (roundCount: SupportedRoundCount): number => ({
+  5: 64,
+  6: 66,
+  7: 69,
+  8: 69,
+  9: 70,
+  10: 70,
+})[roundCount];
+
+export const minimumSpokenWordsForRounds = (roundCount: SupportedRoundCount): number =>
+  roundCount === 5 ? 90 : Math.max(70, roundCount * 10);
+
+export const durationOptionsForRounds = (roundCount: SupportedRoundCount): readonly number[] => {
+  const minimum = Math.min(69, Math.max(61, roundCount + 56));
+  return Array.from({ length: 71 - minimum }, (_, index) => minimum + index);
+};
 
 export type ScriptProfileIssueCode =
   | "SCRIPT_LENGTH_TOO_LOW"
@@ -118,7 +145,7 @@ export const validateScriptProfile = (
 
   const spokenWordCount =
     script.replaceAll("(auflösung)", "").match(/[\p{L}\p{N}]+/gu)?.length ?? 0;
-  const minimumWords = roundCount === 5 ? 90 : 70;
+  const minimumWords = minimumSpokenWordsForRounds(roundCount);
   if (spokenWordCount < minimumWords) {
     add({ code: "SPOKEN_WORDS_TOO_LOW", actual: spokenWordCount, minimum: minimumWords });
   }
