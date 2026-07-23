@@ -1,4 +1,5 @@
 import {
+  isSupportedRoundCount,
   scriptProfileIssueMessage,
   type ScriptProfileIssue,
   type ScriptProfileIssueCode,
@@ -98,8 +99,44 @@ export interface ScriptDraft {
   styleExampleCount: number
   recommendationId: string | null
   learnedSignals: string[]
+  phrases: ScriptPhraseTimeline
   createdAt: string
 }
+
+export type ScriptPhraseType = 'hook' | 'question' | 'reveal' | 'reaction' | 'transition' | 'cta'
+
+export interface ScriptPhrase {
+  phraseId: string
+  formulationKey: string
+  type: ScriptPhraseType
+  text: string
+  round: number | null
+  position: number
+  startSeconds: number | null
+  endSeconds: number | null
+  solutionCountry: string | null
+  solutionCountryCode: string | null
+}
+
+export interface ScriptRound {
+  round: number
+  phraseIds: string[]
+  questionPhraseId: string | null
+  revealPhraseId: string
+  solutionCountry: string | null
+  solutionCountryCode: string | null
+  flagShownAtSeconds: number | null
+  revealAtSeconds: number | null
+}
+
+export interface ScriptPhraseTimeline {
+  schemaVersion: '1.0.0'
+  roundCount: SupportedRoundCount
+  phrases: ScriptPhrase[]
+  rounds: ScriptRound[]
+}
+
+export type RetentionEvidenceStatus = 'measured' | 'aggregate_only' | 'pending' | 'unavailable'
 
 export interface ResearchRecommendation {
   id: string
@@ -112,10 +149,11 @@ export interface ResearchRecommendation {
   sampleSize: number
   sourceRun: string
   autoApplicable: false
+  delta?: number | string
 }
 
 export interface ResearchRecommendationFeed {
-  schemaVersion: '1.0.0'
+  schemaVersion: '1.1.0'
   generatedAt: string
   dataReadiness: {
     status: 'ready' | 'insufficient'
@@ -123,10 +161,28 @@ export interface ResearchRecommendationFeed {
     linkedYoutubeVideos: number
     retentionVideos: number
     averageViewPercentageVideos: number
+    retentionStatus: RetentionEvidenceStatus
+    phraseTimelineVideos: number
+    phraseRetentionVideos: number
     minimumComparableVideos: number
     message: string
   }
   recommendations: ResearchRecommendation[]
+  phraseEvaluations: ResearchPhraseEvaluation[]
+}
+
+export interface ResearchPhraseEvaluation {
+  formulationKey: string
+  phraseType: ScriptPhraseType
+  formulation: string
+  sampleSize: number
+  videoCount: number
+  medianEntryRetention: number
+  medianExitRetention: number
+  medianDeltaPercentagePoints: number
+  evidenceLevel: 'measured'
+  confidence: 'low' | 'medium' | 'high'
+  causalInference: false
 }
 
 interface StartRunInput {
@@ -401,7 +457,7 @@ export async function startOperatorRun(input: StartRunInput): Promise<OperatorRu
 function parseScriptDraft(value: unknown): ScriptDraft {
   if (!isRecord(value) || !Array.isArray(value.learnedSignals)) throw new Error('Ungültiger Skriptentwurf.')
   const roundCount = requiredInteger(value.roundCount, 'roundCount')
-  if (roundCount !== 5 && roundCount !== 7) throw new Error('roundCount ist ungültig.')
+  if (!isSupportedRoundCount(roundCount)) throw new Error('roundCount ist ungültig.')
   return {
     draftId: requiredString(value.draftId, 'draftId'),
     script: requiredString(value.script, 'script'),
@@ -412,12 +468,77 @@ function parseScriptDraft(value: unknown): ScriptDraft {
     styleExampleCount: requiredInteger(value.styleExampleCount, 'styleExampleCount'),
     recommendationId: nullableString(value.recommendationId),
     learnedSignals: value.learnedSignals.map((entry, index) => requiredString(entry, `learnedSignals.${index}`)),
+    phrases: parseScriptPhraseTimeline(value.phrases, roundCount),
     createdAt: requiredString(value.createdAt, 'createdAt'),
+  }
+}
+
+function parseScriptPhrase(value: unknown, roundCount: SupportedRoundCount): ScriptPhrase {
+  if (!isRecord(value)) throw new Error('Ungültige Skriptformulierung.')
+  const round = value.round === null ? null : requiredInteger(value.round, 'phrase.round')
+  if (round !== null && (round < 1 || round > roundCount)) {
+    throw new Error('phrase.round ist ungültig.')
+  }
+  return {
+    phraseId: requiredString(value.phraseId, 'phrase.phraseId'),
+    formulationKey: requiredString(value.formulationKey, 'phrase.formulationKey'),
+    type: enumValue(
+      value.type,
+      ['hook', 'question', 'reveal', 'reaction', 'transition', 'cta'] as const,
+      'phrase.type',
+    ),
+    text: requiredString(value.text, 'phrase.text'),
+    round,
+    position: requiredInteger(value.position, 'phrase.position'),
+    startSeconds: nullableNumber(value.startSeconds),
+    endSeconds: nullableNumber(value.endSeconds),
+    solutionCountry: nullableString(value.solutionCountry),
+    solutionCountryCode: nullableString(value.solutionCountryCode),
+  }
+}
+
+function parseScriptRound(value: unknown, roundCount: SupportedRoundCount): ScriptRound {
+  if (!isRecord(value) || !Array.isArray(value.phraseIds)) throw new Error('Ungültige Skriptrunde.')
+  const round = requiredInteger(value.round, 'round.round')
+  if (round < 1 || round > roundCount) throw new Error('round.round ist ungültig.')
+  return {
+    round,
+    phraseIds: value.phraseIds.map((entry, index) => requiredString(entry, `round.phraseIds.${index}`)),
+    questionPhraseId: nullableString(value.questionPhraseId),
+    revealPhraseId: requiredString(value.revealPhraseId, 'round.revealPhraseId'),
+    solutionCountry: nullableString(value.solutionCountry),
+    solutionCountryCode: nullableString(value.solutionCountryCode),
+    flagShownAtSeconds: nullableNumber(value.flagShownAtSeconds),
+    revealAtSeconds: nullableNumber(value.revealAtSeconds),
+  }
+}
+
+function parseScriptPhraseTimeline(
+  value: unknown,
+  expectedRoundCount: SupportedRoundCount,
+): ScriptPhraseTimeline {
+  if (!isRecord(value) || !Array.isArray(value.phrases) || !Array.isArray(value.rounds)) {
+    throw new Error('Skriptformulierungen fehlen.')
+  }
+  const roundCount = requiredInteger(value.roundCount, 'phrases.roundCount')
+  if (roundCount !== expectedRoundCount) throw new Error('phrases.roundCount ist ungültig.')
+  const rounds = value.rounds.map(entry => parseScriptRound(entry, expectedRoundCount))
+  if (rounds.length !== expectedRoundCount) throw new Error('phrases.rounds ist unvollständig.')
+  return {
+    schemaVersion: enumValue(value.schemaVersion, ['1.0.0'] as const, 'phrases.schemaVersion'),
+    roundCount: expectedRoundCount,
+    phrases: value.phrases.map(entry => parseScriptPhrase(entry, expectedRoundCount)),
+    rounds,
   }
 }
 
 function parseResearchRecommendation(value: unknown): ResearchRecommendation {
   if (!isRecord(value)) throw new Error('Ungültige Research-Empfehlung.')
+  const delta = typeof value.delta === 'number' && Number.isFinite(value.delta)
+    ? value.delta
+    : typeof value.delta === 'string' && value.delta.trim()
+      ? value.delta.trim()
+      : undefined
   return {
     id: requiredString(value.id, 'recommendation.id'),
     title: requiredString(value.title, 'recommendation.title'),
@@ -429,6 +550,31 @@ function parseResearchRecommendation(value: unknown): ResearchRecommendation {
     sampleSize: requiredInteger(value.sampleSize, 'recommendation.sampleSize'),
     sourceRun: requiredString(value.sourceRun, 'recommendation.sourceRun'),
     autoApplicable: requiredFalse(value.autoApplicable, 'recommendation.autoApplicable'),
+    ...(delta === undefined ? {} : { delta }),
+  }
+}
+
+function parseResearchPhraseEvaluation(value: unknown): ResearchPhraseEvaluation {
+  if (!isRecord(value)) throw new Error('Ungültige Formulierungs-Auswertung.')
+  return {
+    formulationKey: requiredString(value.formulationKey, 'phraseEvaluation.formulationKey'),
+    phraseType: enumValue(
+      value.phraseType,
+      ['hook', 'question', 'reveal', 'reaction', 'transition', 'cta'] as const,
+      'phraseEvaluation.phraseType',
+    ),
+    formulation: requiredString(value.formulation, 'phraseEvaluation.formulation'),
+    sampleSize: requiredInteger(value.sampleSize, 'phraseEvaluation.sampleSize'),
+    videoCount: requiredInteger(value.videoCount, 'phraseEvaluation.videoCount'),
+    medianEntryRetention: requiredNumber(value.medianEntryRetention, 'phraseEvaluation.medianEntryRetention'),
+    medianExitRetention: requiredNumber(value.medianExitRetention, 'phraseEvaluation.medianExitRetention'),
+    medianDeltaPercentagePoints: requiredNumber(
+      value.medianDeltaPercentagePoints,
+      'phraseEvaluation.medianDeltaPercentagePoints',
+    ),
+    evidenceLevel: enumValue(value.evidenceLevel, ['measured'] as const, 'phraseEvaluation.evidenceLevel'),
+    confidence: enumValue(value.confidence, ['low', 'medium', 'high'] as const, 'phraseEvaluation.confidence'),
+    causalInference: requiredFalse(value.causalInference, 'phraseEvaluation.causalInference'),
   }
 }
 
@@ -446,22 +592,55 @@ export async function generateOperatorScriptDraft(input: {
 
 export async function getResearchRecommendations(): Promise<ResearchRecommendationFeed> {
   const value = await request('/v1/research/recommendations')
-  if (!isRecord(value) || !isRecord(value.dataReadiness) || !Array.isArray(value.recommendations)) {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.dataReadiness) ||
+    !Array.isArray(value.recommendations) ||
+    !Array.isArray(value.phraseEvaluations)
+  ) {
     throw new Error('Ungültige Research-Antwort.')
   }
+  const retentionVideos = requiredInteger(value.dataReadiness.retentionVideos, 'dataReadiness.retentionVideos')
+  const averageViewPercentageVideos = requiredInteger(
+    value.dataReadiness.averageViewPercentageVideos,
+    'dataReadiness.averageViewPercentageVideos',
+  )
+  const linkedYoutubeVideos = requiredInteger(
+    value.dataReadiness.linkedYoutubeVideos,
+    'dataReadiness.linkedYoutubeVideos',
+  )
+  const platformVideoCount = requiredInteger(
+    value.dataReadiness.platformVideoCount,
+    'dataReadiness.platformVideoCount',
+  )
+  const retentionStatus = enumValue(
+    value.dataReadiness.retentionStatus,
+    ['measured', 'aggregate_only', 'pending', 'unavailable'] as const,
+    'dataReadiness.retentionStatus',
+  )
   return {
-    schemaVersion: enumValue(value.schemaVersion, ['1.0.0'] as const, 'schemaVersion'),
+    schemaVersion: enumValue(value.schemaVersion, ['1.1.0'] as const, 'schemaVersion'),
     generatedAt: requiredString(value.generatedAt, 'generatedAt'),
     dataReadiness: {
       status: enumValue(value.dataReadiness.status, ['ready', 'insufficient'] as const, 'dataReadiness.status'),
-      platformVideoCount: requiredInteger(value.dataReadiness.platformVideoCount, 'dataReadiness.platformVideoCount'),
-      linkedYoutubeVideos: requiredInteger(value.dataReadiness.linkedYoutubeVideos, 'dataReadiness.linkedYoutubeVideos'),
-      retentionVideos: requiredInteger(value.dataReadiness.retentionVideos, 'dataReadiness.retentionVideos'),
-      averageViewPercentageVideos: requiredInteger(value.dataReadiness.averageViewPercentageVideos, 'dataReadiness.averageViewPercentageVideos'),
+      platformVideoCount,
+      linkedYoutubeVideos,
+      retentionVideos,
+      averageViewPercentageVideos,
+      retentionStatus,
+      phraseTimelineVideos: requiredInteger(
+        value.dataReadiness.phraseTimelineVideos,
+        'dataReadiness.phraseTimelineVideos',
+      ),
+      phraseRetentionVideos: requiredInteger(
+        value.dataReadiness.phraseRetentionVideos,
+        'dataReadiness.phraseRetentionVideos',
+      ),
       minimumComparableVideos: requiredInteger(value.dataReadiness.minimumComparableVideos, 'dataReadiness.minimumComparableVideos'),
       message: requiredString(value.dataReadiness.message, 'dataReadiness.message'),
     },
     recommendations: value.recommendations.map(parseResearchRecommendation),
+    phraseEvaluations: value.phraseEvaluations.map(parseResearchPhraseEvaluation),
   }
 }
 

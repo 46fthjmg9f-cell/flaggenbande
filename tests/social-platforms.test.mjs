@@ -17,6 +17,7 @@ const metrics = overrides => ({
   watchTimeMinutes: null,
   averageViewDurationSeconds: null,
   averageViewPercentage: null,
+  skipRate: null,
   followersGained: null,
   ...overrides,
 })
@@ -79,6 +80,17 @@ const youtubeFetch = ({
   }
   if (value.includes('youtubeanalytics.googleapis.com')) {
     if (!analytics) return jsonResponse({ error: { message: 'not available' } }, 403)
+    const query = new URL(value).searchParams
+    if (query.get('dimensions') === 'elapsedVideoTimeRatio') {
+      return jsonResponse({
+        columnHeaders: [
+          { name: 'elapsedVideoTimeRatio' },
+          { name: 'audienceWatchRatio' },
+          { name: 'relativeRetentionPerformance' },
+        ],
+        rows: [[0.01, 1, 0.5], [1, 0.4, 0.3]],
+      })
+    }
     return jsonResponse({
       columnHeaders: [
         { name: 'video' },
@@ -320,7 +332,14 @@ test('Facebook keeps basic video data, reports missing insights and builds a wor
       })
     }
     if (value.includes('/1594633352224956/video_insights')) {
-      return jsonResponse({ error: { message: 'access_token=must-not-leak' } }, 403)
+      return jsonResponse({
+        error: {
+          message: 'Missing permission access_token=must-not-leak',
+          type: 'OAuthException',
+          code: 200,
+          error_subcode: 33,
+        },
+      }, 403)
     }
     if (value.includes('/fb-page?')) return jsonResponse({ name: 'Flaggenbande' })
     throw new Error(`Unexpected request: ${value}`)
@@ -338,6 +357,14 @@ test('Facebook keeps basic video data, reports missing insights and builds a wor
   assert.match(social.platforms.facebook.reason, /Insights fehlen fuer 1 Video/)
   assert.match(social.platforms.facebook.reason, /HTTP 403/)
   assert.doesNotMatch(social.platforms.facebook.reason, /must-not-leak|facebook-page-token|access_token/)
+  assert.ok(social.platforms.facebook.diagnostics.some(entry =>
+    entry.metricNames.includes('blue_reels_play_count') &&
+    entry.httpStatus === 403 &&
+    entry.code === 200 &&
+    entry.subcode === 33 &&
+    entry.type === 'OAuthException'))
+  assert.ok(social.platforms.facebook.diagnostics.every(entry =>
+    !JSON.stringify(entry).includes('must-not-leak') && !JSON.stringify(entry).includes('facebook-page-token')))
   const facebook = social.videos.find(entry => entry.platform === 'facebook')
   assert.equal(facebook.url, 'https://www.facebook.com/reel/1594633352224956')
   assert.equal(facebook.metrics.likes, 7)
@@ -475,6 +502,114 @@ test('YouTube collects validated audience retention per public video without inv
     relativeRetentionPerformance: null,
   })
   assert.ok(youtube.retention.every(point => point.elapsedVideoTimeRatio > 0 && point.elapsedVideoTimeRatio <= 1))
+})
+
+test('YouTube treats an empty retention report as pending and retries it after two hours', async () => {
+  const baseFetch = youtubeFetch()
+  let retentionCalls = 0
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    if (value.includes('youtubeanalytics.googleapis.com')) {
+      const query = new URL(value).searchParams
+      if (query.get('dimensions') === 'elapsedVideoTimeRatio') {
+        retentionCalls += 1
+        return jsonResponse({
+          columnHeaders: [
+            { name: 'elapsedVideoTimeRatio' },
+            { name: 'audienceWatchRatio' },
+            { name: 'relativeRetentionPerformance' },
+          ],
+          rows: [],
+        })
+      }
+    }
+    return baseFetch(url, options)
+  }
+
+  const first = await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-token' },
+    fetchImpl,
+  })
+  assert.equal(retentionCalls, 1)
+  assert.equal(first.platforms.youtube.status, 'partial')
+  assert.equal(first.videos[0].retentionCheckStatus, 'pending')
+  assert.match(first.videos[0].retentionCheckReason, /noch keine Retention-Daten/)
+
+  await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-token' },
+    fetchImpl,
+    previous: first,
+  })
+  assert.equal(retentionCalls, 1)
+
+  const overdue = structuredClone(first)
+  overdue.videos[0].retentionCheckedAt = new Date(Date.now() - (3 * 60 * 60 * 1000)).toISOString()
+  await collectSocialPlatforms({
+    env: { YOUTUBE_ACCESS_TOKEN: 'youtube-token' },
+    fetchImpl,
+    previous: overdue,
+  })
+  assert.equal(retentionCalls, 2)
+})
+
+test('Instagram collects watch-time and skip metrics with per-metric fallbacks', async () => {
+  const requestedMetrics = []
+  const fetchImpl = async (url, options = {}) => {
+    const value = String(url)
+    assert.equal(options.headers?.authorization, 'Bearer instagram-token')
+    if (value.includes('/ig-account/media')) {
+      return jsonResponse({ data: [{
+        id: 'ig-1',
+        caption: 'Flag quiz',
+        media_type: 'VIDEO',
+        media_product_type: 'REELS',
+        permalink: 'https://instagram.test/reel/ig-1',
+        timestamp: '2026-07-21T13:17:29Z',
+        like_count: 8,
+        comments_count: 3,
+      }] })
+    }
+    if (value.includes('/ig-1/insights')) {
+      const metric = new URL(value).searchParams.get('metric')
+      requestedMetrics.push(metric)
+      if (metric === 'views,reach,saved,shares,total_interactions') {
+        return jsonResponse({ data: [
+          { name: 'views', values: [{ value: 250 }] },
+          { name: 'reach', values: [{ value: 180 }] },
+          { name: 'saved', values: [{ value: 4 }] },
+          { name: 'shares', values: [{ value: 6 }] },
+        ] })
+      }
+      if (metric === 'ig_reels_video_view_total_time') {
+        return jsonResponse({ data: [{ name: metric, values: [{ value: 900_000 }] }] })
+      }
+      if (metric === 'ig_reels_avg_watch_time') {
+        return jsonResponse({ error: { code: 100, type: 'OAuthException', message: 'Unsupported metric' } }, 400)
+      }
+      if (metric === 'average_watch_time') {
+        return jsonResponse({ data: [{ name: metric, values: [{ value: 12_500 }] }] })
+      }
+      if (metric === 'reels_skip_rate') {
+        return jsonResponse({ data: [{ name: metric, values: [{ value: 0.27 }] }] })
+      }
+      throw new Error(`Unexpected metric: ${metric}`)
+    }
+    if (value.includes('/ig-account?')) return jsonResponse({ username: 'flaggenbande' })
+    throw new Error(`Unexpected request: ${value}`)
+  }
+
+  const social = await collectSocialPlatforms({
+    env: { META_ACCESS_TOKEN: 'instagram-token', META_INSTAGRAM_ACCOUNT_ID: 'ig-account' },
+    fetchImpl,
+  })
+
+  assert.equal(social.platforms.instagram.status, 'available')
+  assert.equal(social.videos[0].metrics.watchTimeMinutes, 15)
+  assert.equal(social.videos[0].metrics.averageViewDurationSeconds, 12.5)
+  assert.equal(social.videos[0].metrics.skipRate, 0.27)
+  assert.ok(requestedMetrics.includes('average_watch_time'))
+  assert.ok(social.platforms.instagram.diagnostics.some(entry =>
+    entry.metricNames.includes('ig_reels_avg_watch_time') && entry.httpStatus === 400))
 })
 
 test('YouTube retention checks are cached for 24 hours and capped at 12 overdue videos per run', async () => {

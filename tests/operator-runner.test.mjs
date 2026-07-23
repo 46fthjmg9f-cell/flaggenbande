@@ -57,6 +57,8 @@ const writeGateEvidence = async (runsRoot, runId, previewBytes, options = {}) =>
   await mkdir(artifactsDirectory, { recursive: true })
   const previewPath = join(artifactsDirectory, `${runId}.mp4`)
   const qualityReportPath = join(artifactsDirectory, `${runId}-quality-report.json`)
+  const contentManifestPath = join(artifactsDirectory, `${runId}-content.json`)
+  const runtimeManifestPath = join(artifactsDirectory, `${runId}-runtime.json`)
   const previewSha256 = createHash('sha256').update(previewBytes).digest('hex')
   await writeFile(previewPath, previewBytes)
   const monetizationPassed = options.monetizationPassed !== false
@@ -102,6 +104,38 @@ const writeGateEvidence = async (runsRoot, runId, previewBytes, options = {}) =>
   const qualityBytes = Buffer.from(`${JSON.stringify(qualityReport, null, 2)}\n`)
   const qualitySha256 = createHash('sha256').update(qualityBytes).digest('hex')
   await writeFile(qualityReportPath, qualityBytes)
+  const countries = [
+    ['de', 'Deutschland'],
+    ['uy', 'Uruguay'],
+    ['mz', 'Mosambik'],
+    ['pw', 'Palau'],
+    ['vu', 'Vanuatu'],
+  ]
+  const contentBytes = Buffer.from(`${JSON.stringify({
+    schemaVersion: '1.0.0',
+    runId,
+    roundCount: 5,
+    rounds: countries.map(([iso, answer], index) => ({ round: index + 1, iso, answer })),
+  }, null, 2)}\n`)
+  const runtimeBytes = Buffer.from(`${JSON.stringify({
+    schemaVersion: '1.0.0',
+    fps: 30,
+    rounds: countries.map((_, index) => ({
+      round: index + 1,
+      questionFromFrame: index * 300,
+      revealFrame: index * 300 + 120,
+    })),
+    words: [
+      { word: 'welche', fromFrame: 0, durationInFrames: 9 },
+      { word: 'flagge', fromFrame: 10, durationInFrames: 8 },
+    ],
+  }, null, 2)}\n`)
+  const contentSha256 = createHash('sha256').update(contentBytes).digest('hex')
+  const runtimeSha256 = createHash('sha256').update(runtimeBytes).digest('hex')
+  await Promise.all([
+    writeFile(contentManifestPath, contentBytes),
+    writeFile(runtimeManifestPath, runtimeBytes),
+  ])
   await writeFile(join(runDirectory, 'status.json'), `${JSON.stringify({
     schemaVersion: '1.0.0',
     runId,
@@ -115,6 +149,8 @@ const writeGateEvidence = async (runsRoot, runId, previewBytes, options = {}) =>
     privateArtifacts: [
       { kind: 'preview_video', path: previewPath, sha256: previewSha256 },
       { kind: 'quality_report', path: qualityReportPath, sha256: qualitySha256 },
+      { kind: 'content_manifest', path: contentManifestPath, sha256: contentSha256 },
+      { kind: 'runtime_manifest', path: runtimeManifestPath, sha256: runtimeSha256 },
     ],
   }, null, 2)}\n`)
   return { previewSha256 }
@@ -170,6 +206,7 @@ test('runner forwards one queued command to loopback and reports completion', as
   t.after(() => rm(runsRoot, { recursive: true, force: true }))
   const statusUpdates = []
   const previewUploads = []
+  const analysisManifests = []
   let receivedScript = null
   let claimCount = 0
   const previewBytes = Buffer.from('preview-bytes')
@@ -222,6 +259,19 @@ test('runner forwards one queued command to loopback and reports completion', as
       response.writeHead(200, { 'content-type': 'application/json' }).end('{}')
       return
     }
+    if (request.method === 'POST' && request.url === `/v1/runner/runs/${cloudRunId}/analysis-manifest`) {
+      const chunks = []
+      for await (const chunk of request) chunks.push(chunk)
+      const manifest = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      analysisManifests.push(manifest)
+      response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        runId: cloudRunId,
+        roundsStored: manifest.rounds.length,
+        alignedPhraseCount: 1,
+        unmatchedPhraseCount: 8,
+      }))
+      return
+    }
     if (request.method === 'PUT' && request.url === `/v1/runner/runs/${cloudRunId}/preview`) {
       const chunks = []
       for await (const chunk of request) chunks.push(chunk)
@@ -247,6 +297,13 @@ test('runner forwards one queued command to loopback and reports completion', as
   assert.equal(result, 'completed')
   assert.equal(claimCount, 1)
   assert.equal(receivedScript, script)
+  assert.equal(analysisManifests.length, 1)
+  assert.equal(analysisManifests[0].rounds[0].solutionCountry, 'Deutschland')
+  assert.deepEqual(analysisManifests[0].wordCues[0], {
+    word: 'welche',
+    startSeconds: 0,
+    endSeconds: 0.3,
+  })
   assert.equal(previewUploads.length, 1)
   assert.equal(previewUploads[0].headers['x-quality-gate'], 'passed')
   assert.equal(previewUploads[0].headers['x-monetization-gate'], 'passed')

@@ -1,8 +1,15 @@
 import {
+  isProductionRoundCount,
+  type ProductionRoundCount,
+} from "../../../shared/scriptProfileValidation.ts";
+import {
   buildResearchRecommendationFeed,
   DEFAULT_TARGET_DURATION,
+  extractScriptPhrases,
   generateScriptDraft,
+  isSupportedRoundCount,
   validateScriptProfile,
+  type ScriptPhraseTimeline,
   type ScriptProfileValidation,
   type SupportedRoundCount,
 } from "./scriptDrafts.ts";
@@ -124,6 +131,16 @@ interface ScriptOriginRow {
 
 interface StyleExampleRow {
   readonly script: string;
+}
+
+interface RunScriptManifestRow {
+  readonly run_id: string;
+  readonly script_sha256: string;
+  readonly schema_version: "1.0.0";
+  readonly round_count: SupportedRoundCount;
+  readonly timing_source: "script_only" | "word_timestamps";
+  readonly created_at: string;
+  readonly updated_at: string;
 }
 
 interface CalendarRow {
@@ -486,7 +503,7 @@ const berlinDay = (timestamp: string): { readonly dayKey: string; readonly displ
 interface NewRunInput {
   readonly script: string;
   readonly targetDurationSeconds: number;
-  readonly roundCount: SupportedRoundCount;
+  readonly roundCount: ProductionRoundCount;
   readonly draftId?: string;
   readonly clientRequestId?: string;
 }
@@ -515,9 +532,12 @@ const parseNewRun = (value: unknown): NewRunInput => {
   const draftId = value.draftId === undefined ? undefined : safeText(value.draftId, 80);
   const revealCount = script.split("\n").filter((line) => line === "(auflösung)").length;
   const roundCount = value.roundCount === undefined ? revealCount : Number(value.roundCount);
+  if (isSupportedRoundCount(roundCount) && !isProductionRoundCount(roundCount)) {
+    throw new Error("UNSUPPORTED_PRODUCTION_ROUND_COUNT");
+  }
   if (
     typeof value.script !== "string" ||
-    (roundCount !== 5 && roundCount !== 7) || revealCount !== roundCount ||
+    !isProductionRoundCount(roundCount) || revealCount !== roundCount ||
     !Number.isFinite(target) || target < 61 || target > 70 ||
     (value.draftId !== undefined && (!draftId || !/^draft-[a-f0-9]{24}$/u.test(draftId))) ||
     (value.clientRequestId !== undefined && (!clientRequestId || !/^[A-Za-z0-9._:-]{8,128}$/u.test(clientRequestId)))
@@ -552,7 +572,7 @@ const parseNewDraft = (value: unknown): NewDraftInput => {
     "roundCount", "targetDurationSeconds", "recommendationId", "clientRequestId",
   ])) throw new Error("INVALID_SCRIPT_DRAFT_INPUT");
   const roundCount = Number(value.roundCount);
-  const defaultTarget = roundCount === 5 || roundCount === 7
+  const defaultTarget = isSupportedRoundCount(roundCount)
     ? DEFAULT_TARGET_DURATION[roundCount]
     : Number.NaN;
   const target = value.targetDurationSeconds === undefined
@@ -563,7 +583,7 @@ const parseNewDraft = (value: unknown): NewDraftInput => {
     : safeText(value.recommendationId, 80);
   const clientRequestId = safeText(value.clientRequestId, 128);
   if (
-    (roundCount !== 5 && roundCount !== 7) ||
+    !isSupportedRoundCount(roundCount) ||
     !Number.isFinite(target) || target < 61 || target > 70 ||
     !clientRequestId || !/^[A-Za-z0-9._:-]{8,128}$/u.test(clientRequestId) ||
     (recommendationId !== null && !RESEARCH_RECOMMENDATION_IDS.has(recommendationId))
@@ -577,7 +597,7 @@ const parseNewDraft = (value: unknown): NewDraftInput => {
 };
 
 const draftById = (env: Env, draftId: string): Promise<ScriptDraftRow | null> =>
-  env.DB.prepare("SELECT * FROM operator_script_drafts WHERE draft_id = ?")
+  env.DB.prepare("SELECT * FROM operator_script_drafts_v2 WHERE draft_id = ?")
     .bind(draftId).first<ScriptDraftRow>();
 
 const draftProjection = (row: ScriptDraftRow): Record<string, unknown> => {
@@ -600,9 +620,141 @@ const draftProjection = (row: ScriptDraftRow): Record<string, unknown> => {
     styleExampleCount: row.style_example_count,
     recommendationId: row.recommendation_id,
     learnedSignals,
+    phrases: extractScriptPhrases(row.script, row.round_count),
     createdAt: row.created_at,
   };
 };
+
+const scriptStructureStatements = (
+  env: Env,
+  scriptSha256: string,
+  sourceDraftId: string | null,
+  timeline: ScriptPhraseTimeline,
+  timestamp: string,
+): readonly D1PreparedStatement[] => [
+  env.DB.prepare(`INSERT INTO operator_script_structures
+    (script_sha256, source_draft_id, schema_version, round_count, structure_json,
+     created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(script_sha256) DO UPDATE SET
+      source_draft_id = COALESCE(operator_script_structures.source_draft_id, excluded.source_draft_id),
+      structure_json = excluded.structure_json,
+      updated_at = excluded.updated_at`).bind(
+    scriptSha256,
+    sourceDraftId,
+    timeline.schemaVersion,
+    timeline.roundCount,
+    JSON.stringify(timeline),
+    timestamp,
+    timestamp,
+  ),
+  ...timeline.phrases.map((phrase) => env.DB.prepare(`INSERT INTO operator_script_phrases
+    (script_sha256, phrase_id, formulation_key, phrase_type, position_index,
+     round_number, text, start_seconds, end_seconds, solution_country,
+     solution_country_code, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(script_sha256, phrase_id) DO UPDATE SET
+      formulation_key = excluded.formulation_key,
+      phrase_type = excluded.phrase_type,
+      position_index = excluded.position_index,
+      round_number = excluded.round_number,
+      text = excluded.text,
+      updated_at = excluded.updated_at`).bind(
+    scriptSha256,
+    phrase.phraseId,
+    phrase.formulationKey,
+    phrase.type,
+    phrase.position,
+    phrase.round,
+    phrase.text,
+    phrase.startSeconds,
+    phrase.endSeconds,
+    phrase.solutionCountry,
+    phrase.solutionCountryCode,
+    timestamp,
+    timestamp,
+  )),
+  ...timeline.rounds.map((round) => env.DB.prepare(`INSERT INTO operator_script_rounds
+    (script_sha256, round_number, question_phrase_id, reveal_phrase_id,
+     solution_country, solution_country_code, flag_shown_at_seconds,
+     reveal_at_seconds, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(script_sha256, round_number) DO UPDATE SET
+      question_phrase_id = excluded.question_phrase_id,
+      reveal_phrase_id = excluded.reveal_phrase_id,
+      updated_at = excluded.updated_at`).bind(
+    scriptSha256,
+    round.round,
+    round.questionPhraseId,
+    round.revealPhraseId,
+    round.solutionCountry,
+    round.solutionCountryCode,
+    round.flagShownAtSeconds,
+    round.revealAtSeconds,
+    timestamp,
+    timestamp,
+  )),
+];
+
+const runScriptManifestStatements = (
+  env: Env,
+  runId: string,
+  scriptSha256: string,
+  timeline: ScriptPhraseTimeline,
+  timestamp: string,
+): readonly D1PreparedStatement[] => [
+  env.DB.prepare(`INSERT INTO operator_run_script_manifests
+    (run_id, script_sha256, schema_version, round_count, timing_source,
+     created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'script_only', ?, ?)
+    ON CONFLICT(run_id) DO UPDATE SET
+      script_sha256 = excluded.script_sha256,
+      schema_version = excluded.schema_version,
+      round_count = excluded.round_count,
+      updated_at = excluded.updated_at`).bind(
+    runId,
+    scriptSha256,
+    timeline.schemaVersion,
+    timeline.roundCount,
+    timestamp,
+    timestamp,
+  ),
+  ...timeline.phrases.map((phrase) => env.DB.prepare(`INSERT INTO operator_run_script_phrases
+    (run_id, script_sha256, phrase_id, start_seconds, end_seconds,
+     solution_country, solution_country_code, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(run_id, phrase_id) DO UPDATE SET
+      script_sha256 = excluded.script_sha256,
+      updated_at = excluded.updated_at`).bind(
+    runId,
+    scriptSha256,
+    phrase.phraseId,
+    phrase.startSeconds,
+    phrase.endSeconds,
+    phrase.solutionCountry,
+    phrase.solutionCountryCode,
+    timestamp,
+    timestamp,
+  )),
+  ...timeline.rounds.map((round) => env.DB.prepare(`INSERT INTO operator_run_script_rounds
+    (run_id, script_sha256, round_number, solution_country,
+     solution_country_code, flag_shown_at_seconds, reveal_at_seconds,
+     created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(run_id, round_number) DO UPDATE SET
+      script_sha256 = excluded.script_sha256,
+      updated_at = excluded.updated_at`).bind(
+    runId,
+    scriptSha256,
+    round.round,
+    round.solutionCountry,
+    round.solutionCountryCode,
+    round.flagShownAtSeconds,
+    round.revealAtSeconds,
+    timestamp,
+    timestamp,
+  )),
+];
 
 const createScriptDraft = async (
   request: Request,
@@ -611,21 +763,31 @@ const createScriptDraft = async (
 ): Promise<Response> => {
   const input = parseNewDraft(await readJson(request));
   const existingByRequest = await env.DB.prepare(
-    "SELECT * FROM operator_script_drafts WHERE client_request_id = ?",
+    "SELECT * FROM operator_script_drafts_v2 WHERE client_request_id = ?",
   ).bind(input.clientRequestId).first<ScriptDraftRow>();
-  if (existingByRequest) return json(draftProjection(existingByRequest), 200, origin);
+  if (existingByRequest) {
+    const timestamp = now();
+    await env.DB.batch(scriptStructureStatements(
+      env,
+      existingByRequest.script_sha256,
+      existingByRequest.draft_id,
+      extractScriptPhrases(existingByRequest.script, existingByRequest.round_count),
+      timestamp,
+    ));
+    return json(draftProjection(existingByRequest), 200, origin);
+  }
 
-  const examples = await env.DB.prepare(`SELECT script FROM operator_script_style_examples
+  const examples = await env.DB.prepare(`SELECT script FROM operator_script_style_examples_v2
     WHERE reveal_count = ? AND instr(lower(script), 'flaggenbande') = 0
     ORDER BY CASE trust_level WHEN 'high_confidence' THEN 0 ELSE 1 END, updated_at DESC
     LIMIT 20`).bind(input.roundCount).all<StyleExampleRow>();
   const styleScripts = (examples.results ?? []).map((example) => example.script);
   const priorHashes = await env.DB.prepare(`SELECT script_sha256
-    FROM operator_script_drafts
+    FROM operator_script_drafts_v2
     WHERE round_count = ?
     UNION
     SELECT script_sha256
-    FROM operator_script_style_examples
+    FROM operator_script_style_examples_v2
     WHERE reveal_count = ?`).bind(input.roundCount, input.roundCount)
     .all<{ readonly script_sha256: string }>();
   const seenHashes = new Set(
@@ -663,27 +825,31 @@ const createScriptDraft = async (
   }
   const draftId = `draft-${(await sha256(`${input.clientRequestId}:${scriptSha256}`)).slice(0, 24)}`;
   const timestamp = now();
+  const timeline = extractScriptPhrases(script, input.roundCount);
   try {
-    await env.DB.prepare(`INSERT INTO operator_script_drafts
-      (draft_id, client_request_id, script, script_sha256, round_count,
-       suggested_duration_seconds, generator_version, style_example_count,
-       recommendation_id, learned_signals_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
-      draftId,
-      input.clientRequestId,
-      script,
-      scriptSha256,
-      input.roundCount,
-      input.targetDurationSeconds,
-      generated.generatorVersion,
-      styleScripts.length,
-      input.recommendationId,
-      JSON.stringify(generated.learnedSignals),
-      timestamp,
-    ).run();
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO operator_script_drafts_v2
+        (draft_id, client_request_id, script, script_sha256, round_count,
+         suggested_duration_seconds, generator_version, style_example_count,
+         recommendation_id, learned_signals_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
+        draftId,
+        input.clientRequestId,
+        script,
+        scriptSha256,
+        input.roundCount,
+        input.targetDurationSeconds,
+        generated.generatorVersion,
+        styleScripts.length,
+        input.recommendationId,
+        JSON.stringify(generated.learnedSignals),
+        timestamp,
+      ),
+      ...scriptStructureStatements(env, scriptSha256, draftId, timeline, timestamp),
+    ]);
   } catch {
     const raced = await env.DB.prepare(
-      "SELECT * FROM operator_script_drafts WHERE client_request_id = ?",
+      "SELECT * FROM operator_script_drafts_v2 WHERE client_request_id = ?",
     ).bind(input.clientRequestId).first<ScriptDraftRow>();
     return raced
       ? json(draftProjection(raced), 200, origin)
@@ -697,6 +863,39 @@ const createScriptDraft = async (
 
 const runById = (env: Env, runId: string): Promise<RunRow | null> =>
   env.DB.prepare("SELECT * FROM operator_production_runs WHERE run_id = ?").bind(runId).first<RunRow>();
+
+const ensureRunScriptManifest = async (
+  env: Env,
+  row: RunRow,
+  timestamp: string,
+): Promise<{ readonly manifest: RunScriptManifestRow; readonly timeline: ScriptPhraseTimeline }> => {
+  const existing = await env.DB.prepare(
+    "SELECT * FROM operator_run_script_manifests WHERE run_id = ?",
+  ).bind(row.run_id).first<RunScriptManifestRow>();
+  if (existing) {
+    return {
+      manifest: existing,
+      timeline: extractScriptPhrases(row.script, existing.round_count),
+    };
+  }
+  const origin = await env.DB.prepare(
+    "SELECT * FROM operator_script_origins_v2 WHERE run_id = ?",
+  ).bind(row.run_id).first<ScriptOriginRow>();
+  const fallbackCount = row.script.split("\n").filter((line) => line === "(auflösung)").length;
+  const roundCount = origin?.reveal_count ?? fallbackCount;
+  if (!isSupportedRoundCount(roundCount)) throw new Error("RUN_SCRIPT_STRUCTURE_INVALID");
+  const scriptSha256 = origin?.submitted_script_sha256 ?? await sha256(row.script);
+  const timeline = extractScriptPhrases(row.script, roundCount);
+  await env.DB.batch([
+    ...scriptStructureStatements(env, scriptSha256, origin?.draft_id ?? null, timeline, timestamp),
+    ...runScriptManifestStatements(env, row.run_id, scriptSha256, timeline, timestamp),
+  ]);
+  const created = await env.DB.prepare(
+    "SELECT * FROM operator_run_script_manifests WHERE run_id = ?",
+  ).bind(row.run_id).first<RunScriptManifestRow>();
+  if (!created) throw new Error("RUN_SCRIPT_STRUCTURE_CREATE_FAILED");
+  return { manifest: created, timeline };
+};
 
 const reviewByRunId = (env: Env, runId: string): Promise<ReviewRow | null> =>
   env.DB.prepare("SELECT * FROM operator_production_reviews WHERE run_id = ?").bind(runId).first<ReviewRow>();
@@ -866,6 +1065,7 @@ const createRun = async (request: Request, env: Env, origin: string | null): Pro
   });
   const inputSha256 = await sha256(canonical);
   const scriptSha256 = await sha256(input.script);
+  const timeline = extractScriptPhrases(input.script, input.roundCount);
   const scriptOrigin: ScriptOriginRow["origin"] = !linkedDraft
     ? "manual"
     : linkedDraft.script_sha256 === scriptSha256
@@ -907,7 +1107,21 @@ const createRun = async (request: Request, env: Env, origin: string | null): Pro
         VALUES (?, ?, ?, 1, 'pending', 'not_ready', ?, ?)`).bind(
         runId, releaseLabel, scriptSha256, timestamp, timestamp,
       ),
-      env.DB.prepare(`INSERT INTO operator_script_origins
+      ...scriptStructureStatements(
+        env,
+        scriptSha256,
+        linkedDraft?.draft_id ?? null,
+        timeline,
+        timestamp,
+      ),
+      ...runScriptManifestStatements(
+        env,
+        runId,
+        scriptSha256,
+        timeline,
+        timestamp,
+      ),
+      env.DB.prepare(`INSERT INTO operator_script_origins_v2
         (run_id, draft_id, origin, reveal_count, submitted_script_sha256,
          draft_script_sha256, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(
@@ -1052,14 +1266,14 @@ const approveScript = async (
         VALUES (?, ?, 'script_approved', ?, ?)`).bind(
         runId, timestamp, input.scriptRevision, input.scriptSha256,
       ),
-      env.DB.prepare(`INSERT OR IGNORE INTO operator_script_style_examples
+      env.DB.prepare(`INSERT OR IGNORE INTO operator_script_style_examples_v2
         (example_id, script_sha256, script, source, reveal_count,
          target_duration_seconds, trust_level, created_at, updated_at)
         SELECT ?, origins.submitted_script_sha256, runs.script,
           CASE origins.origin WHEN 'manual' THEN 'manual' ELSE 'auto_edited' END,
           origins.reveal_count, runs.target_duration_seconds, 'candidate', ?, ?
         FROM operator_production_runs AS runs
-        JOIN operator_script_origins AS origins ON origins.run_id = runs.run_id
+        JOIN operator_script_origins_v2 AS origins ON origins.run_id = runs.run_id
         JOIN operator_production_reviews AS reviews ON reviews.run_id = runs.run_id
         WHERE runs.run_id = ? AND reviews.script_approval_status = 'approved'
           AND origins.origin IN ('manual', 'auto_edited')`).bind(
@@ -1235,6 +1449,7 @@ const claimRun = async (request: Request, env: Env): Promise<Response> => {
     await insertEventStatement(env, candidate.run_id, "claimed", candidate.progress, candidate.current_step, message, null, timestamp).run();
     const claimed = await runById(env, candidate.run_id);
     if (!claimed) return errorResponse("CLAIM_FAILED", 500, null);
+    const scriptManifest = await ensureRunScriptManifest(env, claimed, timestamp);
     return json({
       run: {
         runId: claimed.run_id,
@@ -1246,6 +1461,8 @@ const claimRun = async (request: Request, env: Env): Promise<Response> => {
         script: claimed.script,
         targetDurationSeconds: claimed.target_duration_seconds,
         clientRequestId: claimed.client_request_id,
+        roundCount: scriptManifest.manifest.round_count,
+        phraseTimeline: scriptManifest.timeline,
       },
       leaseToken,
     });
@@ -1385,6 +1602,264 @@ const uploadPreview = async (
     revision: videoRevision,
     qualityPassed: true,
     monetizationPassed: true,
+  });
+};
+
+interface RunnerAnalysisRound {
+  readonly round: number;
+  readonly solutionCountry: string | null;
+  readonly solutionCountryCode: string | null;
+  readonly flagShownAtSeconds: number | null;
+  readonly revealAtSeconds: number | null;
+}
+
+interface RunnerWordCue {
+  readonly word: string;
+  readonly startSeconds: number;
+  readonly endSeconds: number;
+}
+
+interface RunnerAnalysisManifest {
+  readonly runnerId: string;
+  readonly leaseToken: string;
+  readonly rounds: readonly RunnerAnalysisRound[];
+  readonly wordCues: readonly RunnerWordCue[];
+}
+
+const nullableTimestamp = (value: unknown): number | null | undefined => {
+  if (value === null) return null;
+  if (
+    typeof value !== "number" || !Number.isFinite(value) ||
+    value < 0 || value > 600
+  ) return undefined;
+  return Number(value.toFixed(3));
+};
+
+const nullableCountry = (value: unknown): string | null | undefined => {
+  if (value === null) return null;
+  const country = safeText(value, 100);
+  if (!country || !/^[\p{L}\p{M}][\p{L}\p{M}\p{N} .,'’()/-]{0,99}$/u.test(country)) {
+    return undefined;
+  }
+  return country;
+};
+
+const nullableCountryCode = (value: unknown): string | null | undefined => {
+  if (value === null) return null;
+  const code = safeText(value, 3)?.toUpperCase();
+  return code && /^[A-Z]{2,3}$/u.test(code) ? code : undefined;
+};
+
+const normalizedSpeechTokens = (value: string): readonly string[] =>
+  (value.normalize("NFKD").toLocaleLowerCase("de").replaceAll("ß", "ss")
+    .match(/[\p{L}\p{N}]+/gu) ?? [])
+    .map((token) => token.normalize("NFC"));
+
+const parseRunnerAnalysisManifest = (
+  value: unknown,
+  roundCount: SupportedRoundCount,
+): RunnerAnalysisManifest => {
+  if (!isRecord(value) || !exactKeys(value, ["runnerId", "leaseToken", "rounds", "wordCues"])) {
+    throw new Error("INVALID_ANALYSIS_MANIFEST");
+  }
+  const runnerId = safeText(value.runnerId, 100);
+  const leaseToken = safeText(value.leaseToken, 200);
+  if (
+    !runnerId || !/^[A-Za-z0-9._:-]{3,100}$/u.test(runnerId) ||
+    !leaseToken || !Array.isArray(value.rounds) || !Array.isArray(value.wordCues) ||
+    value.rounds.length !== roundCount || value.wordCues.length > 1_500
+  ) throw new Error("INVALID_ANALYSIS_MANIFEST");
+
+  const rounds = value.rounds.map((entry): RunnerAnalysisRound => {
+    if (!isRecord(entry) || !exactKeys(entry, [
+      "round", "solutionCountry", "solutionCountryCode",
+      "flagShownAtSeconds", "revealAtSeconds",
+    ])) throw new Error("INVALID_ANALYSIS_MANIFEST");
+    const round = Number(entry.round);
+    const solutionCountry = nullableCountry(entry.solutionCountry);
+    const solutionCountryCode = nullableCountryCode(entry.solutionCountryCode);
+    const flagShownAtSeconds = nullableTimestamp(entry.flagShownAtSeconds);
+    const revealAtSeconds = nullableTimestamp(entry.revealAtSeconds);
+    if (
+      !Number.isInteger(round) || round < 1 || round > roundCount ||
+      solutionCountry === undefined || solutionCountryCode === undefined ||
+      flagShownAtSeconds === undefined || revealAtSeconds === undefined ||
+      (solutionCountry === null) !== (solutionCountryCode === null) ||
+      (flagShownAtSeconds !== null && revealAtSeconds !== null &&
+        revealAtSeconds < flagShownAtSeconds)
+    ) throw new Error("INVALID_ANALYSIS_MANIFEST");
+    return {
+      round,
+      solutionCountry,
+      solutionCountryCode,
+      flagShownAtSeconds,
+      revealAtSeconds,
+    };
+  });
+  if (new Set(rounds.map((round) => round.round)).size !== roundCount) {
+    throw new Error("INVALID_ANALYSIS_MANIFEST");
+  }
+
+  let priorStart = -1;
+  const wordCues = value.wordCues.map((entry): RunnerWordCue => {
+    if (!isRecord(entry) || !exactKeys(entry, ["word", "startSeconds", "endSeconds"])) {
+      throw new Error("INVALID_ANALYSIS_MANIFEST");
+    }
+    const word = safeText(entry.word, 100);
+    const startSeconds = nullableTimestamp(entry.startSeconds);
+    const endSeconds = nullableTimestamp(entry.endSeconds);
+    if (
+      !word || normalizedSpeechTokens(word).length === 0 ||
+      startSeconds === null || startSeconds === undefined ||
+      endSeconds === null || endSeconds === undefined ||
+      endSeconds < startSeconds || startSeconds < priorStart
+    ) throw new Error("INVALID_ANALYSIS_MANIFEST");
+    priorStart = startSeconds;
+    return { word, startSeconds, endSeconds };
+  });
+  return { runnerId, leaseToken, rounds, wordCues };
+};
+
+interface CueToken {
+  readonly token: string;
+  readonly cue: RunnerWordCue;
+}
+
+const alignPhraseTimings = (
+  timeline: ScriptPhraseTimeline,
+  rounds: readonly RunnerAnalysisRound[],
+  wordCues: readonly RunnerWordCue[],
+): readonly {
+  readonly phraseId: string;
+  readonly startSeconds: number | null;
+  readonly endSeconds: number | null;
+  readonly solutionCountry: string | null;
+  readonly solutionCountryCode: string | null;
+}[] => {
+  const cueTokens: CueToken[] = wordCues.flatMap((cue) =>
+    normalizedSpeechTokens(cue.word).map((token) => ({ token, cue })));
+  const roundByNumber = new Map(rounds.map((round) => [round.round, round]));
+  let cursor = 0;
+  return timeline.phrases.map((phrase) => {
+    const round = phrase.round === null ? null : roundByNumber.get(phrase.round) ?? null;
+    if (phrase.type === "reveal") {
+      return {
+        phraseId: phrase.phraseId,
+        startSeconds: round?.revealAtSeconds ?? null,
+        endSeconds: round?.revealAtSeconds ?? null,
+        solutionCountry: round?.solutionCountry ?? null,
+        solutionCountryCode: round?.solutionCountryCode ?? null,
+      };
+    }
+    const expected = normalizedSpeechTokens(phrase.text);
+    let matchStart = -1;
+    if (expected.length > 0) {
+      for (let candidate = cursor; candidate + expected.length <= cueTokens.length; candidate += 1) {
+        if (expected.every((token, offset) => cueTokens[candidate + offset]?.token === token)) {
+          matchStart = candidate;
+          break;
+        }
+      }
+    }
+    if (matchStart < 0) {
+      return {
+        phraseId: phrase.phraseId,
+        startSeconds: null,
+        endSeconds: null,
+        solutionCountry: null,
+        solutionCountryCode: null,
+      };
+    }
+    const matchEnd = matchStart + expected.length - 1;
+    cursor = matchEnd + 1;
+    return {
+      phraseId: phrase.phraseId,
+      startSeconds: cueTokens[matchStart]?.cue.startSeconds ?? null,
+      endSeconds: cueTokens[matchEnd]?.cue.endSeconds ?? null,
+      solutionCountry: null,
+      solutionCountryCode: null,
+    };
+  });
+};
+
+const uploadAnalysisManifest = async (
+  request: Request,
+  env: Env,
+  runId: string,
+): Promise<Response> => {
+  const row = await runById(env, runId);
+  if (!row) return errorResponse("RUN_NOT_FOUND", 404, null);
+  const timestamp = now();
+  const persisted = await ensureRunScriptManifest(env, row, timestamp);
+  const input = parseRunnerAnalysisManifest(
+    await readJson(request),
+    persisted.manifest.round_count,
+  );
+  if (!await ownsLease(row, input.runnerId, input.leaseToken, timestamp)) {
+    return errorResponse("LEASE_NOT_OWNED", 409, null);
+  }
+
+  const phraseUpdates = alignPhraseTimings(
+    persisted.timeline,
+    input.rounds,
+    input.wordCues,
+  );
+  const spokenPhraseCount = persisted.timeline.phrases
+    .filter((phrase) => phrase.type !== "reveal").length;
+  const alignedSpokenPhraseCount = phraseUpdates
+    .filter((phrase) => phrase.startSeconds !== null && phrase.endSeconds !== null)
+    .length - input.rounds.filter((round) => round.revealAtSeconds !== null).length;
+  if (input.wordCues.length > 0 && alignedSpokenPhraseCount < 1) {
+    return errorResponse("WORD_CUES_NOT_ALIGNED", 422, null);
+  }
+
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE operator_run_script_manifests SET
+      timing_source = ?, updated_at = ? WHERE run_id = ?`).bind(
+      alignedSpokenPhraseCount > 0 ? "word_timestamps" : "script_only",
+      timestamp,
+      runId,
+    ),
+    ...phraseUpdates.map((phrase) => env.DB.prepare(`UPDATE operator_run_script_phrases SET
+      start_seconds = COALESCE(?, start_seconds),
+      end_seconds = COALESCE(?, end_seconds),
+      solution_country = COALESCE(?, solution_country),
+      solution_country_code = COALESCE(?, solution_country_code),
+      updated_at = ?
+      WHERE run_id = ? AND phrase_id = ?`).bind(
+      phrase.startSeconds,
+      phrase.endSeconds,
+      phrase.solutionCountry,
+      phrase.solutionCountryCode,
+      timestamp,
+      runId,
+      phrase.phraseId,
+    )),
+    ...input.rounds.map((round) => env.DB.prepare(`UPDATE operator_run_script_rounds SET
+      solution_country = COALESCE(?, solution_country),
+      solution_country_code = COALESCE(?, solution_country_code),
+      flag_shown_at_seconds = COALESCE(?, flag_shown_at_seconds),
+      reveal_at_seconds = COALESCE(?, reveal_at_seconds),
+      updated_at = ?
+      WHERE run_id = ? AND round_number = ?`).bind(
+      round.solutionCountry,
+      round.solutionCountryCode,
+      round.flagShownAtSeconds,
+      round.revealAtSeconds,
+      timestamp,
+      runId,
+      round.round,
+    )),
+  ]);
+  return json({
+    runId,
+    schemaVersion: persisted.manifest.schema_version,
+    roundCount: persisted.manifest.round_count,
+    timingSource: alignedSpokenPhraseCount > 0 ? "word_timestamps" : "script_only",
+    alignedPhraseCount: alignedSpokenPhraseCount,
+    spokenPhraseCount,
+    unmatchedPhraseCount: Math.max(0, spokenPhraseCount - alignedSpokenPhraseCount),
+    roundsStored: input.rounds.length,
   });
 };
 
@@ -1621,11 +2096,11 @@ const updateRelease = async (
       final_release_approved = ?, updated_at = ? WHERE entry_id = ?`).bind(
       allPublished ? 1 : 0, timestamp, calendarEntryId,
     ),
-    env.DB.prepare(`UPDATE operator_script_style_examples SET
+    env.DB.prepare(`UPDATE operator_script_style_examples_v2 SET
       trust_level = CASE WHEN ? = 1 THEN 'high_confidence' ELSE trust_level END,
       updated_at = CASE WHEN ? = 1 THEN ? ELSE updated_at END
       WHERE script_sha256 = (
-        SELECT submitted_script_sha256 FROM operator_script_origins WHERE run_id = ?
+        SELECT submitted_script_sha256 FROM operator_script_origins_v2 WHERE run_id = ?
       )`).bind(
       allPublished ? 1 : 0, allPublished ? 1 : 0, timestamp, release.run_id,
     ),
@@ -1887,6 +2362,91 @@ const validDashboardData = (bytes: Uint8Array, fileName: string): boolean => {
   }
 };
 
+interface RetentionPhraseRow {
+  readonly run_id: string;
+  readonly provider_run_id: string | null;
+  readonly phrase_id: string;
+  readonly formulation_key: string;
+  readonly phrase_type: string;
+  readonly text: string;
+  readonly position_index: number;
+  readonly start_seconds: number | null;
+  readonly end_seconds: number | null;
+}
+
+const publicationContentIds = (contentOperations: unknown): ReadonlyMap<string, string> => {
+  const root = isRecord(contentOperations) ? contentOperations : null;
+  const publications = Array.isArray(root?.publications) ? root.publications : [];
+  const result = new Map<string, string>();
+  for (const value of publications) {
+    if (!isRecord(value) || value.platform !== "youtube") continue;
+    const runId = safeText(value.runId, 220);
+    const contentId = safeText(value.contentId, 100);
+    if (
+      !runId || !contentId ||
+      !/^flaggenbande-[a-f0-9]{64}$/u.test(contentId)
+    ) continue;
+    result.set(runId, contentId);
+  }
+  return result;
+};
+
+const storedPhraseTimelines = async (
+  env: Env,
+  contentOperations: unknown,
+): Promise<{ readonly timelines: readonly Record<string, unknown>[] }> => {
+  const publications = publicationContentIds(contentOperations);
+  if (publications.size === 0) return { timelines: [] };
+  const rows = await env.DB.prepare(`SELECT
+      manifests.run_id,
+      runs.provider_run_id,
+      run_phrases.phrase_id,
+      phrases.formulation_key,
+      phrases.phrase_type,
+      phrases.text,
+      phrases.position_index,
+      run_phrases.start_seconds,
+      run_phrases.end_seconds
+    FROM operator_run_script_manifests AS manifests
+    INNER JOIN operator_production_runs AS runs
+      ON runs.run_id = manifests.run_id
+    INNER JOIN operator_run_script_phrases AS run_phrases
+      ON run_phrases.run_id = manifests.run_id
+    INNER JOIN operator_script_phrases AS phrases
+      ON phrases.script_sha256 = run_phrases.script_sha256
+      AND phrases.phrase_id = run_phrases.phrase_id
+    ORDER BY manifests.run_id, phrases.position_index`)
+    .all<RetentionPhraseRow>();
+  const grouped = new Map<string, RetentionPhraseRow[]>();
+  for (const row of rows.results ?? []) {
+    const current = grouped.get(row.run_id) ?? [];
+    current.push(row);
+    grouped.set(row.run_id, current);
+  }
+  const timelines = [...grouped.entries()].flatMap(([runId, phrases]) => {
+    const providerRunId = phrases[0]?.provider_run_id ?? runId;
+    const publication = [...publications.entries()].find(([publicationRunId]) =>
+      publicationRunId === providerRunId ||
+      publicationRunId.startsWith(`upload-${providerRunId}-`)
+    );
+    if (!publication) return [];
+    return [{
+      runId,
+      contentId: publication[1],
+      phrases: phrases.map((phrase) => ({
+        phraseId: phrase.phrase_id,
+        formulationKey: phrase.formulation_key,
+        type: phrase.phrase_type,
+        text: phrase.text,
+        position: phrase.position_index,
+        startSeconds: phrase.start_seconds,
+        endSeconds: phrase.end_seconds,
+      })),
+    }];
+  });
+  return { timelines };
+};
+
 const researchRecommendations = async (
   env: Env,
   origin: string | null,
@@ -1921,8 +2481,14 @@ const researchRecommendations = async (
     const generatedAt = isRecord(dashboard) && typeof dashboard.generatedAt === "string"
       ? dashboard.generatedAt
       : now();
+    const phraseTimelines = await storedPhraseTimelines(env, contentOperations);
     return json(
-      buildResearchRecommendationFeed(dashboard, generatedAt, contentOperations),
+      buildResearchRecommendationFeed(
+        dashboard,
+        generatedAt,
+        contentOperations,
+        phraseTimelines,
+      ),
       200,
       origin,
     );
@@ -2046,6 +2612,12 @@ const handle = async (request: Request, env: Env): Promise<Response> => {
     ? url.pathname.match(/^\/v1\/runner\/runs\/(video-[a-f0-9]{24})\/status$/u)
     : null;
   if (statusMatch) return updateFromRunner(request, env, statusMatch[1]);
+  const analysisManifestMatch = request.method === "POST"
+    ? url.pathname.match(/^\/v1\/runner\/runs\/(video-[a-f0-9]{24})\/analysis-manifest$/u)
+    : null;
+  if (analysisManifestMatch) {
+    return uploadAnalysisManifest(request, env, analysisManifestMatch[1]);
+  }
   if (request.method === "POST" && url.pathname === "/v1/release-runner/claim") {
     return claimRelease(request, env);
   }
@@ -2070,9 +2642,11 @@ const safeClientErrors = new Map<string, number>([
   ["REQUEST_BODY_TOO_LARGE", 413],
   ["INVALID_JSON", 400],
   ["INVALID_VIDEO_RUN_INPUT", 400],
+  ["UNSUPPORTED_PRODUCTION_ROUND_COUNT", 400],
   ["INVALID_SCRIPT_DRAFT_INPUT", 400],
   ["INVALID_CLAIM", 400],
   ["INVALID_RUNNER_UPDATE", 400],
+  ["INVALID_ANALYSIS_MANIFEST", 400],
   ["INVALID_CALENDAR_ENTRY", 400],
   ["INVALID_SCRIPT_APPROVAL", 400],
   ["INVALID_VIDEO_APPROVAL", 400],

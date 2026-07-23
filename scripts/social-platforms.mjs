@@ -11,6 +11,7 @@ const METRIC_NAMES = [
   'watchTimeMinutes',
   'averageViewDurationSeconds',
   'averageViewPercentage',
+  'skipRate',
   'followersGained',
 ]
 const ADDITIVE_METRIC_NAMES = new Set([
@@ -43,16 +44,18 @@ const summarizeMetrics = videos => compactMetrics(Object.fromEntries(METRIC_NAME
     : null,
 ])))
 
+const redactSensitiveText = (value, maximumLength = 300) => String(value ?? '')
+  .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
+  .replace(/((?:access|refresh)[_-]?token|client[_-]?secret|api[_-]?key|authorization)(\s*[=:]\s*)[^\s,;&}"']+/gi, '$1$2[redacted]')
+  .replace(/([?&](?:access_token|refresh_token|client_secret|api_key|key)=)[^&\s]+/gi, '$1[redacted]')
+  .replace(/\b(?:sk|act|clt)\.[A-Za-z0-9._~-]+\b/g, '[redacted]')
+  .slice(0, maximumLength)
+
 const sanitizedPublicReason = error => {
   const explicit = error && typeof error === 'object' && 'publicReason' in error
     ? String(error.publicReason)
     : 'Die Plattform-API konnte voruebergehend nicht aktualisiert werden.'
-  return explicit
-    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
-    .replace(/((?:access|refresh)[_-]?token|client[_-]?secret|api[_-]?key|authorization)(\s*[=:]\s*)[^\s,;&}"']+/gi, '$1$2[redacted]')
-    .replace(/([?&](?:access_token|refresh_token|client_secret|api_key|key)=)[^&\s]+/gi, '$1[redacted]')
-    .replace(/\b(?:sk|act|clt)\.[A-Za-z0-9._~-]+\b/g, '[redacted]')
-    .slice(0, 300)
+  return redactSensitiveText(explicit)
 }
 
 const publicError = (message, publicReason) => {
@@ -76,10 +79,24 @@ async function fetchJson(fetchImpl, url, options = {}, retries = 2) {
 
     if (response.ok) return response.json()
     const body = await response.text()
+    let apiPayload = null
+    try {
+      apiPayload = body ? JSON.parse(body) : null
+    } catch {
+      // Non-JSON error bodies still receive the safe HTTP-only public reason.
+    }
     const error = publicError(
-      `API request failed with HTTP ${response.status}${body ? `: ${body.slice(0, 240)}` : ''}`,
+      `API request failed with HTTP ${response.status}.`,
       `API request failed with HTTP ${response.status}.`,
     )
+    const apiError = apiPayload?.error
+    error.apiFailure = {
+      httpStatus: response.status,
+      code: numberOrNull(apiError?.code) ?? nullableString(apiError?.code, 80),
+      subcode: numberOrNull(apiError?.error_subcode) ?? nullableString(apiError?.error_subcode, 80),
+      type: nullableString(apiError?.type, 100),
+      message: apiError?.message ? redactSensitiveText(apiError.message, 240) : null,
+    }
     const retryable = [429, 500, 502, 503, 504].includes(response.status)
     if (!retryable || attempt === retries) throw error
     lastError = error
@@ -138,7 +155,22 @@ async function collectYouTubeRetention(fetchImpl, headers, videoId, startDate, e
   })
   try {
     const report = await fetchJson(fetchImpl, `https://youtubeanalytics.googleapis.com/v2/reports?${query}`, { headers }, 0)
-    return { status: 'available', points: audienceRetentionPoints(report), reason: null }
+    if (!Array.isArray(report?.rows) || report.rows.length === 0) {
+      return {
+        status: 'pending',
+        points: [],
+        reason: 'YouTube Analytics hat fuer dieses Video noch keine Retention-Daten geliefert.',
+      }
+    }
+    const points = audienceRetentionPoints(report)
+    if (points.length === 0) {
+      return {
+        status: 'no_data',
+        points: [],
+        reason: 'Der YouTube-Retention-Bericht enthielt keine verwertbaren Messpunkte.',
+      }
+    }
+    return { status: 'available', points, reason: null }
   } catch (error) {
     return { status: 'error', points: [], reason: sanitizedPublicReason(error) }
   }
@@ -158,8 +190,10 @@ const video = ({ platform, id, contentId, title, description, publishedAt, url, 
   metrics: compactMetrics(metrics || {}),
   ...(Array.isArray(retention) ? { retention: retention.slice(0, 100) } : {}),
   ...(normalizedDate(retentionCheckedAt) ? { retentionCheckedAt: normalizedDate(retentionCheckedAt) } : {}),
-  ...(['available', 'error'].includes(retentionCheckStatus) ? { retentionCheckStatus } : {}),
-  ...(retentionCheckStatus === 'error' && retentionCheckReason ? { retentionCheckReason: String(retentionCheckReason).slice(0, 200) } : {}),
+  ...(['available', 'pending', 'no_data', 'error'].includes(retentionCheckStatus) ? { retentionCheckStatus } : {}),
+  ...(['pending', 'no_data', 'error'].includes(retentionCheckStatus) && retentionCheckReason
+    ? { retentionCheckReason: String(retentionCheckReason).slice(0, 200) }
+    : {}),
 })
 
 const nullableString = (value, maximumLength) => typeof value === 'string' && value.trim()
@@ -259,6 +293,7 @@ const hasYouTubeCredentials = env => Boolean(
 )
 
 const YOUTUBE_RETENTION_CACHE_MS = 24 * 60 * 60 * 1000
+const YOUTUBE_RETENTION_RETRY_MS = 2 * 60 * 60 * 1000
 const YOUTUBE_RETENTION_REQUEST_LIMIT = 12
 
 async function collectYouTube(env, fetchImpl, previous = null) {
@@ -342,22 +377,26 @@ async function collectYouTube(env, fetchImpl, previous = null) {
     .filter(entry => entry?.platform === 'youtube' && entry?.platformVideoId)
     .map(entry => [String(entry.platformVideoId), entry]))
   const retentionErrors = []
+  let pendingRetentionCount = 0
+  let noDataRetentionCount = 0
   let deferredRetentionCount = 0
 
   const reusePreviousRetention = (id, previousEntry) => {
     if (Array.isArray(previousEntry?.retention)) retentionById.set(id, previousEntry.retention.slice(0, 100))
     const previousCheckedAt = normalizedDate(previousEntry?.retentionCheckedAt)
     if (previousCheckedAt) retentionCheckedAtById.set(id, previousCheckedAt)
-    if (['available', 'error'].includes(previousEntry?.retentionCheckStatus)) {
+    if (['available', 'pending', 'no_data', 'error'].includes(previousEntry?.retentionCheckStatus)) {
       retentionCheckStatusById.set(id, previousEntry.retentionCheckStatus)
     }
-    if (previousEntry?.retentionCheckStatus === 'error' && previousEntry?.retentionCheckReason) {
+    if (['pending', 'no_data', 'error'].includes(previousEntry?.retentionCheckStatus) && previousEntry?.retentionCheckReason) {
       retentionCheckReasonById.set(id, sanitizedPublicReason(publicError('', previousEntry.retentionCheckReason)))
     }
   }
 
   // Audience retention requires a separate query for every video. Cache each
-  // successful check for 24 hours and process at most 12 overdue videos per run.
+  // successful check for 24 hours. Empty or failed reports are retried after
+  // two hours because YouTube can publish retention data later than Studio.
+  // Process at most 12 overdue videos per run.
   // Never spend a burst of hundreds of Analytics requests on an hourly sync.
   if (analyticsAvailable) {
     const checkedAt = now()
@@ -369,10 +408,18 @@ async function collectYouTube(env, fetchImpl, previous = null) {
       const previousCheckedAt = normalizedDate(previousEntry?.retentionCheckedAt)
       const previousCheckedAtMs = previousCheckedAt ? Date.parse(previousCheckedAt) : Number.NaN
       const cacheAge = checkedAtMs - previousCheckedAtMs
-      if (Number.isFinite(cacheAge) && cacheAge >= 0 && cacheAge < YOUTUBE_RETENTION_CACHE_MS) {
+      const previousStatus = previousEntry?.retentionCheckStatus
+      const cacheTtl = previousStatus === 'available'
+        ? YOUTUBE_RETENTION_CACHE_MS
+        : YOUTUBE_RETENTION_RETRY_MS
+      if (Number.isFinite(cacheAge) && cacheAge >= 0 && cacheAge < cacheTtl) {
         reusePreviousRetention(id, previousEntry)
-        if (previousEntry?.retentionCheckStatus === 'error') {
+        if (previousStatus === 'error') {
           retentionErrors.push(previousEntry.retentionCheckReason || 'Der letzte YouTube-Retention-Abruf ist fehlgeschlagen.')
+        } else if (previousStatus === 'pending') {
+          pendingRetentionCount += 1
+        } else if (previousStatus === 'no_data') {
+          noDataRetentionCount += 1
         }
       } else {
         due.push({ item, id, previousEntry, previousCheckedAtMs })
@@ -406,6 +453,13 @@ async function collectYouTube(env, fetchImpl, previous = null) {
           retentionCheckedAtById.set(entry.id, checkedAt)
           retentionCheckStatusById.set(entry.id, 'available')
           retentionCheckReasonById.delete(entry.id)
+        } else if (['pending', 'no_data'].includes(report.status)) {
+          if (report.status === 'pending') pendingRetentionCount += 1
+          else noDataRetentionCount += 1
+          reusePreviousRetention(entry.id, entry.previousEntry)
+          retentionCheckedAtById.set(entry.id, checkedAt)
+          retentionCheckStatusById.set(entry.id, report.status)
+          retentionCheckReasonById.set(entry.id, report.reason)
         } else {
           retentionErrors.push(report.reason)
           reusePreviousRetention(entry.id, entry.previousEntry)
@@ -452,6 +506,12 @@ async function collectYouTube(env, fetchImpl, previous = null) {
     const detail = [...new Set(retentionErrors.filter(Boolean))].join(' ')
     partialReasons.push(`YouTube-Retention konnte fuer ${retentionErrors.length} ${retentionErrors.length === 1 ? 'Video' : 'Videos'} nicht aktualisiert werden.${detail ? ` ${detail}` : ''}`)
   }
+  if (pendingRetentionCount > 0) {
+    partialReasons.push(`YouTube-Retention fuer ${pendingRetentionCount} ${pendingRetentionCount === 1 ? 'Video steht noch aus und wird' : 'Videos stehen noch aus und werden'} nach zwei Stunden erneut abgefragt.`)
+  }
+  if (noDataRetentionCount > 0) {
+    partialReasons.push(`YouTube lieferte fuer ${noDataRetentionCount} ${noDataRetentionCount === 1 ? 'Video keine verwertbare Retention' : 'Videos keine verwertbare Retention'}; erneuter Versuch in zwei Stunden.`)
+  }
   if (deferredRetentionCount > 0) {
     partialReasons.push(`YouTube-Retention fuer ${deferredRetentionCount} ${deferredRetentionCount === 1 ? 'Video wird' : 'Videos werden'} in spaeteren Laeufen nachgeladen.`)
   }
@@ -496,6 +556,38 @@ const insightValues = payload => Object.fromEntries((payload.data ?? []).map(met
   metric.values?.at(-1)?.value ?? metric.total_value?.value ?? null,
 ]))
 
+const insightDiagnostic = ({ platform, videoId, endpoint, metricNames, error, outcome = 'error' }) => {
+  const failure = error?.apiFailure ?? {}
+  return {
+    platform,
+    videoId: String(videoId),
+    endpoint,
+    metricNames: metricNames.map(String),
+    outcome,
+    httpStatus: numberOrNull(failure.httpStatus),
+    code: failure.code ?? null,
+    subcode: failure.subcode ?? null,
+    type: failure.type ?? null,
+    message: failure.message ?? sanitizedPublicReason(error),
+  }
+}
+
+const appendUniqueDiagnostics = (target, additions) => {
+  const known = new Set(target.map(entry => JSON.stringify(entry)))
+  for (const entry of additions) {
+    const key = JSON.stringify(entry)
+    if (known.has(key)) continue
+    known.add(key)
+    target.push(entry)
+  }
+}
+
+const isPermissionFailure = error => {
+  const status = numberOrNull(error?.apiFailure?.httpStatus)
+  const code = numberOrNull(error?.apiFailure?.code)
+  return [401, 403].includes(status) || [10, 190, 200].includes(code)
+}
+
 const FACEBOOK_REEL_METRICS = [
   'blue_reels_play_count',
   'post_impressions_unique',
@@ -512,27 +604,146 @@ const FACEBOOK_CLASSIC_VIDEO_METRICS = [
 
 const hasNumericInsight = (insights, metricNames) => metricNames.some(name => numberOrNull(insights[name]) !== null)
 
-async function facebookVideoInsights(fetchImpl, version, videoId, headers) {
-  const read = async metricNames => insightValues(await fetchJson(fetchImpl, facebookGraphUrl(version, `${videoId}/video_insights`, {
-    metric: metricNames.join(','),
+async function readFacebookInsightSet(fetchImpl, version, videoId, headers, kind, metricNames) {
+  const read = async names => insightValues(await fetchJson(fetchImpl, facebookGraphUrl(version, `${videoId}/video_insights`, {
+    metric: names.join(','),
     period: 'lifetime',
   }), { headers }, 0))
-  const safeFailures = []
   try {
-    const insights = await read(FACEBOOK_REEL_METRICS)
-    if (hasNumericInsight(insights, FACEBOOK_REEL_METRICS)) return { kind: 'reel', insights, reason: null }
-    safeFailures.push('Der Reel-Insights-Endpunkt lieferte keine nutzbaren Metriken.')
-  } catch (error) {
-    safeFailures.push(sanitizedPublicReason(error))
+    return { insights: await read(metricNames), diagnostics: [] }
+  } catch (batchError) {
+    const diagnostics = [insightDiagnostic({
+      platform: 'facebook',
+      videoId,
+      endpoint: `video_insights:${kind}`,
+      metricNames,
+      error: batchError,
+    })]
+    const insights = {}
+    if (isPermissionFailure(batchError)) return { insights, diagnostics }
+    for (const metricName of metricNames) {
+      try {
+        Object.assign(insights, await read([metricName]))
+      } catch (error) {
+        diagnostics.push(insightDiagnostic({
+          platform: 'facebook',
+          videoId,
+          endpoint: `video_insights:${kind}`,
+          metricNames: [metricName],
+          error,
+        }))
+      }
+    }
+    return { insights, diagnostics }
   }
+}
+
+async function facebookVideoInsights(fetchImpl, version, videoId, headers) {
+  const diagnostics = []
+  const reel = await readFacebookInsightSet(fetchImpl, version, videoId, headers, 'reel', FACEBOOK_REEL_METRICS)
+  appendUniqueDiagnostics(diagnostics, reel.diagnostics)
+  if (hasNumericInsight(reel.insights, FACEBOOK_REEL_METRICS)) {
+    return { kind: 'reel', insights: reel.insights, reason: null, diagnostics }
+  }
+  diagnostics.push({
+    platform: 'facebook',
+    videoId: String(videoId),
+    endpoint: 'video_insights:reel',
+    metricNames: [...FACEBOOK_REEL_METRICS],
+    outcome: 'no_data',
+    httpStatus: null,
+    code: null,
+    subcode: null,
+    type: null,
+    message: 'Der Reel-Insights-Endpunkt lieferte keine nutzbaren Metriken.',
+  })
+
+  const classic = await readFacebookInsightSet(fetchImpl, version, videoId, headers, 'classic', FACEBOOK_CLASSIC_VIDEO_METRICS)
+  appendUniqueDiagnostics(diagnostics, classic.diagnostics)
+  if (hasNumericInsight(classic.insights, FACEBOOK_CLASSIC_VIDEO_METRICS)) {
+    return { kind: 'classic', insights: classic.insights, reason: null, diagnostics }
+  }
+  diagnostics.push({
+    platform: 'facebook',
+    videoId: String(videoId),
+    endpoint: 'video_insights:classic',
+    metricNames: [...FACEBOOK_CLASSIC_VIDEO_METRICS],
+    outcome: 'no_data',
+    httpStatus: null,
+    code: null,
+    subcode: null,
+    type: null,
+    message: 'Der klassische Video-Insights-Endpunkt lieferte keine nutzbaren Metriken.',
+  })
+  const safeFailures = diagnostics.map(entry => entry.outcome === 'error' && entry.httpStatus
+    ? `API request failed with HTTP ${entry.httpStatus}.`
+    : entry.message).filter(Boolean)
+  return {
+    kind: null,
+    insights: {},
+    reason: [...new Set(safeFailures)].join(' ').slice(0, 240),
+    diagnostics,
+  }
+}
+
+const INSTAGRAM_BASE_METRICS = ['views', 'reach', 'saved', 'shares', 'total_interactions']
+const INSTAGRAM_TIMING_METRIC_VARIANTS = {
+  totalWatchTime: ['ig_reels_video_view_total_time', 'video_view_total_time'],
+  averageWatchTime: ['ig_reels_avg_watch_time', 'average_watch_time'],
+  skipRate: ['reels_skip_rate', 'skip_rate'],
+}
+
+async function readInstagramInsightMetrics(fetchImpl, version, mediaId, headers, metricNames, label) {
+  const read = async names => insightValues(await fetchJson(fetchImpl, instagramGraphUrl(version, `${mediaId}/insights`, {
+    metric: names.join(','),
+  }), { headers }, 0))
   try {
-    const insights = await read(FACEBOOK_CLASSIC_VIDEO_METRICS)
-    if (hasNumericInsight(insights, FACEBOOK_CLASSIC_VIDEO_METRICS)) return { kind: 'classic', insights, reason: null }
-    safeFailures.push('Der klassische Video-Insights-Endpunkt lieferte keine nutzbaren Metriken.')
-  } catch (error) {
-    safeFailures.push(sanitizedPublicReason(error))
+    return { insights: await read(metricNames), diagnostics: [] }
+  } catch (batchError) {
+    const diagnostics = [insightDiagnostic({
+      platform: 'instagram',
+      videoId: mediaId,
+      endpoint: `insights:${label}`,
+      metricNames,
+      error: batchError,
+    })]
+    const insights = {}
+    if (metricNames.length === 1 || isPermissionFailure(batchError)) return { insights, diagnostics }
+    for (const metricName of metricNames) {
+      try {
+        Object.assign(insights, await read([metricName]))
+      } catch (error) {
+        diagnostics.push(insightDiagnostic({
+          platform: 'instagram',
+          videoId: mediaId,
+          endpoint: `insights:${label}`,
+          metricNames: [metricName],
+          error,
+        }))
+      }
+    }
+    return { insights, diagnostics }
   }
-  return { kind: null, insights: {}, reason: [...new Set(safeFailures)].join(' ').slice(0, 240) }
+}
+
+async function collectInstagramInsights(fetchImpl, version, mediaId, headers) {
+  const diagnostics = []
+  const base = await readInstagramInsightMetrics(fetchImpl, version, mediaId, headers, INSTAGRAM_BASE_METRICS, 'base')
+  appendUniqueDiagnostics(diagnostics, base.diagnostics)
+  const insights = { ...base.insights }
+  const resolved = {}
+  for (const [name, candidates] of Object.entries(INSTAGRAM_TIMING_METRIC_VARIANTS)) {
+    for (const metricName of candidates) {
+      const result = await readInstagramInsightMetrics(fetchImpl, version, mediaId, headers, [metricName], name)
+      appendUniqueDiagnostics(diagnostics, result.diagnostics)
+      const value = numberOrNull(result.insights[metricName])
+      if (value === null) continue
+      insights[metricName] = value
+      resolved[name] = { metricName, value }
+      break
+    }
+  }
+  return { insights, resolved, diagnostics }
 }
 
 async function collectInstagram(env, fetchImpl) {
@@ -549,16 +760,21 @@ async function collectInstagram(env, fetchImpl) {
     limit: '100',
   }), { headers })
   const videos = []
+  const diagnostics = []
+  let missingBaseInsightCount = 0
+  let missingTimingInsightCount = 0
   for (const item of mediaPage.data ?? []) {
     if (!['VIDEO', 'REELS'].includes(item.media_type) && item.media_product_type !== 'REELS') continue
-    let insights = {}
-    try {
-      insights = insightValues(await fetchJson(fetchImpl, instagramGraphUrl(version, `${item.id}/insights`, {
-        metric: 'views,reach,saved,shares,total_interactions',
-      }), { headers }))
-    } catch {
-      // Basic public counters remain useful when an insight is not available for a media type.
+    const insightResult = await collectInstagramInsights(fetchImpl, version, item.id, headers)
+    appendUniqueDiagnostics(diagnostics, insightResult.diagnostics)
+    const insights = insightResult.insights
+    if (!hasNumericInsight(insights, INSTAGRAM_BASE_METRICS)) missingBaseInsightCount += 1
+    if (!insightResult.resolved.totalWatchTime && !insightResult.resolved.averageWatchTime) {
+      missingTimingInsightCount += 1
     }
+    const totalWatchTime = insightResult.resolved.totalWatchTime?.value ?? null
+    const averageWatchTime = insightResult.resolved.averageWatchTime?.value ?? null
+    const skipRate = insightResult.resolved.skipRate?.value ?? null
     videos.push(video({
       platform: 'instagram',
       id: item.id,
@@ -575,10 +791,27 @@ async function collectInstagram(env, fetchImpl) {
         comments: item.comments_count,
         shares: insights.shares,
         saves: insights.saved,
+        watchTimeMinutes: totalWatchTime === null ? null : totalWatchTime / 60000,
+        averageViewDurationSeconds: averageWatchTime === null ? null : averageWatchTime / 1000,
+        skipRate,
       },
     }))
   }
-  return { platform: 'instagram', status: 'available', accountName: account.username ?? account.name ?? null, videos }
+  const reasons = []
+  if (missingBaseInsightCount > 0) {
+    reasons.push(`Instagram-Basis-Insights fehlen fuer ${missingBaseInsightCount} ${missingBaseInsightCount === 1 ? 'Video' : 'Videos'}.`)
+  }
+  if (missingTimingInsightCount > 0) {
+    reasons.push(`Instagram-Watchtime-Metriken fehlen fuer ${missingTimingInsightCount} ${missingTimingInsightCount === 1 ? 'Video' : 'Videos'}.`)
+  }
+  return {
+    platform: 'instagram',
+    status: reasons.length > 0 ? 'partial' : 'available',
+    reason: reasons.length > 0 ? reasons.join(' ').slice(0, 300) : undefined,
+    accountName: account.username ?? account.name ?? null,
+    videos,
+    diagnostics: diagnostics.slice(0, 100),
+  }
 }
 
 async function collectFacebook(env, fetchImpl) {
@@ -596,11 +829,13 @@ async function collectFacebook(env, fetchImpl) {
   }), { headers })
   const videos = []
   const insightFailures = []
+  const diagnostics = []
   for (const item of mediaPage.data ?? []) {
     const rawStatus = String(item.status?.video_status ?? '').toLowerCase()
     if (item.published === false || ['processing', 'error', 'blocked', 'copyright_blocked'].includes(rawStatus)) continue
     const insightResult = await facebookVideoInsights(fetchImpl, version, item.id, headers)
     const insights = insightResult.insights
+    appendUniqueDiagnostics(diagnostics, insightResult.diagnostics ?? [])
     if (!insightResult.kind) insightFailures.push(insightResult.reason)
     const isReel = insightResult.kind === 'reel'
     const totalTime = numberOrNull(isReel ? insights.post_video_view_time : insights.total_video_view_total_time)
@@ -635,6 +870,7 @@ async function collectFacebook(env, fetchImpl) {
     reason,
     accountName: account.name ?? null,
     videos,
+    diagnostics: diagnostics.slice(0, 100),
   }
 }
 
@@ -806,6 +1042,7 @@ async function collectAnalyticsFeed(env, fetchImpl) {
       status: stateStatus,
       reason: state.reason,
       accountName: state.accountName ?? null,
+      diagnostics: Array.isArray(state.diagnostics) ? state.diagnostics.slice(0, 100) : [],
       videos,
       uploads,
       uploadsRefreshed: uploadsProvided && ['available', 'partial'].includes(stateStatus),
@@ -867,7 +1104,7 @@ export function mergeSocialHistory(previous, current, capturedAt = now()) {
     }
     if (!mergedEntry.retentionCheckStatus && previousEntry?.retentionCheckStatus) {
       mergedEntry.retentionCheckStatus = previousEntry.retentionCheckStatus
-      if (previousEntry.retentionCheckStatus === 'error' && previousEntry.retentionCheckReason) {
+      if (['pending', 'no_data', 'error'].includes(previousEntry.retentionCheckStatus) && previousEntry.retentionCheckReason) {
         mergedEntry.retentionCheckReason = previousEntry.retentionCheckReason
       }
     }
@@ -960,6 +1197,9 @@ export async function collectSocialPlatforms({ env = process.env, fetchImpl = fe
           uploadCount: previousState.uploadCount ?? Math.max(previousUploadCount, previousVideoCount),
           startedAt: result.startedAt ?? previousState.startedAt ?? null,
           completedAt: result.completedAt ?? previousState.completedAt ?? null,
+          diagnostics: Array.isArray(result?.diagnostics)
+            ? result.diagnostics.slice(0, 100)
+            : (Array.isArray(previousState?.diagnostics) ? previousState.diagnostics.slice(0, 100) : []),
         }]
       }
       const publishedVideoCount = result?.videos.filter(isPublishedVideo).length ?? 0
@@ -974,6 +1214,7 @@ export async function collectSocialPlatforms({ env = process.env, fetchImpl = fe
         uploadCount: Math.max(publishedVideoCount, knownUploadCount),
         startedAt: result?.startedAt ?? null,
         completedAt: result?.completedAt ?? null,
+        diagnostics: Array.isArray(result?.diagnostics) ? result.diagnostics.slice(0, 100) : [],
       }]
     })),
     videos,

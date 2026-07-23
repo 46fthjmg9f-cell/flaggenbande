@@ -49,9 +49,11 @@ test('queue schema is idempotent, leased and append-only observable', async () =
   assert.match(schema, /CHECK \(status IN \('queued', 'claimed', 'running', 'waiting', 'completed', 'failed'\)\)/)
   assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_production_events/)
   assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_production_reviews/)
-  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_drafts/)
-  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_origins/)
-  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_style_examples/)
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_drafts_v2/)
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_origins_v2/)
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_style_examples_v2/)
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_script_structures/)
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_run_script_manifests/)
   assert.match(schema, /CREATE TABLE IF NOT EXISTS operator_release_requests/)
   assert.match(schema, /run_id TEXT NOT NULL UNIQUE/)
   assert.match(schema, /FOREIGN KEY \(run_id\) REFERENCES operator_production_runs\(run_id\)/)
@@ -282,7 +284,7 @@ test('script drafts are editable, do not start production and only approved huma
   assert.doesNotMatch(draft.script, /\bflaggenbande\b/iu)
   assert.equal(
     DB.database.prepare(
-      "SELECT COUNT(*) AS count FROM operator_script_style_examples WHERE instr(lower(script), 'flaggenbande') > 0",
+      "SELECT COUNT(*) AS count FROM operator_script_style_examples_v2 WHERE instr(lower(script), 'flaggenbande') > 0",
     ).get().count,
     0,
   )
@@ -298,7 +300,7 @@ test('script drafts are editable, do not start production and only approved huma
   assert.equal(generatedRunResponse.status, 202)
   const generatedRun = await generatedRunResponse.json()
   assert.equal(
-    DB.database.prepare('SELECT origin FROM operator_script_origins WHERE run_id = ?').get(generatedRun.runId).origin,
+    DB.database.prepare('SELECT origin FROM operator_script_origins_v2 WHERE run_id = ?').get(generatedRun.runId).origin,
     'auto_unedited',
   )
   const generatedApproval = await worker.fetch(request(
@@ -311,7 +313,7 @@ test('script drafts are editable, do not start production and only approved huma
     }),
   ), env)
   assert.equal(generatedApproval.status, 200)
-  assert.equal(DB.database.prepare('SELECT COUNT(*) AS count FROM operator_script_style_examples').get().count, 1)
+  assert.equal(DB.database.prepare('SELECT COUNT(*) AS count FROM operator_script_style_examples_v2').get().count, 1)
 
   const sevenDraftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
     roundCount: 7,
@@ -332,7 +334,7 @@ test('script drafts are editable, do not start production and only approved huma
   assert.equal(uneditedSevenRunResponse.status, 202)
   const uneditedSevenRun = await uneditedSevenRunResponse.json()
   assert.equal(
-    DB.database.prepare('SELECT origin FROM operator_script_origins WHERE run_id = ?').get(uneditedSevenRun.runId).origin,
+    DB.database.prepare('SELECT origin FROM operator_script_origins_v2 WHERE run_id = ?').get(uneditedSevenRun.runId).origin,
     'auto_unedited',
   )
 
@@ -349,7 +351,7 @@ test('script drafts are editable, do not start production and only approved huma
   assert.equal(imperativeRunResponse.status, 202)
   const imperativeRun = await imperativeRunResponse.json()
   assert.equal(
-    DB.database.prepare('SELECT origin FROM operator_script_origins WHERE run_id = ?').get(imperativeRun.runId).origin,
+    DB.database.prepare('SELECT origin FROM operator_script_origins_v2 WHERE run_id = ?').get(imperativeRun.runId).origin,
     'manual',
   )
 
@@ -392,7 +394,7 @@ test('script drafts are editable, do not start production and only approved huma
   ), env)
   assert.equal(manualApproval.status, 200)
   const learned = DB.database.prepare(
-    "SELECT source, trust_level FROM operator_script_style_examples WHERE reveal_count = 7",
+    "SELECT source, trust_level FROM operator_script_style_examples_v2 WHERE reveal_count = 7",
   ).get()
   assert.equal(learned.source, 'manual')
   assert.equal(learned.trust_level, 'candidate')
@@ -419,13 +421,57 @@ test('script drafts are editable, do not start production and only approved huma
   assert.notEqual(secondLearnedDraft.scriptSha256, learnedDraft.scriptSha256)
   assert.match(secondLearnedDraft.script, /Gurkenminister-Modus/u)
 
-  const invalidDraftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
+  const sixDraftResponse = await worker.fetch(request('/v1/script-drafts', 'operator-token', jsonBody({
     roundCount: 6,
-    targetDurationSeconds: 65,
+    targetDurationSeconds: 66,
     recommendationId: null,
-    clientRequestId: 'invalid-draft-contract-0001',
+    clientRequestId: 'six-draft-contract-0001',
   })), env)
-  assert.equal(invalidDraftResponse.status, 400)
+  assert.equal(sixDraftResponse.status, 201)
+  const sixDraft = await sixDraftResponse.json()
+  assert.equal(sixDraft.roundCount, 6)
+  assert.equal(sixDraft.phrases.rounds.length, 6)
+  assert.equal(
+    DB.database.prepare(
+      'SELECT COUNT(*) AS count FROM operator_script_phrases WHERE script_sha256 = ?',
+    ).get(sixDraft.scriptSha256).count,
+    sixDraft.phrases.phrases.length,
+  )
+
+  for (const unsupportedRoundCount of [6, 8, 9, 10]) {
+    const generated = unsupportedRoundCount === 6
+      ? { script: sixDraft.script, targetDurationSeconds: 66 }
+      : {
+          script: generateScriptDraft({
+            roundCount: unsupportedRoundCount,
+            targetDurationSeconds: unsupportedRoundCount < 9 ? 69 : 70,
+            recommendationId: null,
+            requestSeed: `unsupported-production-${unsupportedRoundCount}`,
+          }, []).script,
+          targetDurationSeconds: unsupportedRoundCount < 9 ? 69 : 70,
+        }
+    const runCountBeforeUnsupported = DB.database.prepare(
+      'SELECT COUNT(*) AS count FROM operator_production_runs',
+    ).get().count
+    const unsupportedRunResponse = await worker.fetch(request(
+      '/v1/runs',
+      'operator-token',
+      jsonBody({
+        script: generated.script,
+        targetDurationSeconds: generated.targetDurationSeconds,
+        roundCount: unsupportedRoundCount,
+        clientRequestId: `unsupported-run-${unsupportedRoundCount}-0001`,
+      }),
+    ), env)
+    assert.equal(unsupportedRunResponse.status, 400)
+    assert.deepEqual(await unsupportedRunResponse.json(), {
+      error: 'UNSUPPORTED_PRODUCTION_ROUND_COUNT',
+    })
+    assert.equal(
+      DB.database.prepare('SELECT COUNT(*) AS count FROM operator_production_runs').get().count,
+      runCountBeforeUnsupported,
+    )
+  }
 })
 
 test('one learned style example still produces hundreds of valid distinct drafts', () => {
@@ -526,6 +572,109 @@ test('research recommendations expose coverage and only use linked retention whe
     assert.equal(feed.recommendations[0].id, 'first-reveal-delay-v1')
     assert.equal(feed.recommendations[0].evidenceLevel, 'measured')
     assert.equal(feed.recommendations[0].autoApplicable, false)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('research joins stored run phrases to publication content IDs without using calendar IDs', async () => {
+  const schema = await readFile(schemaUrl, 'utf8')
+  const DB = new D1TestDatabase(schema)
+  const runId = `video-${'1'.repeat(24)}`
+  const scriptSha256 = '2'.repeat(64)
+  const contentId = `flaggenbande-${'3'.repeat(64)}`
+  const timestamp = '2026-07-23T09:00:00Z'
+  DB.database.prepare(`INSERT INTO operator_production_runs
+    (run_id, input_sha256, client_request_id, script, target_duration_seconds,
+     status, progress, next_attempt_at, provider_run_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 64, 'completed', 100, ?, ?, ?, ?)`).run(
+    runId,
+    '4'.repeat(64),
+    'phrase-research-run',
+    'Welche Flagge ist das?\\n(auflösung)\\nSauber.',
+    timestamp,
+    runId,
+    timestamp,
+    timestamp,
+  )
+  DB.database.prepare(`INSERT INTO operator_script_structures
+    (script_sha256, source_draft_id, schema_version, round_count, structure_json,
+     created_at, updated_at)
+    VALUES (?, NULL, '1.0.0', 5, '{}', ?, ?)`).run(scriptSha256, timestamp, timestamp)
+  DB.database.prepare(`INSERT INTO operator_script_phrases
+    (script_sha256, phrase_id, formulation_key, phrase_type, position_index,
+     round_number, text, created_at, updated_at)
+    VALUES (?, 'phrase-r01-question-01-test', 'formulation-test', 'question', 0,
+      1, 'Welche Flagge ist das?', ?, ?)`).run(scriptSha256, timestamp, timestamp)
+  DB.database.prepare(`INSERT INTO operator_run_script_manifests
+    (run_id, script_sha256, schema_version, round_count, timing_source,
+     created_at, updated_at)
+    VALUES (?, ?, '1.0.0', 5, 'word_timestamps', ?, ?)`).run(
+    runId,
+    scriptSha256,
+    timestamp,
+    timestamp,
+  )
+  DB.database.prepare(`INSERT INTO operator_run_script_phrases
+    (run_id, script_sha256, phrase_id, start_seconds, end_seconds,
+     created_at, updated_at)
+    VALUES (?, ?, 'phrase-r01-question-01-test', 1, 4, ?, ?)`).run(
+    runId,
+    scriptSha256,
+    timestamp,
+    timestamp,
+  )
+
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async input => {
+    const path = new URL(input instanceof URL ? input : typeof input === 'string' ? input : input.url).pathname
+    const payload = path.endsWith('/content-operations.json')
+      ? {
+          schemaVersion: 1,
+          generatedAt: timestamp,
+          publications: [{
+            platform: 'youtube',
+            platformVideoId: 'youtube-phrase',
+            contentId,
+            runId: `upload-${runId}-2207-07`,
+            status: 'published',
+          }],
+        }
+      : {
+          schemaVersion: 3,
+          generatedAt: timestamp,
+          social: {
+            videos: [{
+              platform: 'youtube',
+              platformVideoId: 'youtube-phrase',
+              durationSeconds: 64,
+              retention: [
+                { elapsedVideoTimeRatio: 0, audienceWatchRatio: 1 },
+                { elapsedVideoTimeRatio: 0.02, audienceWatchRatio: 0.9 },
+                { elapsedVideoTimeRatio: 0.08, audienceWatchRatio: 0.7 },
+              ],
+              metrics: {},
+            }],
+          },
+        }
+    return new Response(JSON.stringify(payload), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  try {
+    const response = await worker.fetch(request('/v1/research/recommendations', 'operator-token'), {
+      DB,
+      PREVIEWS: new PreviewBucket(),
+      OPERATOR_API_TOKEN: 'operator-token',
+      DASHBOARD_DATA_BASE_URL: 'https://dashboard.example.test/data/',
+    })
+    assert.equal(response.status, 200)
+    const feed = await response.json()
+    assert.equal(feed.schemaVersion, '1.1.0')
+    assert.equal(feed.dataReadiness.phraseTimelineVideos, 1)
+    assert.equal(feed.dataReadiness.phraseRetentionVideos, 1)
+    assert.equal(feed.phraseEvaluations.length, 1)
+    assert.equal(feed.phraseEvaluations[0].formulationKey, 'formulation-test')
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -643,6 +792,50 @@ test('two-stage approvals are hash-bound, idempotent and release exactly once', 
   })), env)
   assert.equal(claimResponse.status, 200)
   const claim = await claimResponse.json()
+  assert.equal(claim.command.roundCount, 5)
+  assert.equal(claim.command.phraseTimeline.rounds.length, 5)
+
+  const spokenWords = script
+    .replaceAll('(auflösung)', '')
+    .match(/[\p{L}\p{N}]+/gu)
+  const wordCues = spokenWords.map((word, index) => ({
+    word,
+    startSeconds: Number((index * 0.25).toFixed(3)),
+    endSeconds: Number((index * 0.25 + 0.2).toFixed(3)),
+  }))
+  const analysisResponse = await worker.fetch(request(
+    `/v1/runner/runs/${created.runId}/analysis-manifest`,
+    'runner-token',
+    jsonBody({
+      runnerId: 'test-runner',
+      leaseToken: claim.leaseToken,
+      rounds: Array.from({ length: 5 }, (_, index) => ({
+        round: index + 1,
+        solutionCountry: `Country ${String(index + 1)}`,
+        solutionCountryCode: ['DE', 'UY', 'MZ', 'JP', 'CA'][index],
+        flagShownAtSeconds: index * 10 + 1,
+        revealAtSeconds: index * 10 + 5,
+      })),
+      wordCues,
+    }),
+  ), env)
+  assert.equal(analysisResponse.status, 200)
+  const storedAnalysis = await analysisResponse.json()
+  assert.ok(storedAnalysis.alignedPhraseCount > 0)
+  assert.equal(storedAnalysis.unmatchedPhraseCount, 0)
+  assert.equal(storedAnalysis.roundsStored, 5)
+  assert.equal(
+    DB.database.prepare(
+      'SELECT COUNT(*) AS count FROM operator_run_script_rounds WHERE run_id = ? AND solution_country IS NOT NULL',
+    ).get(created.runId).count,
+    5,
+  )
+  assert.equal(
+    DB.database.prepare(
+      'SELECT COUNT(*) AS count FROM operator_run_script_phrases WHERE run_id = ? AND start_seconds IS NOT NULL',
+    ).get(created.runId).count,
+    claim.command.phraseTimeline.phrases.length,
+  )
 
   const videoBytes = Buffer.from('verified-private-preview')
   const previewSha256 = createHash('sha256').update(videoBytes).digest('hex')

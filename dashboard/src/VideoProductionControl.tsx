@@ -16,7 +16,12 @@ import {
 } from './operatorApi'
 import { displayReleaseLabel } from './videoDisplay'
 import {
+  durationOptionsForRounds,
+  isProductionRoundCount,
+  minimumSpokenWordsForRounds,
+  recommendedTargetDuration,
   scriptProfileIssueMessage,
+  supportedRoundCounts,
   validateScriptProfile,
 } from '../../shared/scriptProfileValidation'
 
@@ -33,9 +38,58 @@ const statusLabels: Record<OperatorRunStatus, string> = {
   published: 'Veröffentlicht',
 }
 
-const targetDurationByRounds: Record<SupportedRoundCount, number> = {
-  5: 64,
-  7: 69,
+type RetentionEvidenceStatus = 'measured' | 'aggregate_only' | 'pending' | 'unavailable'
+
+function retentionEvidence(
+  research: ResearchRecommendationFeed | null,
+  researchError: string | null,
+): { status: RetentionEvidenceStatus; label: string; detail: string } {
+  if (!research) {
+    return researchError
+      ? { status: 'unavailable', label: 'Nicht verfügbar', detail: researchError }
+      : { status: 'pending', label: 'Wird geprüft', detail: 'Retention-Daten werden geladen.' }
+  }
+  const readiness = research.dataReadiness
+  if (readiness.retentionVideos > 0) {
+    return {
+      status: 'measured',
+      label: `${readiness.retentionVideos} gemessen`,
+      detail: `${readiness.retentionVideos} Videos mit echter Retention-Kurve.`,
+    }
+  }
+  if (readiness.averageViewPercentageVideos > 0) {
+    return {
+      status: 'aggregate_only',
+      label: 'Nur Durchschnitt',
+      detail: `${readiness.averageViewPercentageVideos} Videos mit Durchschnittswert, aber ohne Retention-Kurve.`,
+    }
+  }
+  if (readiness.linkedYoutubeVideos > 0 || readiness.platformVideoCount > 0) {
+    return {
+      status: 'pending',
+      label: 'Noch ausstehend',
+      detail: `${readiness.linkedYoutubeVideos} verknüpfte Videos, noch keine Retention-Messpunkte.`,
+    }
+  }
+  return {
+    status: 'unavailable',
+    label: 'Nicht verfügbar',
+    detail: 'Noch keine verknüpften Videos mit Retention-Daten.',
+  }
+}
+
+function recommendationDelta(recommendation: ResearchRecommendationFeed['recommendations'][number]): string | null {
+  const value = recommendation as typeof recommendation & {
+    readonly delta?: unknown
+    readonly metricDelta?: unknown
+    readonly deltaPercent?: unknown
+  }
+  const candidate = value.delta ?? value.metricDelta ?? value.deltaPercent
+  if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+    const prefix = candidate > 0 ? '+' : ''
+    return `${prefix}${candidate.toLocaleString('de-DE')} %`
+  }
+  return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null
 }
 
 function formatTime(value: string): string {
@@ -160,7 +214,7 @@ export default function VideoProductionControl() {
   const [script, setScript] = useState('')
   const [autoGenerate, setAutoGenerate] = useState(false)
   const [roundCount, setRoundCount] = useState<SupportedRoundCount>(5)
-  const [targetDurationSeconds, setTargetDurationSeconds] = useState(targetDurationByRounds[5])
+  const [targetDurationSeconds, setTargetDurationSeconds] = useState(recommendedTargetDuration(5))
   const [draft, setDraft] = useState<ScriptDraft | null>(null)
   const [research, setResearch] = useState<ResearchRecommendationFeed | null>(null)
   const [researchError, setResearchError] = useState<string | null>(null)
@@ -178,9 +232,12 @@ export default function VideoProductionControl() {
   const markers = validation.revealCount
   const words = validation.spokenWordCount
   const brandMentions = validation.brandMentionCount
-  const minimumWords = roundCount === 5 ? 90 : 70
+  const minimumWords = minimumSpokenWordsForRounds(roundCount)
+  const durationOptions = useMemo(() => durationOptionsForRounds(roundCount), [roundCount])
   const brandValid = brandMentions === 0
+  const retention = useMemo(() => retentionEvidence(research, researchError), [research, researchError])
   const scriptValid = validation.valid
+  const productionRoundCountSupported = isProductionRoundCount(roundCount)
   const validationMessages = useMemo(
     () => [...new Set(validation.details.map(scriptProfileIssueMessage))],
     [validation.details],
@@ -236,7 +293,7 @@ export default function VideoProductionControl() {
   }
 
   const saveScript = async () => {
-    if (!scriptValid) return
+    if (!scriptValid || !productionRoundCountSupported) return
     setSaving(true)
     setError(null)
     try {
@@ -276,7 +333,7 @@ export default function VideoProductionControl() {
 
   const changeRoundCount = (value: SupportedRoundCount) => {
     setRoundCount(value)
-    setTargetDurationSeconds(targetDurationByRounds[value])
+    setTargetDurationSeconds(recommendedTargetDuration(value))
     setDraft(null)
   }
 
@@ -337,13 +394,12 @@ export default function VideoProductionControl() {
             value={roundCount}
             onChange={event => changeRoundCount(Number(event.target.value) as SupportedRoundCount)}
           >
-            <option value={5}>5</option>
-            <option value={7}>7</option>
+            {supportedRoundCounts.map(value => <option value={value} key={value}>{value}</option>)}
           </select>
         </label>
         <label>Ziellänge
           <select value={targetDurationSeconds} onChange={event => setTargetDurationSeconds(Number(event.target.value))}>
-            {[61, 62, 63, 64, 65, 66, 67, 68, 69, 70].map(seconds => <option value={seconds} key={seconds}>{seconds} s</option>)}
+            {durationOptions.map(seconds => <option value={seconds} key={seconds}>{seconds} s</option>)}
           </select>
         </label>
         {autoGenerate && <button
@@ -373,10 +429,18 @@ export default function VideoProductionControl() {
         <span className={brandValid ? 'marker-count valid' : 'marker-count'}>
           {brandValid ? 'keine App-Nennung' : 'App-Nennung entfernen'}
         </span>
-        <button className="primary-action" type="button" onClick={() => void saveScript()} disabled={saving || !scriptValid}>
+        <button
+          className="primary-action"
+          type="button"
+          onClick={() => void saveScript()}
+          disabled={saving || !scriptValid || !productionRoundCountSupported}
+        >
           {saving ? 'Wird gespeichert …' : 'Skript zur Prüfung speichern'}
         </button>
       </div>
+      {!productionRoundCountSupported && <p className="production-round-limit">
+        Produktion aktuell nur 5 oder 7
+      </p>}
       {script.trim() && !scriptValid && <ul className="operator-validation-errors">
         {validationMessages.map(message => <li key={message}>{message}</li>)}
       </ul>}
@@ -385,13 +449,11 @@ export default function VideoProductionControl() {
       <section className="research-suggestions">
         <div className="compact-heading">
           <h2>Research</h2>
-          {research && <span className={research.dataReadiness.status}>
-            Retention {research.dataReadiness.retentionVideos}/{research.dataReadiness.minimumComparableVideos}
-          </span>}
+          <span className={`retention-status ${retention.status}`}>{retention.label}</span>
         </div>
         {research
           ? <>
-              <p className="research-readiness">{research.dataReadiness.message}</p>
+              <p className="research-readiness">{retention.detail}</p>
               <div className="research-options">
                 <button
                   type="button"
@@ -400,21 +462,39 @@ export default function VideoProductionControl() {
                 >
                   Baseline
                 </button>
-                {research.recommendations.map(recommendation => <button
-                  type="button"
-                  key={recommendation.id}
-                  className={selectedRecommendationId === recommendation.id ? 'selected' : ''}
-                  onClick={() => selectRecommendation(recommendation.id)}
-                >
-                  <strong>{recommendation.title}</strong>
-                  <small>{recommendation.primaryParameter} · {recommendation.confidence}</small>
-                </button>)}
+                {research.recommendations.map(recommendation => {
+                  const delta = recommendationDelta(recommendation)
+                  return <button
+                    type="button"
+                    key={recommendation.id}
+                    className={selectedRecommendationId === recommendation.id ? 'selected' : ''}
+                    onClick={() => selectRecommendation(recommendation.id)}
+                  >
+                    <strong>{recommendation.title}</strong>
+                    <small className="research-wording">{recommendation.action}</small>
+                    <small>{recommendation.primaryParameter} · {recommendation.targetMetric}</small>
+                    <small>n={recommendation.sampleSize} · Δ {delta ?? '—'} · {recommendation.confidence}</small>
+                  </button>
+                })}
               </div>
+              {research.recommendations.length === 0 &&
+                <p className="compact-empty research-empty">Noch keine belastbare Formulierungsempfehlung.</p>}
               {selectedRecommendationId && <p className="research-action">
                 {research.recommendations.find(entry => entry.id === selectedRecommendationId)?.action}
               </p>}
+              {research.phraseEvaluations.length > 0 && <div className="phrase-retention-list">
+                <strong>Formulierungen</strong>
+                {research.phraseEvaluations.slice(0, 5).map(evaluation =>
+                  <div key={evaluation.formulationKey}>
+                    <span>{evaluation.formulation}</span>
+                    <small>
+                      {evaluation.phraseType} · {evaluation.videoCount} Videos · Δ{' '}
+                      {evaluation.medianDeltaPercentagePoints.toLocaleString('de-DE')} pp
+                    </small>
+                  </div>)}
+              </div>}
             </>
-          : <p className="compact-empty">{researchError ?? 'Research wird geladen …'}</p>}
+          : <p className="compact-empty">{retention.detail}</p>}
       </section>
     </article>
 

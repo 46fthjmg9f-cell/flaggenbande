@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
 import { isAbsolute, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { buildOperatorAnalysisManifest } from './operator-analysis-manifest.mjs'
 
 const RUN_ID_PATTERN = /^video-[a-f0-9]{24}$/u
 const LOCAL_STATUSES = new Set(['queued', 'running', 'waiting', 'completed', 'failed'])
@@ -411,7 +412,52 @@ const verifyGateEvidence = async (config, local, previewSha256, previewSizeBytes
     audio.clippingDetected !== false
   ) throw new Error('QUALITY_GATE_FAILED')
   if (!passedLocalMonetizationGate(report)) throw new Error('MONETIZATION_GATE_FAILED')
-  return { revision }
+  const contentArtifact = privateArtifact(status, 'content_manifest', runDirectory)
+  const runtimeArtifact = privateArtifact(status, 'runtime_manifest', runDirectory)
+  const [contentDocument, runtimeDocument] = await Promise.all([
+    readGateJson(contentArtifact.path),
+    readGateJson(runtimeArtifact.path),
+  ])
+  const contentSha256 = createHash('sha256').update(contentDocument.bytes).digest('hex')
+  const runtimeSha256 = createHash('sha256').update(runtimeDocument.bytes).digest('hex')
+  if (contentSha256 !== contentArtifact.sha256 || runtimeSha256 !== runtimeArtifact.sha256) {
+    throw new Error('GATE_EVIDENCE_INVALID')
+  }
+  return {
+    revision,
+    analysisManifest: buildOperatorAnalysisManifest({
+      runId: local.runId,
+      content: contentDocument.value,
+      runtime: runtimeDocument.value,
+    }),
+  }
+}
+
+const uploadAnalysisManifest = async (config, claim, manifest) => {
+  const response = await request(
+    `${config.operatorApiUrl}/v1/runner/runs/${claim.runId}/analysis-manifest`,
+    {
+      method: 'POST',
+      headers: operatorHeaders(config),
+      body: JSON.stringify({
+        runnerId: config.runnerId,
+        leaseToken: claim.leaseToken,
+        rounds: manifest.rounds,
+        wordCues: manifest.wordCues,
+      }),
+    },
+    config.requestTimeoutMs,
+  )
+  if (response.status === 409) throw new Error('ANALYSIS_MANIFEST_LEASE_LOST')
+  if (!response.ok) throw new Error(`ANALYSIS_MANIFEST_HTTP_${response.status}`)
+  const result = await readJson(response)
+  if (
+    !record(result) ||
+    result.runId !== claim.runId ||
+    result.roundsStored !== manifest.rounds.length ||
+    typeof result.alignedPhraseCount !== 'number' ||
+    typeof result.unmatchedPhraseCount !== 'number'
+  ) throw new Error('ANALYSIS_MANIFEST_RESPONSE_INVALID')
 }
 
 const uploadPreview = async (config, claim, local) => {
@@ -427,6 +473,7 @@ const uploadPreview = async (config, claim, local) => {
   if (bytes.byteLength < 1 || bytes.byteLength > MAX_PREVIEW_BYTES) throw new Error('PREVIEW_SIZE_INVALID')
   const previewSha256 = createHash('sha256').update(bytes).digest('hex')
   const evidence = await verifyGateEvidence(config, local, previewSha256, bytes.byteLength)
+  await uploadAnalysisManifest(config, claim, evidence.analysisManifest)
   const response = await request(`${config.operatorApiUrl}/v1/runner/runs/${claim.runId}/preview`, {
     method: 'PUT',
     headers: {
