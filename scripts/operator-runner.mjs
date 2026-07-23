@@ -257,20 +257,25 @@ const waitingStatus = (claim, message = 'Lokale Produktions-Engine ist vorüberg
   error: null,
 })
 
-const failedStatus = (claim, code) => ({
-  runId: claim.runId,
-  status: 'failed',
-  progress: 0,
-  currentStep: 'script_validation',
-  message: (
-    code === 'QUALITY_GATE_FAILED' ||
-    code === 'MONETIZATION_GATE_FAILED' ||
-    code === 'GATE_EVIDENCE_INVALID'
-  )
-    ? 'Die Vorschau hat eine verpflichtende Freigabeprüfung nicht bestanden.'
-    : 'Lokale Produktions-Engine hat den Auftrag abgelehnt.',
-  error: code,
-})
+const failedStatus = (claim, code) => {
+  const previewRevisionRejected = code === 'LOCAL_PREVIEW_REVISION_REJECTED'
+  return {
+    runId: claim.runId,
+    status: 'failed',
+    progress: 0,
+    currentStep: previewRevisionRejected ? 'preview_revision' : 'script_validation',
+    message: previewRevisionRejected
+      ? 'Die lokale Produktions-Engine hat die Vorschau-Nachbesserung abgelehnt.'
+      : (
+          code === 'QUALITY_GATE_FAILED' ||
+          code === 'MONETIZATION_GATE_FAILED' ||
+          code === 'GATE_EVIDENCE_INVALID'
+        )
+        ? 'Die Vorschau hat eine verpflichtende Freigabeprüfung nicht bestanden.'
+        : 'Lokale Produktions-Engine hat den Auftrag abgelehnt.',
+    error: code,
+  }
+}
 
 const record = value =>
   value && typeof value === 'object' && !Array.isArray(value) ? value : null

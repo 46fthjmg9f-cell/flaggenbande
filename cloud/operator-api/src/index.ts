@@ -1400,10 +1400,21 @@ const reviseVideo = async (
     return projection ? json(projection, 200, origin) : errorResponse("RUN_REVIEW_NOT_FOUND", 500, origin);
   }
 
-  const safelyRevisable =
-    row.status === "completed" &&
-    review.script_approval_status === "approved" &&
+  const hasExactStoredPreview =
     Boolean(review.preview_object_key) &&
+    review.preview_sha256 === input.previewSha256 &&
+    review.preview_size_bytes !== null &&
+    review.preview_size_bytes > 0 &&
+    review.preview_content_type === "video/mp4" &&
+    review.video_revision === input.videoRevision;
+  const failedLocalRevision =
+    row.status === "failed" &&
+    (row.current_step === "preview_revision" || row.current_step === "script_validation") &&
+    row.error_code === "LOCAL_PREVIEW_REVISION_REJECTED";
+  const safelyRevisable =
+    (row.status === "completed" || failedLocalRevision) &&
+    review.script_approval_status === "approved" &&
+    hasExactStoredPreview &&
     review.video_approval_status === "pending" &&
     review.quality_gate_passed === 1 &&
     review.monetization_gate_passed === 1 &&
@@ -1416,7 +1427,12 @@ const reviseVideo = async (
     status = 'queued', current_step = 'preview_revision', message = ?, error_code = NULL,
     lease_owner = NULL, lease_token_sha256 = NULL, lease_expires_at = NULL,
     next_attempt_at = ?, updated_at = ?
-    WHERE run_id = ? AND status = 'completed'`).bind(
+    WHERE run_id = ? AND (
+      status = 'completed' OR (
+        status = 'failed' AND current_step IN ('preview_revision', 'script_validation')
+        AND error_code = 'LOCAL_PREVIEW_REVISION_REJECTED'
+      )
+    )`).bind(
     message, timestamp, timestamp, runId,
   ).run();
   if ((result.meta?.changes ?? 0) !== 1) {

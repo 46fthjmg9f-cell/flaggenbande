@@ -63,7 +63,21 @@ test('an unapproved preview can be safely sent back for revision without releasi
   const source = await readFile(componentUrl, 'utf8')
 
   assert.match(source, /reviseOperatorVideo/u)
-  assert.match(source, /\{videoPending && <button/u)
+  assert.match(source, /const canReviseVideo = videoPending \|\| safelyRevisableFailedPreview/u)
+  assert.match(source, /\{canReviseVideo && <button/u)
   assert.match(source, /Video nachbessern/u)
   assert.match(source, /Video freigeben & Veröffentlichung starten/u)
+})
+
+test('a failed local preview revision keeps the safe dashboard revision action', async () => {
+  const source = await readFile(componentUrl, 'utf8')
+
+  assert.match(source, /run\.status === 'failed'/u)
+  assert.match(source, /run\.currentStep === 'preview_revision' \|\| run\.currentStep === 'script_validation'/u)
+  assert.match(source, /run\.error === 'LOCAL_PREVIEW_REVISION_REJECTED'/u)
+  assert.match(source, /run\.script\.status === 'approved'/u)
+  assert.match(source, /run\.preview\.ready/u)
+  assert.match(source, /run\.videoApproval\.status === 'pending'/u)
+  assert.match(source, /run\.release\.requestId === null/u)
+  assert.match(source, /run\.release\.status === null/u)
 })
